@@ -94,6 +94,13 @@ function recipeDoc(r) {
   if (Array.isArray(r.steps) && r.steps.length) o.steps = r.steps.slice(0, 12).map(x => String(x).slice(0, 300));
   if (r.servings != null && isFinite(r.servings)) o.servings = Number(r.servings);
   if (r.scale === false) o.scale = false;
+  // v0.11: passiv tid (minutes = aktiv tid) og merke fra Matrett-byggeren – bare når satt
+  if (typeof r.passiveMinutes === 'number' && r.passiveMinutes > 0 && ['ovn', 'koking', 'heving'].indexOf(r.passiveKind) >= 0) {
+    o.passiveMinutes = Math.min(1440, Math.round(r.passiveMinutes)); o.passiveKind = r.passiveKind;
+  }
+  if (r.lib) o.lib = String(r.lib).slice(0, 100);
+  if (r.variant) o.variant = String(r.variant).slice(0, 40);
+  if (r.fromLib && r.fromLib.id) o.fromLib = { id: String(r.fromLib.id).slice(0, 100), variant: String(r.fromLib.variant || '').slice(0, 40) };
   return o;
 }
 function householdSettingsDoc(h) {
@@ -176,6 +183,8 @@ async function createHousehold(local, existing) {
   (local.list_extras || []).forEach(x => writes.push(['set', hh(hid, 'extras', x.id), extraDoc(x)]));
   if (local.household_size && local.household_size.asked)
     writes.push(['set', hh(hid, 'settings', 'household'), householdSettingsDoc(local.household_size)]);
+    // v0.11: tidsgrensen for hverdagsmiddag (bare når den er satt; 0.10 leser den ikke)
+    if (local.weekday_limit) writes.push(['set', hh(hid, 'settings', 'hverdag'), { limit: local.weekday_limit, updated_at: Date.now() }]);
   Object.keys(local.day_people || {}).forEach(d => {
     const delta = local.day_people[d];
     if (delta && (delta.voksen || delta.barn || delta.smabarn))
@@ -310,6 +319,8 @@ const W = {
   setStaple: (hid, s) => ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'staples', s.id)), stapleDoc(s)),
   updateStaple: (hid, id, fields) => ctx.fs.updateDoc(ctx.fs.doc(...hh(hid, 'staples', id)), fields),
   deleteStaple: (hid, id) => ctx.fs.deleteDoc(ctx.fs.doc(...hh(hid, 'staples', id))),
+  // v0.11: «Middag i hverdagen» (null = Ingen grense)
+  setWeekdayLimit: (hid, limit) => ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'settings', 'hverdag')), { limit: limit || null, updated_at: Date.now() }),
   setHouseholdSettings: (hid, h) => ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'settings', 'household')), householdSettingsDoc(h)),
   setDayPeople: (hid, date, delta) => ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'daypeople', date)), dayPeopleDoc(date, delta)),
   deleteDayPeople: (hid, date) => ctx.fs.deleteDoc(ctx.fs.doc(...hh(hid, 'daypeople', date))),
