@@ -1,4 +1,4 @@
-# Knaggen (v0.9.0)
+# Knaggen (v0.10.0)
 
 *Arbeidsnavn: Ukeshandel – mapper, kode, lagringsnøkler og adressen (`…/handleliste/`) beholder det gamle navnet.*
 
@@ -24,7 +24,7 @@ Kan hostes som vanlige statiske filer (hvilken som helst HTTPS-statisk hosting).
 - Ikoner fra `../merkevare/endelig/` i `icons/`: favicon.ico (16/32/48) + favicon.svg (følger lys/mørk), apple-touch-icon (mørk), icon-192/512 og maskable-192/512 (mørk, som anbefalt i merkevare-README), lockup mørk/lys (`<picture>` med `prefers-color-scheme`).
 - Manifest: `display: "browser"` med vilje – et hjemskjermikon åpner fortsatt appen i nettleseren som i dag (samme lagring; på iOS ville `standalone` gitt egen lagring uten dataene). Ingen `apple-mobile-web-app-capable`. *(v0.9: endret til `standalone`, se v0.9.)*
 - Farger fra `../merkevare/merkevare.md`: mørk er standard, lys følger `prefers-color-scheme: light`; `theme-color` per modus (#1c2224 / #ffffff). Avledet: `--brand-soft`(-line) (primær tonet inn i flata; lys #e5eeea) og `--inv-*` (toasten bruker motsatt modus). Felt- og knappekanter bruker «linje-sterk» (≥ 3:1), plassholdere «tekst-dempet», felles fokusring i primær. Kontrast revideres av `tests/e2e-v06.js` (alle synlige tekst/bakgrunn-par og UI-kanter, begge moduser, AA).
-- Service worker: cachenavnet beholder prefikset `ukeshandel-` (nå `ukeshandel-0.9.0`); activate sletter alle andre `ukeshandel-*`, så en 0.4.6-telefon rydder `ukeshandel-0.4.6`. Manifest, favicon og lockup forhåndslagres (toppen ser lik ut uten nett).
+- Service worker: cachenavnet beholder prefikset `ukeshandel-` (nå `ukeshandel-0.10.0`); activate sletter alle andre `ukeshandel-*`, så en 0.4.6-telefon rydder `ukeshandel-0.4.6`. Manifest, favicon og lockup forhåndslagres (toppen ser lik ut uten nett).
 - Uendret: adresse, `localStorage`-/IndexedDB-nøkler, Firebase-oppsett og -data, `firestore.rules`.
 
 ## v0.6.1 (spec «v0.6.1 — Retting etter Trudes gjennomgang»)
@@ -50,6 +50,16 @@ Kan hostes som vanlige statiske filer (hvilken som helst HTTPS-statisk hosting).
   - Kostnad: mens toasten vises (2,5 s, eller 8 s med «Angre») skjuler båndet ca. 64 px av innholdet nederst – på samme måte som fanelinja.
 - **«Mer» med synlig tekst:** verktøyknappen på Liste viser «⋯ Mer» (prikkene er pynt; tilgjengelig navn begynner med «Mer»). 46 px høy, ca. 69 px bred; verktøylinja får plass ved 360 px uten at «Matrett»/«Plassering» kuttes.
 - **Frysevarer i Frys:** «Legg til vare» gjetter Frys for Grandiosa og andre frosne pizzaer (Big One, frysepizza, frossenpizza, pizza), fiskepinner, fiskeburgere, frosne grønnsaker/bær, wokgrønnsaker, pommes frites, potetbåter, is/iskrem/ispinner/sjokoladeis o.l., nuggets, vårruller og alt som begynner med «frossen/frosne/fryst». Pizzabunn, ris, fryseposer, melk, ost og yoghurt gjettes som før. Frys har vært en avdeling siden v0, så eldre versjoner viser varene under Frys – ingen ny avdeling, ingen nøkkel- eller regelendring.
+
+## v0.10 (spec «Knaggen v0.10», palett `../merkevare/v010-palett/README.md`)
+- **Én felles liste:** handlelista er ikke lenger per uke. Alt (middager, faste varer, egne varer, avkrysning) ligger under nøkkelen `0000-00-00` (`LIST_KEY`). Skjema 4: første last kopierer inneværende og senere ukers valg, avkrysninger og egne varer én gang inn i den felles lista (merket `v010:migrert`). Ukene blir liggende urørt, og `ukeshandel:v1:backup-schema3` tas vare på.
+- Avkryssede varer vises en stund og ryddes 3 dager etter avkryssing. Raden i «Mer» viser «N krysset av». «Som forrige uke» er fjernet, og «Faste varer for uke N» heter nå «Faste varer på lista».
+- **Palett:** ny avdeling Meieri (melk/ost/yoghurt gjettes dit; i lagrede data som 0.9 leser, ligger den som Kjøl). Fargene er dempet etter palett-README, og `kontrast.py` sier at alle nye par består.
+- **Oppskrifter:** valgfrie `steps` (maks 12) med redigering under «Fremgangsmåte».
+- **Husstand:** «Slett husstanden» (krever nett). Signalet `v010:slettes` skrives først, så andre telefoner oppdager det (`Sync.stillMember`). Invitasjonslenker til en husstand du har forlatt avvises (`ukeshandel:left`). «Tøm uka» gjelder hele husstanden.
+- **Regler:** se `firestore.rules`; de er bakoverkompatible med 0.9.0 (sletting av husstand, valgfri `steps`, liste over egne invitasjoner).
+- **Kjent avvik:** telefoner med 0.3–0.9 leser bare ukelistene og ser ikke den felles lista. Redigerer de en rett, faller `steps` bort.
+- Testkroker: `KNAGGEN_SHOW_DONE` og `autoAsk` (`tests/v09compat.js`) brukes av de eldre suitene. `e2e-v010` kjører uten dem.
 
 ## v0.9 (spec «v0.9 — Første møte og eget hjem», design `../merkevare/forste-mote/README.md`)
 - **Adresse:** `https://app.knaggen.no/` (eget GitHub Pages-repo `mariuskfoss/knaggen`, CNAME `app.knaggen.no`). Den gamle adressen `mariuskfoss.github.io/handleliste/` får de samme filene og kjenner seg igjen på vertsnavnet (`NEW_HOME` i `app.js`; `window.KNAGGEN_NEW_HOME` overstyrer i test). Der vises bare flyttesiden: «Flytt til app.knaggen.no» åpner `#flytt=hid.secret` på den nye adressen (husstanden lages først hvis telefonen bare har lokale data), og `ukeshandel:moved` sender rett videre neste gang. `#join=`/`#inn=`/`?inn=` sendes videre med en gang, og en telefon uten data sendes rett videre. Ingenting slettes på den gamle adressen. Ny `sw.js` (nytt cachenavn) gjør at gamle snarveier får flyttesiden.

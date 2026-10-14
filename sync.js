@@ -76,6 +76,9 @@ function withTimeout(p, ms, msg) {
 }
 
 const hh = (hid, ...rest) => [ctx.db, 'households', hid, ...rest];
+// v0.10: den felles handlelista ligger under en fast «uke» (se app.js LIST_KEY)
+const LIST_KEY = '0000-00-00';
+const DELETING_MARK = 'v010:slettes';   // se app.js
 
 function recipeDoc(r) {
   const o = {
@@ -87,6 +90,8 @@ function recipeDoc(r) {
   };
   // v0.8: valgfrie felt – bare når satt, så eldre regler/klienter ikke brytes unødig ved lesing
   if (r.origin) o.origin = String(r.origin).slice(0, 40);
+  // v0.10: valgfri fremgangsmåte (liste med korte steg)
+  if (Array.isArray(r.steps) && r.steps.length) o.steps = r.steps.slice(0, 12).map(x => String(x).slice(0, 300));
   if (r.servings != null && isFinite(r.servings)) o.servings = Number(r.servings);
   if (r.scale === false) o.scale = false;
   return o;
@@ -184,6 +189,17 @@ async function createHousehold(local, existing) {
   return { hid, secret };
 }
 
+// v0.10: fortsatt medlem ifølge serveren? (false også når husstanden er slettet og lesingen nektes)
+async function stillMember(hid) {
+  const c = await init();
+  try {
+    const s = await withTimeout(c.fs.getDocFromServer(c.fs.doc(...hh(hid, 'members', c.uid))), 10000, 'no-server');
+    return s.exists();
+  } catch (e) {
+    if (e && e.code === 'permission-denied') return false;
+    return null;
+  }
+}
 async function isMember(hid) {
   const c = await init();
   try {
@@ -208,15 +224,18 @@ function subscribe(hid, oldest, handlers) {
   const { fs, db } = ctx;
   const metas = {};
   const unsubs = [];
+  let expected = 0;
   function status() {
     const vals = Object.values(metas);
     handlers.status && handlers.status({
       pending: vals.some(m => m.hasPendingWrites),
-      fromCache: vals.some(m => m.fromCache)
+      // v0.10: «fra serveren» først når alle samlingene har svart (engangsflyttingen av lista venter på det)
+      fromCache: vals.length < expected || vals.some(m => m.fromCache)
     });
   }
   function listen(name, q, quiet) {
     let first = true;
+    if (!quiet) expected++;
     unsubs.push(fs.onSnapshot(q, { includeMetadataChanges: true }, snap => {
       if (!quiet) metas[name] = snap.metadata;
       const changed = first || snap.docChanges().length > 0;
@@ -234,6 +253,9 @@ function subscribe(hid, oldest, handlers) {
   listen('days', fs.query(fs.collection(...hh(hid, 'days')), fs.where('date', '>=', oldest)));
   listen('lists', fs.query(fs.collection(...hh(hid, 'lists')), fs.where('week', '>=', oldest)));
   listen('extras', fs.query(fs.collection(...hh(hid, 'extras')), fs.where('week', '>=', oldest)));
+  // v0.10: den felles lista (eget dokument og egne varer med week = 0000-00-00)
+  listen('slists', fs.query(fs.collection(...hh(hid, 'lists')), fs.where('week', '==', LIST_KEY)));
+  listen('sextras', fs.query(fs.collection(...hh(hid, 'extras')), fs.where('week', '==', LIST_KEY)));
   listen('settings', fs.collection(...hh(hid, 'settings')));
   listen('daypeople', fs.query(fs.collection(...hh(hid, 'daypeople')), fs.where('date', '>=', oldest)));
   // v0.9: antall tilkoblinger («2 koblet til») og aktiv invitasjonskode (uten secret)
@@ -269,7 +291,12 @@ const W = {
       return true;
     });
   },
-  setChecks: (hid, week, map) => ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'lists', week)), { week, checked: map }, { merge: true }),
+  // v0.10: i den felles lista slettes feltene for en vare som ikke lenger er krysset av (lista vokser ikke over tid)
+  setChecks: (hid, week, map) => {
+    const m = {};
+    Object.keys(map).forEach(k => { m[k] = week === LIST_KEY && map[k] === false ? ctx.fs.deleteField() : map[k]; });
+    return ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'lists', week)), { week, checked: m }, { merge: true });
+  },
   incAdjust: (hid, week, key, change) => ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'lists', week)), { week, adjust: { [key]: ctx.fs.increment(change) } }, { merge: true }),
   // v0.4.3: basisvalg per uke som felt i adjust-kartet («basis:<vare>» = 1 lagt til / -1 ikke nå), feltvis flettet.
   setAdjust: (hid, week, map) => ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'lists', week)), { week, adjust: map }, { merge: true }),
@@ -289,6 +316,51 @@ const W = {
   // v0.4.4: venter til telefonens egne ventende skrivinger er bekreftet (før en bytte-transaksjon).
   settled: () => ctx.fs.waitForPendingWrites(ctx.db)
 };
+
+/* ---------- v0.10: Forlat og Slett husstanden ---------- */
+// Forlat: sletter bare eget medlemskap (tillatt også med v0.9-reglene). Køes frakoblet.
+function leaveHousehold(hid) {
+  return ctx.fs.deleteDoc(ctx.fs.doc(...hh(hid, 'members', ctx.uid)));
+}
+// Slett: alt innhold i biter, så til slutt kjernen i én batch: invitasjonskodene, invite/current, de andre medlemmene,
+// private/join, husstandsdokumentet og eget medlemskap (reglene krever at husstanden forsvinner i samme batch).
+// Krever nett (leser fra serveren). Lytterne må være stoppet først.
+async function deleteHousehold(hid) {
+  const c = await init();
+  const { fs, db } = c;
+  const fromServer = q => withTimeout(fs.getDocsFromServer(q), 20000, 'no-server');
+  // Varsel til de andre 0.10-telefonene (de lytter på den felles lista); dokumentet slettes selv sammen med resten.
+  await withTimeout(fs.setDoc(fs.doc(...hh(hid, 'lists', LIST_KEY)), { week: LIST_KEY, adjust: { [DELETING_MARK]: Date.now() } }, { merge: true }), 20000, 'no-server');
+  const refs = [];
+  for (const col of ['recipes', 'staples', 'days', 'lists', 'extras', 'settings', 'daypeople']) {
+    (await fromServer(fs.collection(...hh(hid, col)))).forEach(d => refs.push(d.ref));
+  }
+  const inv = await fromServer(fs.collection(...hh(hid, 'invite')));
+  const codes = new Set();
+  let listed = false;
+  try {
+    (await fromServer(fs.query(fs.collection(db, 'invites'), fs.where('hid', '==', hid)))).forEach(d => codes.add(d.id));
+    listed = true;
+  } catch (e) {
+    if (!(e && e.code === 'permission-denied')) throw e;
+  }
+  if (!listed) inv.forEach(d => { const k = d.data().code; if (k) codes.add(k); });   // eldre regler: bare den aktive koden
+  const mem = await fromServer(fs.collection(...hh(hid, 'members')));
+  for (let i = 0; i < refs.length; i += 450) {
+    const b = fs.writeBatch(db);
+    refs.slice(i, i + 450).forEach(r => b.delete(r));
+    await withTimeout(b.commit(), 30000, 'no-server');
+  }
+  const b = fs.writeBatch(db);
+  codes.forEach(k => b.delete(fs.doc(db, 'invites', k)));
+  inv.forEach(d => b.delete(d.ref));
+  mem.forEach(d => { if (d.id !== c.uid) b.delete(d.ref); });
+  b.delete(fs.doc(...hh(hid, 'private', 'join')));
+  b.delete(fs.doc(...hh(hid)));
+  b.delete(fs.doc(...hh(hid, 'members', c.uid)));
+  await withTimeout(b.commit(), 30000, 'no-server');
+  return true;
+}
 
 /* ---------- v0.9: invitasjonskoder (invites/{kode}) ---------- */
 // 8 tegn uten 0/O/1/I/L (31 tegn). 248 = 31 · 8, så forkastingen gir jevn fordeling.
@@ -335,7 +407,8 @@ async function getInvite(code) {
     const s = await withTimeout(c.fs.getDocFromServer(c.fs.doc(c.db, 'invites', code)), 15000, 'no-server');
     if (!s.exists()) { const e = new Error('invite-gone'); e.code = 'invite-gone'; throw e; }
     const d = s.data();
-    return { hid: d.hid, secret: d.secret, expires_at: d.expires_at && d.expires_at.toMillis ? d.expires_at.toMillis() : null };
+    return { hid: d.hid, secret: d.secret, expires_at: d.expires_at && d.expires_at.toMillis ? d.expires_at.toMillis() : null,
+      created_at: d.created_at && d.created_at.toMillis ? d.created_at.toMillis() : null };   // v0.10: laget før telefonen forlot?
   } catch (e) {
     if (e && e.code === 'permission-denied') { const g = new Error('invite-gone'); g.code = 'invite-gone'; throw g; }
     throw e;
@@ -343,5 +416,5 @@ async function getInvite(code) {
 }
 
 window.UkeshandelSync = { mode, init, randomCode, createHousehold, joinHousehold, isMember, subscribe, write: W, uid: () => ctx && ctx.uid,
-  inviteCode, createInvite, getInvite };
+  inviteCode, createInvite, getInvite, leaveHousehold, deleteHousehold, stillMember };
 window.dispatchEvent(new Event('ukeshandel-sync-ready'));

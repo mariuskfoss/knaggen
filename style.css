@@ -1,26 +1,29 @@
+/* Knaggen v0.10 – rolig palett, runde 2 (merkevare/v010-palett). Erstatter de to første :root-blokkene i app/style.css
+ * og linja «:root { --on-accent: #1f1606; }». Samme variabelnavn som før; nye er bare --danger-fill og --on-danger.
+ * Mørk er standard, lys følger systemet (som før). Kontrast: python3 kontrast.py. */
 :root {
-  /* v0.6 Knaggen: palett fra merkevare/merkevare.md. Mørk er standard (også uten prefers-color-scheme), lys følger systemet.
-   * Avledet (ikke i paletten): --brand-soft / --brand-soft-line = primær tonet inn i flata (mørk: som før),
-   * --inv-* = toasten bruker motsatt modus sine farger. */
   color-scheme: dark light;
-  --bg: #121617;            /* bakgrunn */
-  --card: #1c2224;          /* flate */
-  --card-2: #242b2e;        /* flate-2 */
-  --line: #333b3e;          /* linje: dekorative skiller */
-  --line-strong: #6e7774;   /* linje-sterk: kant på felt og knapper */
-  --ink: #eceeed;           /* tekst */
-  --muted: #a9b1ad;         /* tekst-dempet */
-  --brand: #7cc4a0;         /* primær (= suksess) */
-  --brand-ink: #0d1a13;     /* på-primær */
-  --brand-soft: #22372d;
-  --brand-soft-line: #35533f;
-  --accent: #e2b35e;        /* aksent (messing): flater og merker */
-  --accent-ink: #e2b35e;    /* aksent-tekst (= advarsel) */
-  --danger: #f4877a;        /* feil */
-  --inv-bg: #eceeed;
-  --inv-ink: #1b201e;
-  --inv-brand: #2a7350;
+  --bg: #1b2021;  /* bakgrunn */
+  --card: #202627;  /* flate */
+  --card-2: #283031;  /* flate-2 */
+  --line: #30383a;  /* linje: dekorative skiller */
+  --line-strong: #747d7a;  /* linje-sterk: kant på felt og knapper */
+  --ink: #d6dad8;  /* tekst */
+  --muted: #9da5a1;  /* tekst-dempet */
+  --brand: #86a898;  /* primær (= suksess), dempet salviegrønn */
+  --brand-ink: #10201a;  /* på-primær */
+  --brand-soft: #243029;  /* primær-myk (kort, merker) */
+  --brand-soft-line: #33433b;  /* kant på primær-myk */
+  --accent: #bfa47c;  /* aksent (messing): flater og merker */
+  --accent-ink: #bfa47c;  /* aksent-tekst (= advarsel) */
+  --danger: #d79a91;  /* feil OG farlige handlinger som tekst/kant (én rød) */
+  --danger-fill: #d79a91;  /* NY v0.10: fyll på rød knapp (Slett husstanden, Tøm uka) */
+  --on-danger: #2a100c;  /* NY v0.10: tekst på rød knapp */
+  --inv-bg: #d6dad8;
+  --inv-ink: #252a28;
+  --inv-brand: #3f6e5a;
   --inv-brand-ink: #ffffff;
+  --on-accent: #1f1606;  /* på-aksent (tekst på messingbrikke) */
   --shadow: 0 2px 12px rgba(0,0,0,.45);
   --overlay: rgba(0,0,0,.6);
   --radius: 12px;
@@ -29,28 +32,32 @@
 @media (prefers-color-scheme: light) {
   :root {
     color-scheme: light;
-    --bg: #f7f5f0;
-    --card: #ffffff;
-    --card-2: #eeeae2;
-    --line: #dad4c9;
-    --line-strong: #7d8481;
-    --ink: #1b201e;
-    --muted: #57605d;
-    --brand: #2a7350;
+    --bg: #f4f2ed;
+    --card: #fbfaf7;
+    --card-2: #ebe8e1;
+    --line: #dcd7cd;
+    --line-strong: #7f8683;
+    --ink: #252a28;
+    --muted: #596260;
+    --brand: #3f6e5a;
     --brand-ink: #ffffff;
-    --brand-soft: #e5eeea;
-    --brand-soft-line: #b4cec2;
-    --accent: #b07c22;      /* bare flater/merker i lys modus, aldri tekst */
-    --accent-ink: #875a10;
-    --danger: #b3261e;
-    --inv-bg: #1c2224;
-    --inv-ink: #eceeed;
-    --inv-brand: #7cc4a0;
-    --inv-brand-ink: #0d1a13;
-    --shadow: 0 2px 12px rgba(27,32,30,.22);
-    --overlay: rgba(27,32,30,.5);
+    --brand-soft: #e6ece8;
+    --brand-soft-line: #bccdc4;
+    --accent: #a5813f;  /* bare flater/merker i lys modus, aldri tekst */
+    --accent-ink: #7c5d28;
+    --danger: #a63d33;
+    --danger-fill: #a63d33;
+    --on-danger: #ffffff;
+    --inv-bg: #252b2c;
+    --inv-ink: #e3e6e4;
+    --inv-brand: #93bfa9;
+    --inv-brand-ink: #102018;
+    --on-accent: #1f1606;
+    --shadow: 0 2px 12px rgba(37,42,40,.18);
+    --overlay: rgba(37,42,40,.45);
   }
-}* { box-sizing: border-box; }
+}
+* { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 /* v0.6.3 (spec v0.6.3 punkt 1): fokus og scrollIntoView holder elementer over fanelinja og – mens en toast vises – over
  * toastbåndet (og en lagre-/byttelinje under det). Variablene settes på <html> av app.js. */
@@ -699,7 +706,7 @@ select option:disabled { color: var(--line-strong); }
 /* === v0.8 husstand (fra merkevare/husstand) === */
 /* Knaggen v0.8 – Husstandens størrelse (merkevare/husstand). Bare paletten fra merkevare.md (var(--…) fra app-style.css
  * + «på-aksent» #1F1606 fra paletten, som appen ikke har som variabel ennå). Ingen nye farger. */
-:root { --on-accent: #1f1606; }
+/* v0.10: --on-accent ligger nå i token-blokkene øverst (palett.css). */
 
 /* Felles: personteller (husstand, førstegangskort og «Flere til middag») */
 .hs-people { list-style: none; margin: 0; padding: 0; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
@@ -988,3 +995,48 @@ body.v9-intro .topbar { display: none; }   /* lockupen står stort på siden; é
 .intro-acts { display: grid; gap: 8px; margin-top: 4px; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); }
 .intro-acts .btn { min-height: 48px; justify-content: center; text-align: center; }
 .km-compact .km-t { padding-right: 44px; }
+
+/* ---------- v0.10 ---------- */
+/* Egen bekreftelsesdialog (Tøm uka, Slett husstanden, Forlat …) – samme ark som resten av appen */
+.ask-sheet .sheet-head h3 { font-size: 19px; }
+.ask-text { margin: 0; color: var(--ink); font-size: 15px; line-height: 1.45; }
+.ask-acts { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+.ask-acts .btn { min-width: 112px; }
+.ask-type { margin: 0; }
+.ask-choices { margin: 0; }
+.ask-choices .hs-row { width: 100%; text-align: left; background: none; border: 0; color: inherit; font: inherit; padding: 6px 0; display: flex; align-items: center; gap: 12px; cursor: pointer; }
+/* Fylt rød bekreft-knapp, bare på «Tøm uka» og «Slett husstanden» (merkevare/v010-palett/README) */
+.btn.danger-solid { background: var(--danger-fill); border-color: var(--danger-fill); color: var(--on-danger); }
+/* Fremgangsmåte under ingrediensene */
+.steps { margin: 14px 0 6px; }
+.steps-list { margin: 0 0 8px; padding-left: 22px; display: grid; gap: 6px; font-size: 15px; line-height: 1.45; }
+.steps-edit summary { cursor: pointer; color: var(--brand); font-weight: 600; font-size: 14px; min-height: 44px; display: flex; align-items: center; }
+.steps-edit textarea { width: 100%; font-family: inherit; font-size: 15px; min-height: 130px; }
+/* Felles handleliste: tittel uten ukevelger, «Vis N handlet» */
+.list-nav .week-title { text-align: left; }
+.done-row { margin: 10px 0 4px; text-align: center; }
+.done-row .linkbtn { color: var(--muted); font-size: 14px; }
+/* Husstand: Slett husstanden nederst */
+.hs-danger { margin: 18px 0 8px; }
+.hs-danger .btn { width: 100%; }
+
+/* Knaggen v0.10 runde 2 – stille kanter på knapper og felt (merkevare/v010-palett/kanter.css).
+ * Limes inn HELT NEDERST i app/style.css (etter alle andre regler; flere av selektorene settes også lenger nede i fila).
+ * Ingen nye variabler. Kanten beholdes som 1px gjennomsiktig, så ingenting flytter seg. WCAG 1.4.11 per komponent i README. */
+
+/* Knapper: teksten/ikonet identifiserer knappen. Stille fyll (flate-2) i stedet for strek. */
+.btn, .icon-btn, .tool-btn, .qbtn, .fv-new-qty .step, .ing-basis, .fv-chip, .fv-new-chips .chip, .fv-new .g, .code {
+  border-color: transparent; background: var(--card-2);
+}
+.btn.danger { border-color: transparent; }                       /* rød tekst på flate-2 (5,1:1 / 5,7:1) */
+.basis-strip, .fv-bridge, .uv-prev { border-color: transparent; }   /* grønn flate + tekst («Velg ›») */
+.hs-line, .fv-info, .fv-addnew, .uv-addnew { border-color: transparent; background: var(--card-2); }  /* radknapper med tekst og «›»/«+» */
+.fv-starter, .fv-starter.added { border-color: transparent; background: var(--brand-soft); }
+.seg { border-color: transparent; background: var(--card-2); }
+.seg button.on, .tool-btn[aria-expanded="true"] { border-color: transparent; box-shadow: inset 0 -3px 0 var(--brand); } /* valgt = strek, ikke bare farge */
+.sw { border-color: transparent; }                                /* knotten (linje-sterk) bærer formen, ≥ 3:1 mot sporet */
+
+/* Felt: stille fyll + én understrek i linje-sterk (≥ 3:1). Fokus gir fortsatt grønn ramme + 2px ring (uendret). */
+input[type=text], input[type=number], select, textarea, .code-in input, .fv-new-qty input {
+  border-color: transparent; border-bottom-color: var(--line-strong); border-radius: 10px 10px 3px 3px; background: var(--card-2);
+}
