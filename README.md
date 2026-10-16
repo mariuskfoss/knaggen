@@ -1,4 +1,4 @@
-# Knaggen (v0.11.0)
+# Knaggen (v0.12.0)
 
 *Arbeidsnavn: Ukeshandel – mapper, kode, lagringsnøkler og adressen (`…/handleliste/`) beholder det gamle navnet.*
 
@@ -24,7 +24,7 @@ Kan hostes som vanlige statiske filer (hvilken som helst HTTPS-statisk hosting).
 - Ikoner fra `../merkevare/endelig/` i `icons/`: favicon.ico (16/32/48) + favicon.svg (følger lys/mørk), apple-touch-icon (mørk), icon-192/512 og maskable-192/512 (mørk, som anbefalt i merkevare-README), lockup mørk/lys (`<picture>` med `prefers-color-scheme`).
 - Manifest: `display: "browser"` med vilje – et hjemskjermikon åpner fortsatt appen i nettleseren som i dag (samme lagring; på iOS ville `standalone` gitt egen lagring uten dataene). Ingen `apple-mobile-web-app-capable`. *(v0.9: endret til `standalone`, se v0.9.)*
 - Farger fra `../merkevare/merkevare.md`: mørk er standard, lys følger `prefers-color-scheme: light`; `theme-color` per modus (#1c2224 / #ffffff). Avledet: `--brand-soft`(-line) (primær tonet inn i flata; lys #e5eeea) og `--inv-*` (toasten bruker motsatt modus). Felt- og knappekanter bruker «linje-sterk» (≥ 3:1), plassholdere «tekst-dempet», felles fokusring i primær. Kontrast revideres av `tests/e2e-v06.js` (alle synlige tekst/bakgrunn-par og UI-kanter, begge moduser, AA).
-- Service worker: cachenavnet beholder prefikset `ukeshandel-` (nå `ukeshandel-0.11.0`); activate sletter alle andre `ukeshandel-*`, så en 0.4.6-telefon rydder `ukeshandel-0.4.6`. Manifest, favicon og lockup forhåndslagres (toppen ser lik ut uten nett).
+- Service worker: cachenavnet beholder prefikset `ukeshandel-` (nå `ukeshandel-0.12.0`); activate sletter alle andre `ukeshandel-*`, så en 0.4.6-telefon rydder `ukeshandel-0.4.6`. Manifest, favicon og lockup forhåndslagres (toppen ser lik ut uten nett).
 - Uendret: adresse, `localStorage`-/IndexedDB-nøkler, Firebase-oppsett og -data, `firestore.rules`.
 
 ## v0.6.1 (spec «v0.6.1 — Retting etter Trudes gjennomgang»)
@@ -186,3 +186,22 @@ Lokal modus: `localStorage['ukeshandel:v1']`, `version: 1` (uendret, så eldre s
 - **Informasjonsrunden:** Uke = én rad per dag (merke bare ved avvik), dagsark med velger / ⇅ Bytt / tid / Hvem spiser, Fyll og Tøm uka i ⋯-menyen (Fyll som egen knapp bare når uka er tom). Retter = rader med navn og tid. Handleliste: ingen «Mengder for …»-linje (avvik som merkelapp «Fredag +2» → husstanden), ＋ / sortering (ikon + ark) / Mer i overskriftsraden, ingen rett-linje under varene, bare boksen krysser av, hold inne = boble over fingeren med rett(er)/behov, liten «Angre» ved avkrysning, «Vis N handlet» nederst. Husstand = fem lukkede seksjoner med oppsummering; «Alle som har lenka …» bak «Les mer om lenka og koden».
 - **Firestore-reglene endres** (bakoverkompatibelt med 0.10.0): se `../firestore.rules.v011-READY.txt` og `../sjekkliste-v011.md`.
 - **Tester:** `tests/e2e-v011.js` (godkjenningskriteriene, inkl. en 0.10.0-telefon i samme husstand). Eldre suiter kjører med testkrokene `KNAGGEN_SEED_RECIPES` og `KNAGGEN_V010_LAYOUT` (v0.10-oppsettet av Uke, Retter, Handleliste og Husstand, kopiert uendret), se `tests/v09compat.js`.
+
+## v0.12 (spec «Backlog – Del oppskrift fra nettet til Knaggen»)
+- **Hent oppskrift fra nettet** (`#retter/hent`): Android deler fra Chrome via Web Share Target (`share_target` i manifestet, GET `./?title&text&url` → `#retter/hent`). iOS og andre enheter limer inn lenka. Arket (v9-ark + fv-chip) spør om dag (eller ingen) og «Legg i Retter» ja/nei. Resultatet vises i det vanlige skjemaet, så alt kan rettes før lagring. Nei + dag gir en engangsmiddag.
+- **Funksjonen** `functions/` → `hentOppskrift` (onCall, europe-west1, 128 MiB, kjører som `knaggen-fn-runtime@`):
+  - krever innlogget medlem av husstanden;
+  - grense 15/time og 40/døgn per husstand (`ratelimits/{hid}`, bare for serveren);
+  - bare http(s) på port 80/443;
+  - SSRF-vern: DNS slås opp og interne adresser avvises (privat, loopback, link-local/metadata, CGNAT, IPv6-lokal, NAT64/6to4). Tilkoblingen bruker den sjekkede IP-en, og sjekken gjøres på nytt ved hver omdirigering (maks 3);
+  - maks 2 MB og 8 s;
+  - leser schema.org Recipe fra JSON-LD (også `@graph`, lister, `HowToSection`), uten AI.
+  - Ingredienser blir `{name, qty, unit}` med appens enheter. Appen setter avdelingen.
+  - Uten strukturerte data lagres navn (og:title/title) og lenke, med en tydelig melding.
+- **Kilde**: valgfritt `source` (http/https, ≤ 2000 tegn) på retter og engangsmiddager. Vises som «Kilde: vert ↗».
+  - 0.11.0 godtas av reglene, men dropper feltet hvis den lagrer retten på nytt.
+- **Tester**:
+  - `tests/fn-v012.test.js`: modulene mot lokale testsider på 8767;
+  - `tests/e2e-v012.js`: krever `testkit/fn-emulator.sh` (Functions på 5181) og testsidene på 8766 (`tests/v012-pages.js`);
+  - `tests/shots-v012.js`.
+  - Testflagget `KNAGGEN_TEST_ALLOW=127.0.0.1:<port>` virker bare når `FUNCTIONS_EMULATOR=true`.

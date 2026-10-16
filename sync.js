@@ -101,6 +101,8 @@ function recipeDoc(r) {
   if (r.lib) o.lib = String(r.lib).slice(0, 100);
   if (r.variant) o.variant = String(r.variant).slice(0, 40);
   if (r.fromLib && r.fromLib.id) o.fromLib = { id: String(r.fromLib.id).slice(0, 100), variant: String(r.fromLib.variant || '').slice(0, 40) };
+  // v0.12: lenke til kildeoppskriften (bare http/https) – bare når satt
+  if (validSource(r.source)) o.source = r.source;
   return o;
 }
 function householdSettingsDoc(h) {
@@ -128,8 +130,9 @@ function stapleDoc(s, order) {
   return { name: s.name, qty: s.qty == null ? null : s.qty, unit: s.unit || '', aisle: s.aisle, active: s.active !== false,
     order: s.order != null ? s.order : (order != null ? order : Date.now()) };
 }
+function validSource(u) { return typeof u === 'string' && u.length <= 2000 && /^https?:\/\/[^\s]+$/i.test(u); }
 function oneoffDoc(o) {
-  return o ? { id: o.id, name: o.name, ingredients: recipeDoc(o).ingredients } : null;
+  return o ? Object.assign({ id: o.id, name: o.name, ingredients: recipeDoc(o).ingredients }, validSource(o.source) ? { source: o.source } : {}) : null;
 }
 // v0.4.4: kort signatur for en dag slik den ligger i Firestore (samme som app.js bruker for det telefonen viser).
 function daySig(d) {
@@ -140,7 +143,7 @@ function daySig(d) {
 function dayBody(date, d) {
   const o = d && d.oneoff && d.oneoff.name ? d.oneoff : null;
   return { date, recipe_id: o ? null : ((d && d.recipe_id) || null),
-    oneoff: o ? { id: o.id || null, name: o.name, ingredients: o.ingredients || [] } : null };
+    oneoff: o ? Object.assign({ id: o.id || null, name: o.name, ingredients: o.ingredients || [] }, validSource(o.source) ? { source: o.source } : {}) : null };
 }
 function extraDoc(x) {
   return { week: x.week, name: x.name, qty: x.qty == null ? null : x.qty, unit: x.unit || '', aisle: x.aisle, created: x.created || Date.now() };
@@ -426,6 +429,32 @@ async function getInvite(code) {
   }
 }
 
-window.UkeshandelSync = { mode, init, randomCode, createHousehold, joinHousehold, isMember, subscribe, write: W, uid: () => ctx && ctx.uid,
+// v0.12: «Hent oppskrift» – kaller Firebase-funksjonen hentOppskrift (europe-west1) med innloggingstokenet.
+// Samme protokoll som httpsCallable (POST {data}), uten å laste functions-SDK-en. Emulator: port 5181.
+const FN_REGION = 'europe-west1';
+const FN_EMULATOR_PORT = 5181;
+async function fetchRecipe(hid, url) {
+  const c = await init();
+  const pid = mode() === 'emulator' ? EMULATOR_CONFIG.projectId : prodConfig().projectId;
+  const endpoint = mode() === 'emulator' ? 'http://127.0.0.1:' + FN_EMULATOR_PORT + '/' + pid + '/' + FN_REGION + '/hentOppskrift'
+    : 'https://' + FN_REGION + '-' + pid + '.cloudfunctions.net/hentOppskrift';
+  const token = await c.auth.currentUser.getIdToken();
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 25000);
+  let res, body;
+  try {
+    res = await fetch(endpoint, { method: 'POST', signal: ctl.signal,
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ data: { hid, url } }) });
+    body = await res.json().catch(() => null);
+  } catch (e) { const er = new Error('no-server'); er.code = 'no-server'; throw er; } finally { clearTimeout(t); }
+  if (!body || body.error || !res.ok) {
+    const er = new Error((body && body.error && body.error.message) || 'fn-failed');
+    er.code = String((body && body.error && body.error.status) || 'fn-failed').toLowerCase().replace(/_/g, '-');   // INVALID_ARGUMENT → invalid-argument
+    throw er;
+  }
+  return body.result;
+}
+
+window.UkeshandelSync = { fetchRecipe, mode, init, randomCode, createHousehold, joinHousehold, isMember, subscribe, write: W, uid: () => ctx && ctx.uid,
   inviteCode, createInvite, getInvite, leaveHousehold, deleteHousehold, stillMember };
 window.dispatchEvent(new Event('ukeshandel-sync-ready'));

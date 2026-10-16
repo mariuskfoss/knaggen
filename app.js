@@ -1,4 +1,4 @@
-/* Knaggen (arbeidsnavn Ukeshandel) v0.11.0 — ukeplan for middager + handleliste, delt i husstanden via Firebase.
+/* Knaggen (arbeidsnavn Ukeshandel) v0.12.0 — ukeplan for middager + handleliste, delt i husstanden via Firebase.
  * Uten Firebase-oppsett (eller før husstand er opprettet) lagres alt lokalt i nettleseren som før.
  */
 (function () {
@@ -759,6 +759,7 @@
           if (d.lib) rr.lib = d.lib;
           if (d.variant) rr.variant = d.variant;
           if (d.fromLib && typeof d.fromLib === 'object') rr.fromLib = { id: String(d.fromLib.id || ''), variant: String(d.fromLib.variant || '') };
+          if (validSource(d.source)) rr.source = d.source;   // v0.12: kildeoppskrift
           return rr;
         });
         if (ui.bring && meta && !meta.fromCache) bringRecipesIn();   // v0.10: «Ta med rettene dine inn?» = Ja
@@ -1158,7 +1159,7 @@
   function applyDays() {
     var wp = {}, oo = {};
     lastDays.forEach(function (d) {
-      if (d.oneoff && d.oneoff.name) oo[d.date] = { id: d.oneoff.id, name: d.oneoff.name, ingredients: d.oneoff.ingredients || [] };
+      if (d.oneoff && d.oneoff.name) { oo[d.date] = { id: d.oneoff.id, name: d.oneoff.name, ingredients: d.oneoff.ingredients || [] }; if (validSource(d.oneoff.source)) oo[d.date].source = d.oneoff.source; }
       else wp[d.date] = d.recipe_id || null;
     });
     state.week_plan = wp; state.oneoffs = oo;
@@ -1446,6 +1447,7 @@
     if (tab === 'retter') {
       if (parts[1] === 'ny') renderRecipeForm(null);
       else if (parts[1] === 'finn') renderFinn();   // v0.11
+      else if (parts[1] === 'hent') { if (parts[2] === 'sjekk' && imp.result) renderHentForm(); else renderHent(); }   // v0.12
       else if (parts[1] === 'tilpass' && parts[2]) renderTilpass(decodeURIComponent(parts[2]), parts[3] || '');
       else if (parts[1] && recipeById(decodeURIComponent(parts[1]))) renderRecipeForm(decodeURIComponent(parts[1]));
       else renderRetter();
@@ -1707,9 +1709,11 @@
       h += '</ul>';
     } else if (!rs.length) {
       h += '<div class="v11-empty" data-testid="retter-tom"><p>Ingen retter ennå. Velg rettene familien liker fra en lang liste – ett trykk per rett.</p>' +
-        '<a class="btn primary" href="#retter/finn" data-testid="finn-retter">Finn retter</a></div>';
+        '<a class="btn primary" href="#retter/finn" data-testid="finn-retter">Finn retter</a>' +
+        '<a class="linkbtn" href="#retter/hent" data-testid="hent-inngang">Hent oppskrift fra nettet</a></div>';
     } else {
-      h += '<ul class="v11-rows" data-testid="finn-inngang"><li><a class="v11-row" href="#retter/finn" data-testid="finn-flere"><span class="t"><b>Finn flere retter</b></span><span class="go" aria-hidden="true">›</span></a></li></ul>';
+      h += '<ul class="v11-rows" data-testid="finn-inngang"><li><a class="v11-row" href="#retter/finn" data-testid="finn-flere"><span class="t"><b>Finn flere retter</b></span><span class="go" aria-hidden="true">›</span></a></li>' +
+        '<li><a class="v11-row" href="#retter/hent" data-testid="hent-inngang"><span class="t"><b>Hent oppskrift fra nettet</b><span class="s">Lim inn eller del en lenke</span></span><span class="go" aria-hidden="true">›</span></a></li></ul>';
       h += '<ul class="v11-rows cards" data-testid="retter-liste">';
       rs.forEach(function (r) {
         var vl = variantLabel(r);
@@ -1741,6 +1745,7 @@
     h += '<label class="field"><span>Merknad (valgfri)</span><input id="f-note" type="text" value="' + esc(r ? r.note || '' : '') + '" placeholder="F.eks. unger spiser dette"></label>';
     h += ingredientsFieldset(r ? r.ingredients : []);
     h += stepsHtml(r);   // v0.10: under ingrediensene
+    if (r) h += sourceHtml(r.source);   // v0.12: lenke til kildeoppskriften
     h += '<p class="form-error" id="form-error" hidden></p>';
     h += '<div class="form-actions"><button type="submit" class="btn primary" data-testid="lagre">Lagre</button>' +
       '<a class="btn" href="#retter">Avbryt</a>' +
@@ -1950,6 +1955,185 @@
       '<a class="btn" href="#retter/finn" data-testid="tilpass-avbryt">Avbryt</a></div>';
     h += '</form></section>';
     main.innerHTML = h;
+  }
+
+  /* ---------- v0.12: Hent oppskrift fra nettet (#retter/hent) ----------
+   * Android: «Del» fra Chrome til den installerte appen (Web Share Target i manifestet → ?url=/&text=).
+   * iOS og andre: lim inn lenka. Arket spør om dag (eller ingen) og «Legg i Retter» ja/nei, så henter Firebase-funksjonen
+   * hentOppskrift siden og leser schema.org Recipe (ingen AI). Resultatet vises i det vanlige skjemaet før lagring. */
+  var imp = { url: '', date: null, retter: true, busy: false, error: '', result: null, auto: false };
+  function validSource(u) { return typeof u === 'string' && u.length <= 2000 && /^https?:\/\/[^\s]+$/i.test(u); }
+  function findLink(text) {
+    var m = String(text || '').match(/https?:\/\/[^\s<>"]+/i);
+    if (!m) return '';
+    var u = m[0].replace(/[).,;:!?»”']+$/, '');
+    try { var p = new URL(u); return (p.protocol === 'http:' || p.protocol === 'https:') && u.length <= 2000 ? p.href : ''; } catch (e) { return ''; }
+  }
+  function hostOf(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return ''; } }
+  function sourceHtml(u) {
+    return validSource(u) ? '<p class="v12-src" data-testid="kilde">Kilde: <a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer nofollow" data-testid="kilde-lenke">' +
+      esc(hostOf(u)) + ' <span aria-hidden="true">↗</span></a></p>' : '';
+  }
+  function renderHent() {
+    var h = '<section class="page" data-page="hent">';
+    h += '<div class="page-head"><a class="back" href="#retter">‹ Retter</a><h2>Hent oppskrift</h2></div>';
+    h += '<form id="hent-form" novalidate>';
+    h += '<label class="field"><span>Lenke til oppskriften</span><input id="h-url" type="text" inputmode="url" enterkeyhint="go" autocomplete="off" autocapitalize="off" spellcheck="false" required value="' +
+      esc(imp.url) + '" placeholder="https://…" data-testid="hent-lenke" aria-describedby="h-url-hint"></label>';
+    h += '<p class="field-hint" id="h-url-hint">På Android: trykk Del i Chrome og velg Knaggen. På iPhone: kopier lenka i Safari og lim den inn her.</p>';
+    h += '<p class="form-error" id="form-error"' + (imp.error ? '' : ' hidden') + '>' + esc(imp.error) + '</p>';
+    h += '<div class="form-actions"><button type="submit" class="btn primary" data-testid="hent-videre">Fortsett</button><a class="btn" href="#retter">Avbryt</a></div>';
+    h += '</form></section>';
+    main.innerHTML = h;
+    imp.error = '';
+    if (imp.auto && imp.url) { imp.auto = false; openHentSheet(); }
+    else if (!imp.url) document.getElementById('h-url').focus();
+  }
+  function hentSheetHtml() {
+    var dates = weekDates(ui.weekOffset);
+    var chip = function (on, act, val, label, tid) { return '<button type="button" class="fv-chip' + (on ? ' on' : '') + '" aria-pressed="' + on + '" data-hent="' + act + '" data-val="' + esc(val) + '" data-testid="' + tid + '">' + esc(label) + '</button>'; };
+    var h = '<div class="sheet-head"><h3 id="hent-ark-h">Legg til oppskrift</h3><button type="button" class="icon-btn" data-hent="lukk" aria-label="Lukk">✕</button></div>';
+    h += '<p class="sub" data-testid="hent-vert">' + esc(hostOf(imp.url)) + '</p>';
+    h += '<p class="m v12-lab" id="hent-dag-l">Hvilken dag?</p><div class="fv-chips" role="group" aria-labelledby="hent-dag-l">' +
+      chip(!imp.date, 'dag', '', 'Ingen dag', 'hent-dag-ingen') +
+      dates.map(function (d, i) { return chip(imp.date === d, 'dag', d, cap(DAY_SHORT[i]) + ' ' + shortDate(d), 'hent-dag-' + i); }).join('') + '</div>';
+    h += '<p class="m v12-lab" id="hent-retter-l">Legg i Retter?</p><div class="fv-chips" role="group" aria-labelledby="hent-retter-l">' +
+      chip(imp.retter, 'retter', '1', 'Ja', 'hent-retter-ja') + chip(!imp.retter, 'retter', '0', 'Nei, bare denne gangen', 'hent-retter-nei') + '</div>';
+    var none = !imp.date && !imp.retter;
+    if (none) h += '<p class="m" data-testid="hent-velg">Velg en dag, eller legg den i Retter.</p>';
+    else if (!imp.retter) h += '<p class="m">Blir en engangsmiddag ' + esc(dayName(imp.date).toLowerCase()) + ' – lagres ikke under Retter.</p>';
+    if (imp.error) h += '<p class="form-error" role="alert" data-testid="hent-feil">' + esc(imp.error) + '</p>';
+    h += '<div class="ask-acts"><button type="button" class="btn" data-hent="' + (imp.error ? 'bare-lenke' : 'lukk') + '" data-testid="' + (imp.error ? 'hent-bare-lenke' : 'hent-avbryt') + '"' + (imp.busy ? ' disabled' : '') + '>' +
+      (imp.error ? 'Lagre bare lenka' : 'Avbryt') + '</button>' +
+      '<button type="button" class="btn primary" data-hent="hent" data-testid="hent-ok"' + (none || imp.busy ? ' disabled' : '') + (imp.busy ? ' aria-busy="true"' : '') + '>' +
+      (imp.busy ? 'Henter …' : imp.error ? 'Prøv igjen' : 'Hent oppskrift') + '</button></div>';
+    return h;
+  }
+  function updateHentSheet() {
+    var ov = document.getElementById('hent-ark');
+    if (!ov) return;
+    var sh = ov.querySelector('.sheet'), act = document.activeElement, key = act && act.getAttribute && (act.getAttribute('data-testid') || '');
+    sh.innerHTML = hentSheetHtml();
+    var back = key && sh.querySelector('[data-testid="' + key + '"]:not([disabled])');
+    var f = back || sh.querySelector('.btn.primary:not([disabled])') || sh.querySelector('.fv-chip');
+    if (f) try { f.focus({ preventScroll: true }); } catch (e) { f.focus(); }
+  }
+  function openHentSheet() {
+    imp.busy = false; imp.error = '';
+    var ov = openV9Sheet('hent-ark', hentSheetHtml());
+    ov.querySelector('.sheet').setAttribute('data-testid', 'hent-ark');
+    ov.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-hent]');
+      if (!b || b.disabled) return;
+      var a = b.getAttribute('data-hent');
+      if (a === 'lukk') { closeV9Sheet(true); return; }
+      if (a === 'dag') { imp.date = b.getAttribute('data-val') || null; updateHentSheet(); return; }
+      if (a === 'retter') { imp.retter = b.getAttribute('data-val') === '1'; updateHentSheet(); return; }
+      if (a === 'bare-lenke') { imp.result = { found: false, reason: imp.failReason || 'net', name: '', url: imp.url }; closeV9Sheet(false); location.hash = '#retter/hent/sjekk'; return; }
+      if (a === 'hent') runHent();
+    });
+    ov.addEventListener('keydown', function (e) { if (e.key === 'Tab') trapTab(ov, e); });
+  }
+  var HENT_ERR = {
+    'resource-exhausted': 'Dere har hentet mange oppskrifter den siste timen. Vent litt og prøv igjen.',
+    'permission-denied': 'Denne telefonen er ikke med i husstanden lenger.',
+    'invalid-argument': 'Lenka ser ikke riktig ut. Bruk en vanlig nettadresse (https://…).',
+    'no-server': 'Fikk ikke kontakt med Knaggen. Sjekk nettet og prøv igjen.'
+  };
+  function runHent() {
+    if (!hh || !Sync || !Sync.fetchRecipe) {   // uten husstand kan ikke funksjonen brukes (krever medlemskap)
+      imp.result = { found: false, reason: 'local', name: '', url: imp.url };
+      closeV9Sheet(false); location.hash = '#retter/hent/sjekk'; return;
+    }
+    imp.busy = true; imp.error = ''; updateHentSheet();
+    var url = imp.url;
+    Sync.fetchRecipe(hh.hid, url).then(function (res) {
+      imp.busy = false;
+      if (!document.getElementById('hent-ark') || imp.url !== url) return;
+      imp.result = res && typeof res === 'object' ? res : { found: false, reason: 'net' };
+      if (!validSource(imp.result.url)) imp.result.url = url;
+      closeV9Sheet(false); location.hash = '#retter/hent/sjekk';
+    }, function (e) {
+      imp.busy = false;
+      imp.failReason = e && e.code;
+      imp.error = HENT_ERR[e && e.code] || 'Noe gikk galt under hentingen. Prøv igjen, eller lagre bare lenka.';
+      updateHentSheet();
+    });
+  }
+  var HENT_WHY = { 'timeout': 'siden svarte ikke i tide', 'too-large': 'siden er for stor', 'blocked': 'adressen er ikke tillatt',
+    'redirects': 'for mange omdirigeringer', 'http': 'siden svarte med en feil', 'dns': 'fant ikke nettstedet', 'not-html': 'lenka er ikke en nettside',
+    'local': 'henting krever at Knaggen er delt med husstanden', 'resource-exhausted': 'for mange hentinger den siste timen', 'no-server': 'ingen kontakt med Knaggen' };
+  function renderHentForm() {
+    var res = imp.result || {}, ok = !!res.found, url = validSource(res.url) ? res.url : imp.url;
+    var r = { name: res.name || '', minutes: ok && res.minutes != null ? res.minutes : null, note: '',
+      ingredients: (ok && Array.isArray(res.ingredients) ? res.ingredients : []).map(function (i) {
+        var unit = UNITS.indexOf(i.unit) >= 0 ? i.unit : '', name = String(i.name || '').slice(0, 200);
+        var k = knownIngredient(name, true), a = itemAisle(name, (k && k.aisle) || guessAisle(name) || 'Tørrvare');
+        return { name: name, qty: typeof i.qty === 'number' ? i.qty : null, unit: unit, aisle: AISLES.indexOf(a) >= 0 ? a : 'Tørrvare' };
+      }).filter(function (i) { return i.name; }),
+      steps: ok && Array.isArray(res.steps) ? res.steps.slice(0, 12) : [] };
+    if (ok && res.passiveMinutes && PASSIVE_LABEL[res.passiveKind]) { r.passiveMinutes = res.passiveMinutes; r.passiveKind = res.passiveKind; }
+    var h = '<section class="page" data-page="rett-skjema" data-mode="hent">';
+    h += '<div class="page-head"><a class="back" href="#retter/hent">‹ Tilbake</a><h2>Sjekk oppskriften</h2></div>';
+    if (ok) h += '<p class="v11-note" data-testid="hent-funnet">Hentet fra ' + esc(hostOf(url)) + '. Mengder og enheter er tolket automatisk – sjekk dem før du lagrer.</p>';
+    else h += '<p class="v11-note v12-warn" role="status" data-testid="hent-ingen">' + (res.reason === 'no-recipe' || !res.reason
+      ? 'Fant ingen oppskrift med ingredienser på siden. Navnet og lenka lagres – legg inn ingrediensene selv om dere vil.'
+      : 'Klarte ikke å hente oppskriften (' + esc(HENT_WHY[res.reason] || 'ukjent feil') + '). Navnet og lenka kan lagres likevel.') + '</p>';
+    h += '<p class="hint" data-testid="hent-mal">' + (imp.retter ? 'Legges i Retter' : 'Engangsmiddag') + (imp.date ? ' · ' + esc(dayName(imp.date) + ' ' + shortDate(imp.date)) : ' · ingen dag') + '</p>';
+    h += '<form id="hent-lagre" novalidate>';
+    h += '<label class="field"><span>Navn</span><input id="f-name" type="text" required value="' + esc(r.name) + '" placeholder="F.eks. Fiskegrateng"></label>';
+    if (imp.retter) {
+      h += timeFieldsHtml(r);
+      h += '<label class="field"><span>Merknad (valgfri)</span><input id="f-note" type="text" value="" placeholder="F.eks. unger spiser dette"></label>';
+    }
+    h += ingredientsFieldset(r.ingredients);
+    if (imp.retter) h += stepsHtml(r);
+    h += sourceHtml(url);
+    h += '<p class="form-error" id="form-error" hidden></p>';
+    h += '<div class="form-actions"><button type="submit" class="btn primary" data-testid="lagre">' + (imp.retter ? 'Legg til i våre retter' : 'Lagre engangsmiddag') + '</button>' +
+      '<a class="btn" href="#retter" data-testid="hent-avbryt-skjema">Avbryt</a></div>';
+    h += '</form></section>';
+    main.innerHTML = h;
+    imp.source = url;
+    if (!r.name) document.getElementById('f-name').focus();
+  }
+  function saveHentForm(form) {
+    var name = document.getElementById('f-name').value.trim();
+    if (!name) return formError('Retten må ha et navn.', 'f-name');
+    var ingredients = readIngredients(form), date = imp.date, src = validSource(imp.source) ? imp.source : null, msg;
+    if (imp.retter) {
+      var minutesRaw = document.getElementById('f-minutes').value.trim();
+      var nr = { id: uid('r'), name: name, minutes: minutesRaw === '' ? null : Math.max(0, Math.round(Number(minutesRaw.replace(',', '.')) || 0)),
+        note: document.getElementById('f-note').value.trim(), ingredients: ingredients };
+      readTimeFields(nr);
+      var stEl = document.getElementById('f-steps'), steps = stEl ? parseSteps(stEl.value) : [];
+      if (steps.length) nr.steps = steps;
+      if (src) nr.source = src;
+      ops.saveRecipe(nr, true);
+      if (date) ops.setDays([{ date: date, recipe_id: nr.id, oneoff: null }]);
+      msg = '«' + name + '» er lagt til i våre retter' + (date ? ' og på ' + dayName(date).toLowerCase() : '');
+    } else {
+      var o = { id: uid('o'), name: name, ingredients: ingredients };
+      if (src) o.source = src;
+      ops.setDays([{ date: date, recipe_id: null, oneoff: o }]);
+      msg = 'Engangsmiddag lagret på ' + dayName(date).toLowerCase();
+    }
+    imp = { url: '', date: null, retter: true, busy: false, error: '', result: null, auto: false };
+    toast(msg);
+    location.hash = date ? '#uke' : '#retter';
+  }
+  function submitHentLink() {
+    var raw = document.getElementById('h-url').value.trim();
+    var u = findLink(raw);
+    if (!u) {
+      if (/^[a-z][a-z0-9+.-]*:/i.test(raw) && !/^https?:/i.test(raw)) return formError('Bare vanlige nettadresser (http:// eller https://) kan hentes.', 'h-url');
+      if (raw && !/\s/.test(raw) && /\.[a-z]{2,}/i.test(raw)) u = findLink('https://' + raw);
+      if (!u) return formError('Lim inn en lenke til en oppskrift, f.eks. https://…', 'h-url');
+    }
+    if (u !== imp.url) { imp.date = null; imp.retter = true; }
+    imp.url = u; imp.result = null;
+    document.getElementById('h-url').value = u;
+    openHentSheet();
   }
 
   /* ---------- Uke ---------- */
@@ -2292,6 +2476,7 @@
     h += '<form id="oneoff-form" data-date="' + date + '" novalidate>';
     h += '<label class="field"><span>Navn</span><input id="o-name" type="text" required value="' + esc(o ? o.name : '') + '" placeholder="F.eks. Gjester: fårikål"></label>';
     h += ingredientsFieldset(o ? o.ingredients : []);
+    if (o) h += sourceHtml(o.source);   // v0.12
     h += '<p class="form-error" id="form-error" hidden></p>';
     h += '<div class="form-actions"><button type="submit" class="btn primary" data-testid="lagre-engang">Lagre</button>' +
       '<a class="btn" href="#uke">Avbryt</a>' +
@@ -2306,7 +2491,9 @@
     if (!name) return formError('Engangsmiddagen må ha et navn.', 'o-name');
     var date = form.getAttribute('data-date');
     var prev = state.oneoffs[date];
-    ops.setDays([{ date: date, recipe_id: null, oneoff: { id: prev ? prev.id : uid('o'), name: name, ingredients: readIngredients(form) } }]);
+    var no = { id: prev ? prev.id : uid('o'), name: name, ingredients: readIngredients(form) };
+    if (prev && validSource(prev.source)) no.source = prev.source;   // v0.12: kilden følger med
+    ops.setDays([{ date: date, recipe_id: null, oneoff: no }]);
     toast('Engangsmiddag lagret');
     location.hash = '#uke';
   }
@@ -5615,6 +5802,8 @@
       else { connect.error = 'Finner ingen invitasjon med den koden. Sjekk tegnene.'; renderConnect(connectMode()); }
       return;
     }
+    if (id === 'hent-form') return submitHentLink();   // v0.12
+    if (id === 'hent-lagre') return saveHentForm(e.target);
     if (id === 'recipe-form') saveRecipeForm(e.target);
     else if (id === 'oneoff-form') saveOneoffForm(e.target);
     else if (id === 'item-add') {
@@ -5680,6 +5869,15 @@
   (function () {
     var q = /[?&]inn=([A-Za-z0-9\-]{8,12})/.exec(location.search || '');
     if (q && !NEW_HOME) history.replaceState(null, '', location.pathname + '#inn=' + q[1]);
+  })();
+  // v0.12: Web Share Target (Android): «Del» fra Chrome åpner ./?title=…&text=…&url=…  → #retter/hent med lenka.
+  (function () {
+    if (NEW_HOME || !/[?&](url|text|title)=/.test(location.search || '')) return;
+    var q = new URLSearchParams(location.search);
+    var u = findLink(q.get('url')) || findLink(q.get('text')) || findLink(q.get('title'));
+    history.replaceState(null, '', location.pathname + '#retter/hent');
+    if (u) { imp.url = u; imp.auto = true; }
+    else imp.error = 'Fant ingen lenke i det som ble delt. Lim inn lenka til oppskriften.';
   })();
   loadLocal();
   if (isStandalone()) { var ist = instState(); if (!ist.done) { ist.done = true; instSave(ist); } }

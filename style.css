@@ -1188,3 +1188,12 @@ input[type=text], input[type=number], select, textarea, .code-in input, .fv-new-
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 /* v0.11: (i) får 44 × 44 trykkflate (merkevare/v011 «Trykkflater: minst 44 px for … (i)») uten å gjøre raden høyere */
 .v11-i { height: 44px; margin: -12px 0 -12px -8px; }
+
+/* v0.12: Hent oppskrift fra nettet – bare eksisterende komponenter (v9-ark, fv-chip, v11-note) + to små tillegg */
+.v12-lab { margin: 12px 0 6px; font-weight: 600; color: var(--ink); }
+#hent-ark .fv-chips { margin-bottom: 4px; }
+#hent-ark .ask-acts { margin-top: 16px; }
+.v12-warn { color: var(--ink); background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 10px 12px; margin: 0 0 10px; }
+.v12-src { margin: 12px 0; font-size: 14px; color: var(--muted); }
+.v12-src a { color: var(--ink); font-weight: 600; display: inline-flex; align-items: center; min-height: 44px; }
+.v11-empty .linkbtn { min-height: 44px; }
