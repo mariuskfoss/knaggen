@@ -1,4 +1,4 @@
-/* Knaggen (arbeidsnavn Ukeshandel) v0.12.0 — ukeplan for middager + handleliste, delt i husstanden via Firebase.
+/* Knaggen (arbeidsnavn Ukeshandel) v0.12.1 — ukeplan for middager + handleliste, delt i husstanden via Firebase.
  * Uten Firebase-oppsett (eller før husstand er opprettet) lagres alt lokalt i nettleseren som før.
  */
 (function () {
@@ -532,7 +532,10 @@
     // v0.7.1 (Trude): flere vanlige gjettebommer
     ['Kjøl', /^(skinke|kokt skinke|skinke i skiver|kaviar|macks kaviar|påleggskaviar|leverpostei|servelat|salami|bacon)$/],
     ['Frys', /^(rundstykker|rundstykke|baguetter|ciabatta)$/],   // v0.7.1: pizzabunn forblir Tørrvare (v0.6.3)
-    ['Hus', /^(matpakkepapir|matpakke papir|smørbrødpapir|smørbrødpapir|vokspapir)$/]
+    ['Hus', /^(matpakkepapir|matpakke papir|smørbrødpapir|smørbrødpapir|vokspapir)$/],
+    // v0.12.1: vanlige oppskriftsvarer fra «Hent oppskrift» (friske urter, egg, kjøtt, frukt/grønt) – sist, så alt over vinner
+    ['Frukt/grønt', /^(estragon|kjørvel|koriander|mynte|gressløk|rosmarin|salvie|timian|oregano|basilikum|persille|dill|sitron|sitroner|lime|limer|ingefær|chili|rød chili|sjalottløk|vårløk|purre|hvitløk|bakepotet|bakepoteter|potet|poteter|sopp|sjampinjong|champignon|squash|aubergine|brokkoli|blomkål|spinat|ruccola|selleri|stangselleri|asparges|aspargesbønner|avokado|fennikel|rødbete|rødbeter|søtpotet|mais|kål|hodekål|rosenkål)$/],
+    ['Kjøl', /^(egg|eggeplomme|eggeplommer|eggehvite|eggehviter|tomahawk|entrecote|indrefilet|ytrefilet|biff|kjøttdeig|karbonadedeig|kyllingfilet|kylling|kyllinglår|svinekotelett|koteletter|svinefilet|lammekoteletter|laks|laksefilet|torsk|torskefilet|reker|pølser|kjøttpølse|chorizo|pancetta)$/]
   ];
   function guessAisle(name) {
     var n = normName(name);
@@ -2063,15 +2066,28 @@
   var HENT_WHY = { 'timeout': 'siden svarte ikke i tide', 'too-large': 'siden er for stor', 'blocked': 'adressen er ikke tillatt',
     'redirects': 'for mange omdirigeringer', 'http': 'siden svarte med en feil', 'dns': 'fant ikke nettstedet', 'not-html': 'lenka er ikke en nettside',
     'local': 'henting krever at Knaggen er delt med husstanden', 'resource-exhausted': 'for mange hentinger den siste timen', 'no-server': 'ingen kontakt med Knaggen' };
+  // v0.12.1: siste forsøk for hentede ingredienser – siste ord («nøytral olje» → olje, «tørr hvitvin» → hvitvin). Ellers Tørrvare
+  // (appen har ingen «Annet»-avdeling; ukjente avdelinger vises som Tørrvare også i eldre versjoner).
+  function importAisleFallback(name) {
+    var w = normName(name).split(' ');
+    if (w.length < 2) return null;
+    var last = w[w.length - 1], k = knownIngredient(last, true);
+    return (k && k.aisle) || guessAisle(last) || null;
+  }
   function renderHentForm() {
     var res = imp.result || {}, ok = !!res.found, url = validSource(res.url) ? res.url : imp.url;
     var r = { name: res.name || '', minutes: ok && res.minutes != null ? res.minutes : null, note: '',
       ingredients: (ok && Array.isArray(res.ingredients) ? res.ingredients : []).map(function (i) {
         var unit = UNITS.indexOf(i.unit) >= 0 ? i.unit : '', name = String(i.name || '').slice(0, 200);
-        var k = knownIngredient(name, true), a = itemAisle(name, (k && k.aisle) || guessAisle(name) || 'Tørrvare');
+        var k = knownIngredient(name, true), a = itemAisle(name, (k && k.aisle) || guessAisle(name) || importAisleFallback(name) || 'Tørrvare');
         return { name: name, qty: typeof i.qty === 'number' ? i.qty : null, unit: unit, aisle: AISLES.indexOf(a) >= 0 ? a : 'Tørrvare' };
       }).filter(function (i) { return i.name; }),
       steps: ok && Array.isArray(res.steps) ? res.steps.slice(0, 12) : [] };
+    // v0.12.1: antall personer – forhåndsutfylt med oppskriftens porsjoner (recipeYield), ellers husstanden (som v0.8-skaleringen).
+    var yld = ok && typeof res.servings === 'number' && res.servings >= 1 && res.servings <= 50 ? Math.round(res.servings) : null;
+    var defN = hentDefaultPeople();
+    imp.base = { yield: yld, from: yld || defN, ings: r.ingredients.map(function (i) { return Object.assign({}, i); }) };
+    imp.people = yld || defN;
     if (ok && res.passiveMinutes && PASSIVE_LABEL[res.passiveKind]) { r.passiveMinutes = res.passiveMinutes; r.passiveKind = res.passiveKind; }
     var h = '<section class="page" data-page="rett-skjema" data-mode="hent">';
     h += '<div class="page-head"><a class="back" href="#retter/hent">‹ Tilbake</a><h2>Sjekk oppskriften</h2></div>';
@@ -2086,6 +2102,9 @@
       h += timeFieldsHtml(r);
       h += '<label class="field"><span>Merknad (valgfri)</span><input id="f-note" type="text" value="" placeholder="F.eks. unger spiser dette"></label>';
     }
+    h += '<label class="field"><span>Antall personer</span><input id="f-people" type="number" inputmode="numeric" min="1" max="50" step="1" value="' + imp.people + '" data-testid="hent-personer"></label>';
+    h += '<p class="field-hint" data-testid="hent-personer-hint">' + (yld ? 'Oppskriften er for ' + yld + ' ' + (yld === 1 ? 'porsjon' : 'porsjoner') + '. Endrer du tallet, regnes mengdene om.'
+      : 'Fant ikke antall porsjoner i oppskriften – satt til ' + (hsPeople() ? 'husstanden' : 'standarden') + ' (' + defN + '). Endrer du tallet, regnes mengdene om.') + '</p>';
     h += ingredientsFieldset(r.ingredients);
     if (imp.retter) h += stepsHtml(r);
     h += sourceHtml(url);
@@ -2095,7 +2114,33 @@
     h += '</form></section>';
     main.innerHTML = h;
     imp.source = url;
+    var rowsEl = main.querySelectorAll('.ing-row');
+    for (var ri = 0; ri < rowsEl.length && ri < imp.base.ings.length; ri++) rowsEl[ri].querySelector('.ing-qty').setAttribute('data-auto', rowsEl[ri].querySelector('.ing-qty').value);
+    document.getElementById('f-people').addEventListener('input', function () { applyHentPeople(this.value); });
     if (!r.name) document.getElementById('f-name').focus();
+  }
+  // v0.12.1: husstandens porsjoner (samme vekting som v0.8: voksen 1, barn ¾, småbarn ½), avrundet; uten husstand 4.
+  function hentDefaultPeople() {
+    var p = hsPeople();
+    var n = p ? Math.round(SC.porsjoner(p)) : SC.BASE;
+    return Math.max(1, Math.min(50, n || SC.BASE));
+  }
+  // Faktor = personer / oppskriftens porsjoner (eksakt: v0.8-gulvet ½ og ¼-avrundingen er laget for retter for 4 og ville gitt
+  // f.eks. 3 porsjoner når 2 av 6 er valgt). Hver mengde skaleres med samme regel som handlelista (scaleQty: telleenheter rundes).
+  function hentFactor(n) {
+    return n / imp.base.from;
+  }
+  function applyHentPeople(v) {
+    var n = Math.round(Number(String(v).replace(',', '.')));
+    if (!imp.base || !(n >= 1 && n <= 50)) return;
+    imp.people = n;
+    var f = hentFactor(n), rows = document.querySelectorAll('#ing-list .ing-row');
+    for (var i = 0; i < rows.length && i < imp.base.ings.length; i++) {
+      var q = rows[i].querySelector('.ing-qty'), b = imp.base.ings[i];
+      if (q.value !== q.getAttribute('data-auto')) continue;   // brukeren har rettet mengden selv – la den stå
+      var nv = formatQty(b.qty == null ? null : scaleQty(b.qty, b.unit, f, normName(b.name)));
+      q.value = nv; q.setAttribute('data-auto', nv);
+    }
   }
   function saveHentForm(form) {
     var name = document.getElementById('f-name').value.trim();
@@ -2109,6 +2154,7 @@
       var stEl = document.getElementById('f-steps'), steps = stEl ? parseSteps(stEl.value) : [];
       if (steps.length) nr.steps = steps;
       if (src) nr.source = src;
+      if (imp.people) nr.servings = imp.people;   // v0.12.1: mengdene gjelder for så mange (egen rett: skaleres ikke videre med husstanden, som før)
       ops.saveRecipe(nr, true);
       if (date) ops.setDays([{ date: date, recipe_id: nr.id, oneoff: null }]);
       msg = '«' + name + '» er lagt til i våre retter' + (date ? ' og på ' + dayName(date).toLowerCase() : '');

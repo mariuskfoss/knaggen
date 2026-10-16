@@ -1,4 +1,4 @@
-# Knaggen (v0.12.0)
+# Knaggen (v0.12.1)
 
 *Arbeidsnavn: Ukeshandel – mapper, kode, lagringsnøkler og adressen (`…/handleliste/`) beholder det gamle navnet.*
 
@@ -24,7 +24,7 @@ Kan hostes som vanlige statiske filer (hvilken som helst HTTPS-statisk hosting).
 - Ikoner fra `../merkevare/endelig/` i `icons/`: favicon.ico (16/32/48) + favicon.svg (følger lys/mørk), apple-touch-icon (mørk), icon-192/512 og maskable-192/512 (mørk, som anbefalt i merkevare-README), lockup mørk/lys (`<picture>` med `prefers-color-scheme`).
 - Manifest: `display: "browser"` med vilje – et hjemskjermikon åpner fortsatt appen i nettleseren som i dag (samme lagring; på iOS ville `standalone` gitt egen lagring uten dataene). Ingen `apple-mobile-web-app-capable`. *(v0.9: endret til `standalone`, se v0.9.)*
 - Farger fra `../merkevare/merkevare.md`: mørk er standard, lys følger `prefers-color-scheme: light`; `theme-color` per modus (#1c2224 / #ffffff). Avledet: `--brand-soft`(-line) (primær tonet inn i flata; lys #e5eeea) og `--inv-*` (toasten bruker motsatt modus). Felt- og knappekanter bruker «linje-sterk» (≥ 3:1), plassholdere «tekst-dempet», felles fokusring i primær. Kontrast revideres av `tests/e2e-v06.js` (alle synlige tekst/bakgrunn-par og UI-kanter, begge moduser, AA).
-- Service worker: cachenavnet beholder prefikset `ukeshandel-` (nå `ukeshandel-0.12.0`); activate sletter alle andre `ukeshandel-*`, så en 0.4.6-telefon rydder `ukeshandel-0.4.6`. Manifest, favicon og lockup forhåndslagres (toppen ser lik ut uten nett).
+- Service worker: cachenavnet beholder prefikset `ukeshandel-` (nå `ukeshandel-0.12.1`); activate sletter alle andre `ukeshandel-*`, så en 0.4.6-telefon rydder `ukeshandel-0.4.6`. Manifest, favicon og lockup forhåndslagres (toppen ser lik ut uten nett).
 - Uendret: adresse, `localStorage`-/IndexedDB-nøkler, Firebase-oppsett og -data, `firestore.rules`.
 
 ## v0.6.1 (spec «v0.6.1 — Retting etter Trudes gjennomgang»)
@@ -187,9 +187,13 @@ Lokal modus: `localStorage['ukeshandel:v1']`, `version: 1` (uendret, så eldre s
 - **Firestore-reglene endres** (bakoverkompatibelt med 0.10.0): se `../firestore.rules.v011-READY.txt` og `../sjekkliste-v011.md`.
 - **Tester:** `tests/e2e-v011.js` (godkjenningskriteriene, inkl. en 0.10.0-telefon i samme husstand). Eldre suiter kjører med testkrokene `KNAGGEN_SEED_RECIPES` og `KNAGGEN_V010_LAYOUT` (v0.10-oppsettet av Uke, Retter, Handleliste og Husstand, kopiert uendret), se `tests/v09compat.js`.
 
+## v0.12.1 (hurtigfiks)
+- Ingredienstolking: desimalkomma (0,5 / 1,5 dl), tekst før mengden («saft av 0,5 stk. sitron» → Sitron 0,5 stk; teksten droppes, formatet har ikke notat), «stk.»/«ss.» med punktum, «båter hvitløk» → fedd, «kvister» → stk, tilberedningsord foran navnet (hakket, frisk, kvernet …) fjernes.
+- Avdeling for hentede ingredienser: samme gjetting som ellers (egne data → bibliotek → gjettelista), utvidet med friske urter/frukt og grønt og egg/kjøtt, og et siste forsøk med siste ord. Ukjent blir fortsatt Tørrvare (appen har ingen «Annet»).
+
 ## v0.12 (spec «Backlog – Del oppskrift fra nettet til Knaggen»)
 - **Hent oppskrift fra nettet** (`#retter/hent`): Android deler fra Chrome via Web Share Target (`share_target` i manifestet, GET `./?title&text&url` → `#retter/hent`). iOS og andre enheter limer inn lenka. Arket (v9-ark + fv-chip) spør om dag (eller ingen) og «Legg i Retter» ja/nei. Resultatet vises i det vanlige skjemaet, så alt kan rettes før lagring. Nei + dag gir en engangsmiddag.
-- **Funksjonen** `functions/` → `hentOppskrift` (onCall, europe-west1, 128 MiB, kjører som `knaggen-fn-runtime@`):
+- **Funksjonen** `functions/` → `hentOppskrift` (onCall, europe-west1, 256 MiB (v0.12.1: 128 MiB krasjet), kjører som `knaggen-fn-runtime@`):
   - krever innlogget medlem av husstanden;
   - grense 15/time og 40/døgn per husstand (`ratelimits/{hid}`, bare for serveren);
   - bare http(s) på port 80/443;
