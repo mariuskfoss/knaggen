@@ -1,4 +1,4 @@
-/* Knaggen (arbeidsnavn Ukeshandel) v0.12.1 — ukeplan for middager + handleliste, delt i husstanden via Firebase.
+/* Knaggen (arbeidsnavn Ukeshandel) v0.13.0 — ukeplan for middager + handleliste, delt i husstanden via Firebase.
  * Uten Firebase-oppsett (eller før husstand er opprettet) lagres alt lokalt i nettleseren som før.
  */
 (function () {
@@ -3535,7 +3535,9 @@
       return '<li><button type="button" class="menu-row" data-action="' + action + '" data-testid="' + testid + '"' + (extra || '') + '>' +
         '<span>' + esc(label) + '</span>' + (meta ? '<span class="mr-meta"' + (testid === 'fra-faste' ? ' data-testid="faste-antall"' : '') + '>' + esc(meta) + '</span>' : '') + '</button></li>';
     }
+    var nOda = built.items.filter(isOpen).length;   // v0.13: bare når noe ikke er krysset av
     var rows = row('copy-text', 'kopier', 'Kopier som tekst', '') +
+      (nOda ? row('oda-open', 'oda-inngang', 'Handle på Oda', nOda + (nOda === 1 ? ' vare' : ' varer'), ' aria-haspopup="dialog"') : '') +
       row('fast-open', 'fra-faste', 'Faste varer på lista', nFast ? nFast + ' på lista' : 'ingen valgt', ' aria-haspopup="dialog"') +
       row('faste-page', 'alle-faste', 'Alle faste varer', state.staples.length ? state.staples.length + (state.staples.length === 1 ? ' vare' : ' varer') : 'ingen ennå') +
       (bs.length ? row('basis-open', 'basis-meny', 'Basisvarer', und ? und + ' ikke valgt' : added + ' av ' + bs.length + ' lagt til', ' aria-haspopup="dialog"') : '') +
@@ -3557,6 +3559,7 @@
       var a = b.getAttribute('data-action');
       closeListMenu(a === 'copy-text' || a === 'uncheck-all');
       if (a === 'copy-text') copyList();
+      else if (a === 'oda-open') openOda();
       else if (a === 'fast-open') openFastDialog();
       else if (a === 'faste-page') { location.hash = '#liste/faste'; }
       else if (a === 'basis-open') openBasisDialog();
@@ -3579,6 +3582,175 @@
       if (restoreFocus) try { mer.focus({ preventScroll: true }); } catch (e) { mer.focus(); }
     }
   }
+  // v0.13 «Handle på Oda»: én vare om gangen, en vanlig søkelenke til Oda (prep.js), Neste krysser av (med Angre),
+  // Hopp over lar varen stå. Posisjonen lagres per telefon (localStorage): id-en til varen og lista over hoppede.
+  // Ingenting nytt i Firestore – avkryssingen er den vanlige.
+  var ODA_KEY = 'knaggen:oda', ODA_TTL = 3 * 86400000;
+  var P = window.KnaggenPrep;
+  function odaLoad() { try { var s = JSON.parse(localStorage.getItem(ODA_KEY) || 'null'); return s && typeof s === 'object' ? s : null; } catch (e) { return null; } }
+  function odaSave(s) { s.at = Date.now(); try { localStorage.setItem(ODA_KEY, JSON.stringify(s)); } catch (e) { /* privat modus */ } }
+  function odaSortKey(i) { return ('0' + AISLES.indexOf(i.aisle)).slice(-2) + '|' + i.name.toLocaleLowerCase('nb'); }
+  function odaAll() {
+    return buildList().items.filter(function (i) { return !(i.qty === 0); })
+      .sort(function (x, y) { return AISLES.indexOf(x.aisle) - AISLES.indexOf(y.aisle) || x.name.localeCompare(y.name, 'nb'); });
+  }
+  function odaOpenCount() { return odaAll().filter(isOpen).length; }
+  // Rekkefølgen i arket: ukryssede varer + det denne telefonen har lagt i kurven (andres avkryssinger hoppes over).
+  // Gjennomgang av hoppede: bare de som ble hoppet over.
+  function odaSeq(s) {
+    var mine = s.ticked || [];
+    return odaAll().filter(function (i) {
+      if (s.review && (s.review.indexOf(i.key) < 0)) return false;
+      return isOpen(i) || (i.checked && mine.indexOf(i.key) >= 0);
+    });
+  }
+  function odaFresh() { return { cur: null, curSort: '', ticked: [], skipped: [], review: null, open: true, fresh: true }; }
+  function odaPlace(s, seq) {
+    // finner varen igjen; er den borte (eller krysset av av andre), neste ukryssede vare i rekkefølgen
+    if (s.done) return -1;
+    for (var k = 0; k < seq.length; k++) if (seq[k].key === s.cur) return k;
+    for (k = 0; k < seq.length; k++) if (isOpen(seq[k]) && (s.skipped.indexOf(seq[k].key) < 0 || s.review) && odaSortKey(seq[k]) >= (s.curSort || '')) return k;
+    for (k = 0; k < seq.length; k++) if (isOpen(seq[k]) && (s.skipped.indexOf(seq[k].key) < 0 || s.review)) return k;
+    return -1;
+  }
+  function openOda() {
+    var s = odaLoad();
+    var stale = !s || s.done || !s.at || Date.now() - s.at > ODA_TTL;
+    if (!stale) {
+      var seq = odaSeq(s), k = odaPlace(s, seq);
+      if (k < 0) stale = true;
+      else if (k > 0 || (s.ticked || []).length || (s.skipped || []).length) { s.open = true; odaSave(s); return odaRender(s, 'resume'); }
+    }
+    if (stale) s = odaFresh();
+    s.open = true; s.done = false; odaSave(s); odaRender(s);
+  }
+  function odaRestart() { var s = odaFresh(); odaSave(s); odaRender(s); }   // hoppede tas med igjen, avkryssede hoppes over
+  function odaClose() {
+    var s = odaLoad(); if (s) { s.open = false; odaSave(s); }
+    var d = document.getElementById('oda-sheet'); if (d) d.parentNode.removeChild(d);
+    document.body.classList.remove('oda-open');
+    var mer = main.querySelector('[data-action="list-menu"]');
+    if (mer) try { mer.focus({ preventScroll: true }); } catch (e) { mer.focus(); }
+  }
+  // Tegnes på nytt ved hver synk (renderListSection): «3 av N» regnes på nytt.
+  function odaSync() {
+    var d = document.getElementById('oda-sheet');
+    var s = odaLoad();
+    if (!s || !s.open) { if (d) { d.parentNode.removeChild(d); document.body.classList.remove('oda-open'); } return; }
+    if (d && d.getAttribute('data-mode') === 'resume') return;
+    odaRender(s, d ? d.getAttribute('data-mode') : null, true);
+  }
+  function odaTick(it, on) {
+    var m = {};
+    m[it.key] = on ? tickValue(it) : false;
+    var wchecks = state.checks[it.week || LIST_KEY] || {};
+    if (on) (it.legacyKeys || []).forEach(function (x) { if (wchecks[x.k]) m[x.k] = false; });
+    ops.setChecks(it.week || LIST_KEY, m);
+  }
+  function odaRender(s, mode, keepFocus) {
+    var d = document.getElementById('oda-sheet');
+    var hadFocus = d && d.contains(document.activeElement);
+    if (!d) {
+      d = document.createElement('div');
+      d.id = 'oda-sheet';
+      d.addEventListener('click', odaClick);
+      d.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') { e.preventDefault(); odaClose(); return; }
+        if (e.key === 'Tab') trapTab(d, e);
+      });
+      document.body.appendChild(d);
+    }
+    document.body.classList.add('oda-open');
+    var seq = odaSeq(s), k = odaPlace(s, seq), h, focusSel;
+    if (mode === 'resume') {
+      d.className = 'overlay'; d.setAttribute('data-mode', 'resume');
+      h = '<div class="sheet oda-resume-sheet" role="dialog" aria-modal="true" aria-label="Handle på Oda" data-testid="oda-fortsett-ark">' +
+        '<div class="sheet-head"><h3>Handle på Oda</h3><button type="button" class="btn small" data-oda="close">Lukk</button></div>' +
+        '<div class="oda-resume"><button type="button" class="btn primary" data-oda="resume" data-testid="oda-fortsett">Fortsett der du slapp (' + (k + 1) + ' av ' + seq.length + ')</button>' +
+        '<button type="button" class="btn" data-oda="restart" data-testid="oda-start-pa-nytt">Start på nytt</button></div></div>';
+      d.innerHTML = h; focusSel = '[data-oda="resume"]';
+    } else {
+      d.className = 'oda-sheet'; d.setAttribute('data-mode', 'item');
+      d.setAttribute('role', 'dialog'); d.setAttribute('aria-modal', 'true'); d.setAttribute('aria-label', 'Handle på Oda');
+      d.setAttribute('data-testid', 'oda-ark');
+      if (k < 0) {
+        if (!s.done) { s.done = true; s.cur = null; odaSave(s); }
+        var nT = seq.filter(function (i) { return i.checked; }).length;
+        var skipped = odaAll().filter(function (i) { return isOpen(i) && s.skipped.indexOf(i.key) >= 0; });
+        d.setAttribute('data-mode', 'done');
+        h = '<div class="oda-top"><span></span><span class="oda-pos">Handle på Oda</span><span></span></div>' +
+          '<div class="oda-done" data-testid="oda-ferdig"><div class="ok" aria-hidden="true">✓</div>' +
+          '<h2 tabindex="-1">Ferdig – ' + nT + ' lagt i kurven' + (skipped.length ? ', ' + skipped.length + ' hoppet over.' : '.') + '</h2>' +
+          (skipped.length ? '<p>De ' + skipped.length + ' står fortsatt på lista.</p>' : '') + '</div>' +
+          '<div class="oda-acts">' + (skipped.length ? '<button type="button" class="btn primary" data-oda="review" data-testid="oda-ga-gjennom">Gå gjennom de ' + skipped.length + '</button>' : '') +
+          '<button type="button" class="btn" data-oda="close" data-testid="oda-lukk">Lukk</button></div>';
+        d.innerHTML = h; focusSel = 'h2';
+      } else {
+        var it = seq[k];
+        if (s.cur !== it.key || s.fresh) { s.cur = it.key; s.curSort = odaSortKey(it); s.fresh = false; odaSave(s); }
+        var mine = it.checked, skip = !mine && s.skipped.indexOf(it.key) >= 0;
+        var qty = it.plan ? it.plan.text : '';
+        var src = (it.recipes || []).join(', ');
+        h = '<div class="oda-top"><button type="button" class="back" data-oda="prev" aria-label="Forrige vare"' + (k === 0 ? ' disabled' : '') + ' data-testid="oda-forrige">‹</button>' +
+          '<span class="oda-pos" aria-live="polite" data-testid="oda-pos">' + (k + 1) + ' av ' + seq.length + (s.review ? ' · hoppet over' : '') + '</span>' +
+          '<button type="button" class="btn small end" data-oda="close" data-testid="oda-avslutt">Ferdig</button></div>' +
+          '<div class="oda-item" data-key="' + esc(it.key) + '" data-testid="oda-vare"><span class="oda-aisle">' + esc(it.aisle) + '</span>' +
+          '<h2 class="oda-name" tabindex="-1" data-testid="oda-navn">' + esc(cap(it.name)) + '</h2>' +
+          (qty ? '<span class="oda-qty" data-testid="oda-mengde">' + esc(qty) + '</span>' : '') +
+          (src ? '<span class="oda-src" data-testid="oda-rett">' + esc(src) + '</span>' : '') +
+          (mine ? '<span class="oda-status" data-testid="oda-status">✓ Lagt i kurven</span>' : skip ? '<span class="oda-status skip" data-testid="oda-status">Hoppet over</span>' : '') + '</div>' +
+          '<div class="oda-acts"><a class="btn primary" data-testid="oda-apne" href="' + esc(P.odaUrl(it.name)) + '" target="oda" rel="noopener">Åpne i Oda<span class="ext" aria-hidden="true">↗</span></a>' +
+          '<div class="row">' + (mine ? '<button type="button" class="btn" data-oda="untick" data-testid="oda-fjern">Fjern krysset</button>'
+            : '<button type="button" class="btn" data-oda="skip" data-testid="oda-hopp">Hopp over</button>') +
+          '<button type="button" class="btn" data-oda="next" data-testid="oda-neste">Neste ›</button></div></div>';
+        if (d.getAttribute('data-key') === it.key && keepFocus) focusSel = null; else focusSel = 'h2';
+        d.setAttribute('data-key', it.key);
+        d.innerHTML = h;
+      }
+    }
+    if (focusSel && (!keepFocus || !hadFocus || mode !== d.getAttribute('data-mode'))) { var f = d.querySelector(focusSel); if (f) try { f.focus({ preventScroll: true }); } catch (e) { f.focus(); } }
+    else if (hadFocus && !d.contains(document.activeElement)) { var f2 = d.querySelector('h2'); if (f2) f2.focus(); }
+  }
+  function odaClick(e) {
+    var b = e.target.closest('[data-oda]');
+    if (!b || b.disabled) return;
+    var a = b.getAttribute('data-oda'), s = odaLoad() || odaFresh();
+    if (a === 'close') return odaClose();
+    if (a === 'resume') { s.open = true; odaSave(s); return odaRender(s); }
+    if (a === 'restart') return odaRestart();
+    if (a === 'review') {
+      var sk = odaAll().filter(function (i) { return isOpen(i) && s.skipped.indexOf(i.key) >= 0; }).map(function (i) { return i.key; });
+      s.review = sk; s.ticked = []; s.done = false; s.cur = sk[0]; s.curSort = ''; odaSave(s); return odaRender(s);
+    }
+    var seq = odaSeq(s), k = odaPlace(s, seq), it = seq[k];
+    if (!it) return odaRender(s);
+    if (a === 'prev') { if (k > 0) { s.cur = seq[k - 1].key; s.curSort = odaSortKey(seq[k - 1]); odaSave(s); } return odaRender(s); }
+    if (a === 'untick') {
+      odaTick(it, false); s.ticked = s.ticked.filter(function (x) { return x !== it.key; });
+      if (s.review) s.ticked.push(it.key);   // står i gjennomgangen
+      else s.ticked.push(it.key);            // står i rekkefølgen (som ukrysset) til man går videre
+      odaSave(s); renderListSection(); return;
+    }
+    var nextKey = seq[k + 1] ? seq[k + 1].key : null, nextSort = seq[k + 1] ? odaSortKey(seq[k + 1]) : '\uffff';
+    if (a === 'skip') {
+      if (s.skipped.indexOf(it.key) < 0) s.skipped.push(it.key);
+    } else if (a === 'next' && isOpen(it)) {
+      odaTick(it, true);
+      if (s.ticked.indexOf(it.key) < 0) s.ticked.push(it.key);
+      s.skipped = s.skipped.filter(function (x) { return x !== it.key; });
+      var back = { cur: it.key, curSort: odaSortKey(it) };
+      toast(cap(it.name) + ' lagt i kurven', UNDO_MS, { label: 'Angre', run: function () {
+        odaTick(it, false);
+        var s2 = odaLoad(); if (s2) { s2.done = false; s2.cur = back.cur; s2.curSort = back.curSort; odaSave(s2); }
+        renderListSection();
+      } });
+    }
+    if (nextKey) { s.cur = nextKey; s.curSort = nextSort; } else { s.cur = null; s.curSort = '\uffff'; s.done = true; }
+    odaSave(s);
+    renderListSection();
+    if (!document.getElementById('list-section')) odaRender(s);
+  }
+
   function copyList() {
     var text = listAsText();
     if (!text) { toast('Alt er krysset av'); return; }
@@ -3643,7 +3815,8 @@
       ctl: r.kind === 'extra' ? '<button type="button" class="qbtn" data-action="remove-extra" data-extras="' + esc(r.extra_ids.join(',')) + '" aria-label="Fjern ' + esc(r.name) + '">✕</button>' : '' });
   }
 
-  function renderListSection() {
+  function renderListSection() { renderListSection0(); odaSync(); }   // v0.13: arket følger synken
+  function renderListSection0() {
     var el = document.getElementById('list-section');
     if (!el) return;
     var built = buildList();

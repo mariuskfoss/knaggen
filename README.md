@@ -187,6 +187,14 @@ Lokal modus: `localStorage['ukeshandel:v1']`, `version: 1` (uendret, så eldre s
 - **Firestore-reglene endres** (bakoverkompatibelt med 0.10.0): se `../firestore.rules.v011-READY.txt` og `../sjekkliste-v011.md`.
 - **Tester:** `tests/e2e-v011.js` (godkjenningskriteriene, inkl. en 0.10.0-telefon i samme husstand). Eldre suiter kjører med testkrokene `KNAGGEN_SEED_RECIPES` og `KNAGGEN_V010_LAYOUT` (v0.10-oppsettet av Uke, Retter, Handleliste og Husstand, kopiert uendret), se `tests/v09compat.js`.
 
+## v0.13 «Handle på Oda» (spec «v0.13 – samlet spec», design `../merkevare/v013-oda/`)
+- ⋯ Mer → «Handle på Oda · N varer» (bare når noe ikke er krysset av). Fullskjermsark med én vare om gangen i Plassering-rekkefølge, «3 av N» regnes på nytt ved hver synk.
+- «Åpne i Oda» er en vanlig lenke `https://oda.com/no/search/products/?q=<søkeord>` med `target="oda" rel="noopener"`. Lenkeformatet og rensingen av søkeord ligger i `prep.js` (felles med funksjonen: `functions/prep.js` er en byte-lik kopi, sjekket av e2e-v013; `PREP_RE` er flyttet dit fra `functions/parse.js`).
+- Neste krysser av (vanlig avkryssing + «Angre»), Hopp over lar varen stå, ‹ viser riktig status (Fjern krysset / Hoppet over). Ferdigskjerm med «Gå gjennom de N».
+- Posisjonen lagres per telefon i `localStorage['knaggen:oda']` (varens id + hoppede, ikke et tall); etter 3 døgn eller når alt er gått gjennom starter den på nytt. Ingenting nytt i Firestore, ingen regelendring.
+- **Personvern:** Handle på Oda åpner Odas søk med varenavnet. Knaggen sender ingenting annet til Oda.
+- Tester: `tests/e2e-v013.js` (søkeord for 40 varenavn, arket, synk mellom to telefoner, omlasting, fortsett/start på nytt, 3 døgn), `tests/shots-v013.js`.
+
 ## v0.12.1 (hurtigfiks)
 - Ingredienstolking: desimalkomma (0,5 / 1,5 dl), tekst før mengden («saft av 0,5 stk. sitron» → Sitron 0,5 stk; teksten droppes, formatet har ikke notat), «stk.»/«ss.» med punktum, «båter hvitløk» → fedd, «kvister» → stk, tilberedningsord foran navnet (hakket, frisk, kvernet …) fjernes.
 - Avdeling for hentede ingredienser: samme gjetting som ellers (egne data → bibliotek → gjettelista), utvidet med friske urter/frukt og grønt og egg/kjøtt, og et siste forsøk med siste ord. Ukjent blir fortsatt Tørrvare (appen har ingen «Annet»).

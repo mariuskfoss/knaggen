@@ -1197,3 +1197,38 @@ input[type=text], input[type=number], select, textarea, .code-in input, .fv-new-
 .v12-src { margin: 12px 0; font-size: 14px; color: var(--muted); }
 .v12-src a { color: var(--ink); font-weight: 600; display: inline-flex; align-items: center; min-height: 44px; }
 .v11-empty .linkbtn { min-height: 44px; }
+
+
+/* Knaggen v0.13 «Handle på Oda» – arket i skissene (merkevare/v013-oda). Bare v0.10-tokenene, ingen nye variabler,
+ * ingen Oda-farger. Følger kanter.css: stille fyll, ingen rammer på knapper. */
+.oda-sheet { position: fixed; inset: 0; z-index: 60; background: var(--bg); color: var(--ink); display: grid; grid-template-rows: auto 1fr auto;
+  padding: calc(6px + env(safe-area-inset-top, 0px)) 14px calc(84px + env(safe-area-inset-bottom, 0px)); max-width: 640px; margin: 0 auto; }
+.oda-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; min-height: 52px; }
+.oda-top .back { justify-self: start; width: 44px; height: 44px; border: 0; border-radius: 10px; background: none; color: var(--ink); font-size: 26px; line-height: 1; display: grid; place-items: center; cursor: pointer; }
+.oda-top .back:disabled { opacity: .35; }
+.oda-pos { font-size: 15px; color: var(--muted); }
+.oda-top .end { justify-self: end; }
+.oda-item { align-self: center; text-align: center; display: grid; justify-items: center; gap: 6px; padding: 0 8px; }
+.oda-aisle { font-size: 13px; letter-spacing: .6px; text-transform: uppercase; color: var(--muted); }
+.oda-name { font-size: 32px; line-height: 1.15; font-weight: 700; margin: 0; overflow-wrap: anywhere; }
+.oda-qty { font-size: 22px; font-weight: 600; }
+.oda-src { font-size: 14px; color: var(--muted); max-width: 30ch; }
+.oda-status { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 12px; margin-top: 8px; border-radius: 999px;
+  background: var(--brand-soft); color: var(--brand); font-size: 14px; font-weight: 700; }
+.oda-status.skip { background: var(--card-2); color: var(--muted); }
+.oda-acts { display: grid; gap: 8px; }
+.oda-acts .btn { min-height: 52px; font-size: 17px; }
+.oda-acts .btn.primary { min-height: 56px; font-size: 18px; }
+.oda-acts .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.oda-acts .ext { margin-left: 6px; font-weight: 700; }
+.oda-done { align-self: center; text-align: center; display: grid; justify-items: center; gap: 10px; padding: 0 12px; }
+.oda-done .ok { width: 56px; height: 56px; border-radius: 50%; background: var(--brand-soft); color: var(--brand); display: grid; place-items: center; font-size: 28px; font-weight: 700; }
+.oda-done h2 { font-size: 22px; line-height: 1.3; margin: 0; max-width: 22ch; }
+.oda-done p { margin: 0; color: var(--muted); font-size: 15px; }
+.oda-resume { display: grid; gap: 8px; }
+.oda-resume .btn { min-height: 52px; }
+/* Mens arket er åpent: fanene er skjult, så «Angre»-toasten legges helt nederst under knappene (ikke over dem). */
+body.oda-open .toast { bottom: calc(10px + env(safe-area-inset-bottom, 0px)) !important; z-index: 80; }
+body.oda-open .toast-dock { display: none !important; }
+/* v0.13: «Åpne i Oda» er en lenke (<a>) med knappeutseende */
+a.btn { display: flex; align-items: center; justify-content: center; text-decoration: none; }
