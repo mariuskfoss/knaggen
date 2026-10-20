@@ -343,6 +343,9 @@ async function deleteHousehold(hid) {
   const c = await init();
   const { fs, db } = c;
   const fromServer = q => withTimeout(fs.getDocsFromServer(q), 20000, 'no-server');
+  // v0.14: de delte listene slettes av funksjonen (krever medlemskap, så før kjernen slettes). Feiler det, går slettingen
+  // videre: lenkene utløper uansett etter 7 døgn og ryddes av TTL.
+  try { await deleteShareLists(hid); } catch (e) { /* ignorer */ }
   // Varsel til de andre 0.10-telefonene (de lytter på den felles lista); dokumentet slettes selv sammen med resten.
   await withTimeout(fs.setDoc(fs.doc(...hh(hid, 'lists', LIST_KEY)), { week: LIST_KEY, adjust: { [DELETING_MARK]: Date.now() } }, { merge: true }), 20000, 'no-server');
   const refs = [];
@@ -433,18 +436,17 @@ async function getInvite(code) {
 // Samme protokoll som httpsCallable (POST {data}), uten å laste functions-SDK-en. Emulator: port 5181.
 const FN_REGION = 'europe-west1';
 const FN_EMULATOR_PORT = 5181;
-async function fetchRecipe(hid, url) {
+async function callFn(name, data, ms) {
   const c = await init();
   const pid = mode() === 'emulator' ? EMULATOR_CONFIG.projectId : prodConfig().projectId;
-  const endpoint = mode() === 'emulator' ? 'http://127.0.0.1:' + FN_EMULATOR_PORT + '/' + pid + '/' + FN_REGION + '/hentOppskrift'
-    : 'https://' + FN_REGION + '-' + pid + '.cloudfunctions.net/hentOppskrift';
+  const endpoint = fnBase(pid) + '/' + name;
   const token = await c.auth.currentUser.getIdToken();
   const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), 25000);
+  const t = setTimeout(() => ctl.abort(), ms || 25000);
   let res, body;
   try {
     res = await fetch(endpoint, { method: 'POST', signal: ctl.signal,
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ data: { hid, url } }) });
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ data }) });
     body = await res.json().catch(() => null);
   } catch (e) { const er = new Error('no-server'); er.code = 'no-server'; throw er; } finally { clearTimeout(t); }
   if (!body || body.error || !res.ok) {
@@ -454,7 +456,19 @@ async function fetchRecipe(hid, url) {
   }
   return body.result;
 }
+function fnBase(pid) {
+  return mode() === 'emulator' ? 'http://127.0.0.1:' + FN_EMULATOR_PORT + '/' + pid + '/' + FN_REGION : 'https://' + FN_REGION + '-' + pid + '.cloudfunctions.net';
+}
+function fetchRecipe(hid, url) { return callFn('hentOppskrift', { hid, url }); }
+// v0.14 «Del lista til Oda»: funksjonen lager øyeblikksbildet (delelister/{id}); appen har ingen tilgang til samlingen.
+// Lenken er funksjonens egen adresse (app.knaggen.no ligger på GitHub Pages, så det finnes ingen Hosting-omskriving).
+async function makeShareList(hid, lines, title, people) {
+  const r = await callFn('lagDeleliste', { hid, lines, title, people });
+  const pid = mode() === 'emulator' ? EMULATOR_CONFIG.projectId : prodConfig().projectId;
+  return { url: fnBase(pid) + '/visDeleliste/' + r.id, expiresAt: r.expiresAt };
+}
+function deleteShareLists(hid) { return callFn('slettDelelister', { hid }); }
 
-window.UkeshandelSync = { fetchRecipe, mode, init, randomCode, createHousehold, joinHousehold, isMember, subscribe, write: W, uid: () => ctx && ctx.uid,
+window.UkeshandelSync = { fetchRecipe, makeShareList, deleteShareLists, mode, init, randomCode, createHousehold, joinHousehold, isMember, subscribe, write: W, uid: () => ctx && ctx.uid,
   inviteCode, createInvite, getInvite, leaveHousehold, deleteHousehold, stillMember };
 window.dispatchEvent(new Event('ukeshandel-sync-ready'));
