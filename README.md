@@ -187,6 +187,10 @@ Lokal modus: `localStorage['ukeshandel:v1']`, `version: 1` (uendret, så eldre s
 - **Firestore-reglene endres** (bakoverkompatibelt med 0.10.0): se `../firestore.rules.v011-READY.txt` og `../sjekkliste-v011.md`.
 - **Tester:** `tests/e2e-v011.js` (godkjenningskriteriene, inkl. en 0.10.0-telefon i samme husstand). Eldre suiter kjører med testkrokene `KNAGGEN_SEED_RECIPES` og `KNAGGEN_V010_LAYOUT` (v0.10-oppsettet av Uke, Retter, Handleliste og Husstand, kopiert uendret), se `tests/v09compat.js`.
 
+## v0.13.1 (hurtigfiks «Handle på Oda»)
+- «Kopier navn» i arket kopierer det rensede søkeordet til utklippstavlen («Kopiert: …» i den vanlige toasten), så det kan limes inn i Odas søk. Grunn: Oda-appen på Android tar over alle oda.com-lenker (assetlinks `handle_all_urls`) og klarer ikke søkesiden (`oda-undersokelse-2026-10-20.md`).
+- «Åpne i Oda» bruker `target="_blank" rel="noopener"` i stedet for `target="oda"`. Lenkeformatet er uendret.
+
 ## v0.13 «Handle på Oda» (spec «v0.13 – samlet spec», design `../merkevare/v013-oda/`)
 - ⋯ Mer → «Handle på Oda · N varer» (bare når noe ikke er krysset av). Fullskjermsark med én vare om gangen i Plassering-rekkefølge, «3 av N» regnes på nytt ved hver synk.
 - «Åpne i Oda» er en vanlig lenke `https://oda.com/no/search/products/?q=<søkeord>` med `target="oda" rel="noopener"`. Lenkeformatet og rensingen av søkeord ligger i `prep.js` (felles med funksjonen: `functions/prep.js` er en byte-lik kopi, sjekket av e2e-v013; `PREP_RE` er flyttet dit fra `functions/parse.js`).

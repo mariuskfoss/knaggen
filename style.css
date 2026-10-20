@@ -1232,3 +1232,5 @@ body.oda-open .toast { bottom: calc(10px + env(safe-area-inset-bottom, 0px)) !im
 body.oda-open .toast-dock { display: none !important; }
 /* v0.13: «Åpne i Oda» er en lenke (<a>) med knappeutseende */
 a.btn { display: flex; align-items: center; justify-content: center; text-decoration: none; }
+/* v0.13.1: «Kopier navn» – diskret tekstknapp under mengden (søkeordet til Odas søk), trykkflate ≥ 44 px */
+.oda-copy { min-height: 44px; padding: 0 12px; font-size: 15px; }

@@ -1,4 +1,4 @@
-/* Knaggen (arbeidsnavn Ukeshandel) v0.13.0 — ukeplan for middager + handleliste, delt i husstanden via Firebase.
+/* Knaggen (arbeidsnavn Ukeshandel) v0.13.1 — ukeplan for middager + handleliste, delt i husstanden via Firebase.
  * Uten Firebase-oppsett (eller før husstand er opprettet) lagres alt lokalt i nettleseren som før.
  */
 (function () {
@@ -3690,6 +3690,7 @@
         if (s.cur !== it.key || s.fresh) { s.cur = it.key; s.curSort = odaSortKey(it); s.fresh = false; odaSave(s); }
         var mine = it.checked, skip = !mine && s.skipped.indexOf(it.key) >= 0;
         var qty = it.plan ? it.plan.text : '';
+        var odaQ = P.odaQuery(it.name);
         var src = (it.recipes || []).join(', ');
         h = '<div class="oda-top"><button type="button" class="back" data-oda="prev" aria-label="Forrige vare"' + (k === 0 ? ' disabled' : '') + ' data-testid="oda-forrige">‹</button>' +
           '<span class="oda-pos" aria-live="polite" data-testid="oda-pos">' + (k + 1) + ' av ' + seq.length + (s.review ? ' · hoppet over' : '') + '</span>' +
@@ -3698,8 +3699,9 @@
           '<h2 class="oda-name" tabindex="-1" data-testid="oda-navn">' + esc(cap(it.name)) + '</h2>' +
           (qty ? '<span class="oda-qty" data-testid="oda-mengde">' + esc(qty) + '</span>' : '') +
           (src ? '<span class="oda-src" data-testid="oda-rett">' + esc(src) + '</span>' : '') +
+          '<button type="button" class="linkbtn oda-copy" data-oda="copy" data-q="' + esc(odaQ) + '" data-testid="oda-kopier">Kopier navn</button>' +
           (mine ? '<span class="oda-status" data-testid="oda-status">✓ Lagt i kurven</span>' : skip ? '<span class="oda-status skip" data-testid="oda-status">Hoppet over</span>' : '') + '</div>' +
-          '<div class="oda-acts"><a class="btn primary" data-testid="oda-apne" href="' + esc(P.odaUrl(it.name)) + '" target="oda" rel="noopener">Åpne i Oda<span class="ext" aria-hidden="true">↗</span></a>' +
+          '<div class="oda-acts"><a class="btn primary" data-testid="oda-apne" href="' + esc(P.odaUrl(it.name)) + '" target="_blank" rel="noopener">Åpne i Oda<span class="ext" aria-hidden="true">↗</span></a>' +
           '<div class="row">' + (mine ? '<button type="button" class="btn" data-oda="untick" data-testid="oda-fjern">Fjern krysset</button>'
             : '<button type="button" class="btn" data-oda="skip" data-testid="oda-hopp">Hopp over</button>') +
           '<button type="button" class="btn" data-oda="next" data-testid="oda-neste">Neste ›</button></div></div>';
@@ -3718,6 +3720,8 @@
     if (a === 'close') return odaClose();
     if (a === 'resume') { s.open = true; odaSave(s); return odaRender(s); }
     if (a === 'restart') return odaRestart();
+    // v0.13.1: Oda-appen på Android klarer ikke søkelenken – søkeordet kan limes inn i Odas søk i stedet
+    if (a === 'copy') { var q = b.getAttribute('data-q'); copyText(q, 'Kopiert: ' + q); return; }
     if (a === 'review') {
       var sk = odaAll().filter(function (i) { return isOpen(i) && s.skipped.indexOf(i.key) >= 0; }).map(function (i) { return i.key; });
       s.review = sk; s.ticked = []; s.done = false; s.cur = sk[0]; s.curSort = ''; odaSave(s); return odaRender(s);
