@@ -1,4 +1,4 @@
-/* Knaggen (arbeidsnavn Ukeshandel) v0.14.0 — ukeplan for middager + handleliste, delt i husstanden via Firebase.
+/* Knaggen (arbeidsnavn Ukeshandel) v0.14.1 — ukeplan for middager + handleliste, delt i husstanden via Firebase.
  * Uten Firebase-oppsett (eller før husstand er opprettet) lagres alt lokalt i nettleseren som før.
  */
 (function () {
@@ -6107,6 +6107,12 @@
   // et lite kort i Uke etter første plan (showShareCard). Firebase (SDK, anonym innlogging) startes først når man
   // oppretter/blir med i en husstand, eller hvis telefonen allerede er med i en.
   ui.weekOffset = defaultWeekOffset();
+  // v0.14.1: etter første åpning (introen/ukeplanen er uendret) starter appen alltid på Handleliste. Gjelder bare
+  // åpning uten adresse (#…): lenker, invitasjoner og delt innhold går dit de peker.
+  // Testkrok KNAGGEN_START_UKE: eldre testsuiter forventer Uke ved ny åpning.
+  if (!NEW_HOME && !window.KNAGGEN_START_UKE && !(location.hash || '').replace(/^#\/?/, '') && (hh || hsAsked()) && !showIntro() && !showConnectFirst()) {
+    history.replaceState(null, '', location.pathname + location.search + '#liste');
+  }
   if (NEW_HOME) runOldAddress(); else route();
 
   // Åpnes appen igjen etter en stund (f.eks. søndag kveld → mandag), velges riktig uke på nytt.

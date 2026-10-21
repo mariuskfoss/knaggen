@@ -187,6 +187,9 @@ Lokal modus: `localStorage['ukeshandel:v1']`, `version: 1` (uendret, så eldre s
 - **Firestore-reglene endres** (bakoverkompatibelt med 0.10.0): se `../firestore.rules.v011-READY.txt` og `../sjekkliste-v011.md`.
 - **Tester:** `tests/e2e-v011.js` (godkjenningskriteriene, inkl. en 0.10.0-telefon i samme husstand). Eldre suiter kjører med testkrokene `KNAGGEN_SEED_RECIPES` og `KNAGGEN_V010_LAYOUT` (v0.10-oppsettet av Uke, Retter, Handleliste og Husstand, kopiert uendret), se `tests/v09compat.js`.
 
+## v0.14.1 (startfanen)
+- Første åpning er uendret (introen → Uke/ukeplanen). Deretter åpner appen alltid på Handleliste (`#liste`) når den åpnes uten adresse; lenker med `#…`, invitasjoner og delt innhold (`?url=`) går dit de peker. Test: `tests/e2e-v0141.js`.
+
 ## v0.14 «Del lista til Oda» (spec «v0.14 – samlet spec», design `../merkevare/v014-oda-del/`, format `../oda-format-regler-v014.md`)
 - ⋯ Mer → «Del lista til Oda · N varer» er eneste Oda-inngang (bare med husstand, siden funksjonen krever medlemskap). Ingen knapp i selve lista ennå.
 - Bekreftelsesark: «N varer sendes til Oda», «Vis varene» (`<details>` med nøyaktig linjene som sendes), «Knaggen lager en lenke som virker i 7 dager …» (tallet fra `TTL_DAYS` i `delelinje.js`, samme verdi som `expiresAt`), «Del til Oda» / «Avbryt». iPhone: også «Kopier lenke». PC/uten delingsmeny: hovedknappen kopierer («Lenke kopiert»).
