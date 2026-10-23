@@ -140,10 +140,13 @@ function daySig(d) {
   if (d.oneoff && d.oneoff.name) return 'o:' + (d.oneoff.id || d.oneoff.name);
   return d.recipe_id ? 'r:' + d.recipe_id : '';
 }
+// v0.16: «mark» ('handlet' | 'rester') skrives bare når den er satt, så dager uten merke har samme form som før.
+function markOf(d) { return d && (d.mark === 'handlet' || d.mark === 'rester') ? d.mark : null; }
+function withMark(body, mark) { if (mark === 'handlet' || mark === 'rester') body.mark = mark; return body; }
 function dayBody(date, d) {
   const o = d && d.oneoff && d.oneoff.name ? d.oneoff : null;
-  return { date, recipe_id: o ? null : ((d && d.recipe_id) || null),
-    oneoff: o ? Object.assign({ id: o.id || null, name: o.name, ingredients: o.ingredients || [] }, validSource(o.source) ? { source: o.source } : {}) : null };
+  return withMark({ date, recipe_id: o ? null : ((d && d.recipe_id) || null),
+    oneoff: o ? Object.assign({ id: o.id || null, name: o.name, ingredients: o.ingredients || [] }, validSource(o.source) ? { source: o.source } : {}) : null }, markOf(d));
 }
 function extraDoc(x) {
   return { week: x.week, name: x.name, qty: x.qty == null ? null : x.qty, unit: x.unit || '', aisle: x.aisle, created: x.created || Date.now() };
@@ -174,7 +177,7 @@ async function createHousehold(local, existing) {
   Object.keys(dates).forEach(d => {
     if (!/^\d{4}-\d\d-\d\d$/.test(d)) return;
     const o = (local.oneoffs || {})[d];
-    writes.push(['set', hh(hid, 'days', d), { date: d, recipe_id: o ? null : (local.week_plan[d] || null), oneoff: oneoffDoc(o) }]);
+    writes.push(['set', hh(hid, 'days', d), withMark({ date: d, recipe_id: o ? null : (local.week_plan[d] || null), oneoff: oneoffDoc(o) }, (local.marks || {})[d])]);
   });
   const weeks = {};
   Object.keys(local.checks || {}).forEach(w => { weeks[w] = weeks[w] || {}; weeks[w].checked = local.checks[w]; });
@@ -282,7 +285,7 @@ const W = {
   deleteRecipe: (hid, id) => ctx.fs.deleteDoc(ctx.fs.doc(...hh(hid, 'recipes', id))),
   setDays: (hid, entries) => {
     const b = ctx.fs.writeBatch(ctx.db);
-    entries.forEach(e => b.set(ctx.fs.doc(...hh(hid, 'days', e.date)), { date: e.date, recipe_id: e.oneoff ? null : (e.recipe_id || null), oneoff: oneoffDoc(e.oneoff) }));
+    entries.forEach(e => b.set(ctx.fs.doc(...hh(hid, 'days', e.date)), withMark({ date: e.date, recipe_id: e.oneoff ? null : (e.recipe_id || null), oneoff: oneoffDoc(e.oneoff) }, e.mark)));
     return b.commit();
   },
   // v0.4.4: bytt to kvelder atomisk. a/b = { date, sig } der sig er det telefonen så ('r:<id>' / 'o:<id>' / '').
@@ -346,6 +349,8 @@ async function deleteHousehold(hid) {
   // v0.14: de delte listene slettes av funksjonen (krever medlemskap, så før kjernen slettes). Feiler det, går slettingen
   // videre: lenkene utløper uansett etter 7 døgn og ryddes av TTL.
   try { await deleteShareLists(hid); } catch (e) { /* ignorer */ }
+  // v0.16: kjøkkenskjermens kalenderadresser slettes også (krever medlemskap)
+  try { await calendar(hid, 'slettAlle'); } catch (e) { /* ignorer */ }
   // Varsel til de andre 0.10-telefonene (de lytter på den felles lista); dokumentet slettes selv sammen med resten.
   await withTimeout(fs.setDoc(fs.doc(...hh(hid, 'lists', LIST_KEY)), { week: LIST_KEY, adjust: { [DELETING_MARK]: Date.now() } }, { merge: true }), 20000, 'no-server');
   const refs = [];
@@ -470,7 +475,9 @@ async function makeShareList(hid, lines, title, people) {
 function deleteShareLists(hid) { return callFn('slettDelelister', { hid }); }
 // v0.15: vær til kjøkkenskjermen via hentVaer (MET-proxy; nettleseren kan ikke sette User-Agent).
 function fetchWeather(hid, lat, lon) { return callFn('hentVaer', { hid, lat, lon }, 15000); }
+// v0.16: kjøkkenskjermens kalendere (liste | legg | fjern | hendelser | slettAlle) – adressene ligger kryptert på serveren
+function calendar(hid, op, data) { return callFn('kalender', Object.assign({}, data || {}, { op, hid }), op === 'legg' || op === 'hendelser' ? 40000 : 15000); }
 
-window.UkeshandelSync = { fetchRecipe, makeShareList, deleteShareLists, fetchWeather, mode, init, randomCode, createHousehold, joinHousehold, isMember, subscribe, write: W, uid: () => ctx && ctx.uid,
+window.UkeshandelSync = { fetchRecipe, makeShareList, deleteShareLists, fetchWeather, calendar, mode, init, randomCode, createHousehold, joinHousehold, isMember, subscribe, write: W, uid: () => ctx && ctx.uid,
   inviteCode, createInvite, getInvite, leaveHousehold, deleteHousehold, stillMember };
 window.dispatchEvent(new Event('ukeshandel-sync-ready'));

@@ -187,6 +187,23 @@ Lokal modus: `localStorage['ukeshandel:v1']`, `version: 1` (uendret, så eldre s
 - **Firestore-reglene endres** (bakoverkompatibelt med 0.10.0): se `../firestore.rules.v011-READY.txt` og `../sjekkliste-v011.md`.
 - **Tester:** `tests/e2e-v011.js` (godkjenningskriteriene, inkl. en 0.10.0-telefon i samme husstand). Eldre suiter kjører med testkrokene `KNAGGEN_SEED_RECIPES` og `KNAGGEN_V010_LAYOUT` (v0.10-oppsettet av Uke, Retter, Handleliste og Husstand, kopiert uendret), se `tests/v09compat.js`.
 
+## v0.16 «Avganger og kalender» (design `../merkevare/v016-avganger-kalender/`)
+- **Avganger (Entur Journey Planner v3)** kalles direkte fra nettleseren (CORS `*`), med `ET-Client-Name: mariuskfoss-knaggen`.
+  Entur sine grenser for identifiserte klienter er 1000 kall/min og 200/s (uidentifiserte: 60/min og 20/s). Ved 429 venter
+  skjermen til `Rate-Limit-Expiry-Time`. Hver skjerm spør én gang hvert 30. sekund, og bare når den vises, er på nett og ikke er i Natt.
+  Ved feil venter den 1, så 2, så 5 minutter. Holdeplasser finnes med `nearest` (1,2 km rundt stedet i «Tid og sted», eller posisjonen).
+  Linjer og retninger (linje + plattform) velges per holdeplass. Gangtiden foreslås fra avstanden (80 m/min). Alt lagres per enhet
+  (`knaggen:kjokken-avganger`). Tavla viser opptil 3 holdeplasser, avganger den neste timen og fram til leggetid. Avganger du
+  ikke rekker, tones ned. Forsinkelse vises fra 2 min, og under 1 min står det «nå».
+- **Kalender:** funksjonen `kalender` (liste / legg / fjern / hendelser / slettAlle) henter opptil 4 ICS-adresser per husstand
+  (SSRF-vern, 2 MB, 8 s, cache 15 min). Adressen og cachen lagres kryptert (AES-256-GCM, nøkkelen `KNAGGEN_KAL_NOKKEL` i
+  Secret Manager). `kalendere/{id}` er bare for serveren (deny-all). Den som la inn adressen ser en maskert versjon; 401/403/404/410
+  gir «Adressen virker ikke lenger – lim inn en ny» i ⚙.
+- **⚙** nås fra Husstand → Kjøkkenskjerm (`#kjokken/innstillinger`). Hvileskjermen har ingen innstillingsknapp.
+- **Prioritert kutt** (`data-kutt` 0–8) når hvileskjermen ikke får plass; se kjokken.js.
+- **«Allerede handlet» / «Rester»** per middag (`days/{dato}.mark`), versjonsmerket ved logoen og «Nytt i Knaggen».
+- Tester: `fn-v016` (kalender mot `tests/icsmock.js` på 8769) og `e2e-v016` (Entur via Playwright-route).
+
 ## v0.15 «Kjøkkenskjerm» (`#kjokken`, design `../merkevare/v015-kjokken/`)
 - `kjokken.js` + `kjokken.css`: egen fullskjermmodus på `#kjokken`. Resten av appen er uendret, bortsett fra «⌂ Kjøkkenskjerm»-knappen, som bare vises når appen ble åpnet derfra (`sessionStorage`).
 - Hvile: klokke (oppdateres på minuttskiftet), dato + uke, middag i dag, de neste tre dagene og vær (nå + høy/lav i dag) med egne ikoner og «Værdata fra MET Norway». Hendelsesraden er skjult.

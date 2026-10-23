@@ -1,8 +1,10 @@
-/* Knaggen (arbeidsnavn Ukeshandel) v0.15.0 — ukeplan for middager + handleliste, delt i husstanden via Firebase.
+/* Knaggen (arbeidsnavn Ukeshandel) v0.16.0 — ukeplan for middager + handleliste, delt i husstanden via Firebase.
  * Uten Firebase-oppsett (eller før husstand er opprettet) lagres alt lokalt i nettleseren som før.
  */
 (function () {
   'use strict';
+  // v0.16: var appen brukt før denne versjonen? Leses før noe skrives til localStorage («Nytt i Knaggen» ved aller første åpning: nei).
+  var USED_BEFORE = (function () { try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && k !== 'knaggen:sett-versjon' && /^(ukeshandel|knaggen)[:_-]/.test(k)) return true; } } catch (e) { /* ignorer */ } return false; })();
 
   var STORAGE_KEY = 'ukeshandel:v1';
   var HH_KEY = 'ukeshandel:household';            // { hid, secret, core_done, migrated }
@@ -339,6 +341,7 @@
       recipes: window.KNAGGEN_SEED_RECIPES ? seed.recipes : [],
       week_plan: {},        // 'YYYY-MM-DD' -> recipe_id | null (tom)
       oneoffs: {},          // 'YYYY-MM-DD' -> engangsmiddag { id, name, ingredients[] }
+      marks: {},            // v0.16: 'YYYY-MM-DD' -> 'handlet' | 'rester' (ingrediensene holdes utenfor lista)
       staples: seed.staples,
       checks: {},           // week -> { varenøkkel: true }
       list_items: [],       // generert handleliste (week = mandag), beholdt for eldre versjoner
@@ -367,6 +370,7 @@
     s.recipes = Array.isArray(s.recipes) ? s.recipes : [];
     s.week_plan = s.week_plan && typeof s.week_plan === 'object' ? s.week_plan : {};
     s.oneoffs = s.oneoffs && typeof s.oneoffs === 'object' ? s.oneoffs : {};
+    s.marks = s.marks && typeof s.marks === 'object' ? s.marks : {};
     s.staples = Array.isArray(s.staples) ? s.staples : [];
     s.list_items = Array.isArray(s.list_items) ? s.list_items : [];
     s.list_adjust = s.list_adjust && typeof s.list_adjust === 'object' ? s.list_adjust : {};
@@ -481,7 +485,7 @@
   // Lagrer lokalt (bare i lokal modus – i husstandsmodus ligger dataene i Firestore).
   function save() {
     if (memoryOnly || hh) return;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state, function (k, v) { return k === "marks" && this === state && v && !Object.keys(v).length ? undefined : v; })); }
     catch (e) { memoryOnly = true; toast('Klarte ikke å lagre i nettleseren'); }
   }
   function recipeById(id) {
@@ -654,6 +658,7 @@
         checks: state.checks, list_adjust: state.list_adjust, list_extras: state.list_extras, check_at: state.check_at,
         household_size: state.household_size, day_people: state.day_people
       };
+      if (Object.keys(marksOf()).length) m.marks = state.marks;   // v0.16
       if (state.weekday_limit) m.weekday_limit = state.weekday_limit;   // v0.11: bare når grensen er satt (speilet er ellers som før)
       lsSet(MIRROR_PREFIX + hh.hid, JSON.stringify(m));
     }, 300);
@@ -938,7 +943,7 @@
     var local = resume ? loadLocalCopy() : state;
     var info = resume ? hh : null;
     return Sync.createHousehold({
-      recipes: local.recipes, staples: local.staples, week_plan: local.week_plan, oneoffs: local.oneoffs,
+      recipes: local.recipes, staples: local.staples, week_plan: local.week_plan, oneoffs: local.oneoffs, marks: local.marks || {},
       checks: remoteChecksByWeek(local.checks, local.check_at), list_adjust: local.list_adjust, list_extras: local.list_extras,
       household_size: local.household_size, day_people: local.day_people,   // v0.9: husstandens størrelse og avvik per dag blir med
       onCore: function (v) {
@@ -1145,27 +1150,32 @@
   /* ---------- v0.4.4: bytte kvelder ---------- */
 
   // Innholdet på en dag slik denne telefonen har det, med signatur ('r:<id>' / 'o:<id>' / '') som sync.js sammenligner med.
+  // v0.16: merket («handlet»/«rester») følger middagen (også ved bytte), men er ikke med i signaturen.
+  function marksOf() { if (!state.marks || typeof state.marks !== 'object') state.marks = {}; return state.marks; }
+  function markOf(d) { var m = marksOf()[d]; return m === 'handlet' || m === 'rester' ? m : null; }
   function dayEntry(d) {
-    var o = state.oneoffs[d];
-    if (o) return { date: d, recipe_id: null, oneoff: o, sig: 'o:' + (o.id || o.name) };
+    var o = state.oneoffs[d], mk = markOf(d);
+    if (o) return { date: d, recipe_id: null, oneoff: o, mark: mk, sig: 'o:' + (o.id || o.name) };
     var id = state.week_plan[d] || null;
-    return { date: d, recipe_id: id, oneoff: null, sig: id ? 'r:' + id : '' };
+    return { date: d, recipe_id: id, oneoff: null, mark: id ? mk : null, sig: id ? 'r:' + id : '' };
   }
   function putDay(d, e) {
     if (e.oneoff) { state.oneoffs[d] = e.oneoff; state.week_plan[d] = null; }
     else { delete state.oneoffs[d]; state.week_plan[d] = e.recipe_id || null; }
+    if (e.mark && (e.oneoff || e.recipe_id)) marksOf()[d] = e.mark; else delete marksOf()[d];
   }
   // Husstand: siste dager fra Firestore + bytter som ennå ikke er bekreftet av serveren (vises med en gang, også etter
   // omstart frakoblet). Køen lagres per husstand i localStorage.
   var SWAPQ_PREFIX = 'ukeshandel:swaps:';
   var lastDays = [], swapOverlays = [], swapBusy = false;
   function applyDays() {
-    var wp = {}, oo = {};
+    var wp = {}, oo = {}, mk = {};
     lastDays.forEach(function (d) {
       if (d.oneoff && d.oneoff.name) { oo[d.date] = { id: d.oneoff.id, name: d.oneoff.name, ingredients: d.oneoff.ingredients || [] }; if (validSource(d.oneoff.source)) oo[d.date].source = d.oneoff.source; }
       else wp[d.date] = d.recipe_id || null;
+      if ((d.mark === 'handlet' || d.mark === 'rester') && ((d.oneoff && d.oneoff.name) || d.recipe_id)) mk[d.date] = d.mark;
     });
-    state.week_plan = wp; state.oneoffs = oo;
+    state.week_plan = wp; state.oneoffs = oo; state.marks = mk;
     swapOverlays.forEach(function (ov) { putDay(ov.a, ov.ea); putDay(ov.b, ov.eb); });
   }
   function saveSwaps() { if (hh) lsSet(SWAPQ_PREFIX + hh.hid, JSON.stringify(swapOverlays)); }
@@ -1241,7 +1251,7 @@
     var tom = f === 'Tom';
     var por = r._oneoff ? null : (tom ? 0 : SC.servingsOf(r) * f);
     return {
-      date: d, name: r.name, id: r.id || null, time: r._oneoff ? '' : timeText(r), oneoff: !!r._oneoff,
+      date: d, name: r.name, id: r.id || null, time: r._oneoff ? '' : timeText(r), oneoff: !!r._oneoff, mark: markOf(d),
       portions: por == null ? '' : fmtPor(por) + (por === 1 ? ' porsjon' : ' porsjoner'),
       ingredients: (r.ingredients || []).filter(function (i) { return i && String(i.name || '').trim(); }).map(function (i) {
         var q = (tom || f === 1) ? i.qty : scaleQty(i.qty, i.unit, f, normName(i.name));
@@ -1260,6 +1270,14 @@
       if (!hh || !S || !S.fetchWeather) return Promise.reject(new Error('no-household'));
       return S.fetchWeather(hh.hid, lat, lon);
     },
+    calendar: function (op, data) {   // v0.16
+      var S = window.UkeshandelSync;
+      if (!hh || !S || !S.calendar) return Promise.reject(new Error('no-household'));
+      return S.calendar(hh.hid, op, data);
+    },
+    weekDates: function (off) { return weekDates(off || 0); },
+    dinnerName: function (d) { return dinnerName(d); },
+    online: function () { return navigator.onLine; },
     toApp: function () { location.hash = '#uke'; }
   };
 
@@ -1275,7 +1293,8 @@
     if (!nf && !nt) return;
     ops.swapDays(from, to);
     ui.swap = null;
-    var lf = dayName(from).toLowerCase(), lt = dayName(to).toLowerCase();
+    var sameWeek = weekDates(ui.weekOffset).indexOf(from) >= 0 && weekDates(ui.weekOffset).indexOf(to) >= 0;
+    var lf = dayName(from).toLowerCase() + (sameWeek ? '' : ' ' + shortDate(from)), lt = dayName(to).toLowerCase() + (sameWeek ? '' : ' ' + shortDate(to));
     var msg = nf && nt ? nf + ' til ' + lt + ', ' + nt + ' til ' + lf
       : nf ? nf + ' flyttet til ' + lt : nt + ' flyttet til ' + lf;
     var after = { f: dayEntry(from).sig, t: dayEntry(to).sig };
@@ -1326,7 +1345,7 @@
     },
     deleteRecipe: function (id, usedDates) {
       state.recipes = state.recipes.filter(function (x) { return x.id !== id; });
-      usedDates.forEach(function (d) { state.week_plan[d] = null; });
+      usedDates.forEach(function (d) { state.week_plan[d] = null; delete marksOf()[d]; });
       save();
       var hit = takeSwapsFor(usedDates);
       remote(function (W, hid) {
@@ -1345,10 +1364,14 @@
       if (hh && syncReady) remoteSwap(a, b, ca, cb);
     },
     // entries: [{ date, recipe_id, oneoff }]
+    // v0.16: e.mark gitt → settes; ellers beholdes merket bare hvis samme rett blir stående på samme dag (ny rett nullstiller).
     setDays: function (entries) {
       entries.forEach(function (e) {
-        if (e.oneoff) { state.oneoffs[e.date] = e.oneoff; state.week_plan[e.date] = null; }
-        else { delete state.oneoffs[e.date]; state.week_plan[e.date] = e.recipe_id || null; }
+        var before = dayEntry(e.date);
+        var sig = e.oneoff ? 'o:' + (e.oneoff.id || e.oneoff.name) : (e.recipe_id ? 'r:' + e.recipe_id : '');
+        if (!('mark' in e) || e.mark === undefined) e.mark = before.mark && before.sig === sig ? before.mark : null;
+        if (!sig) e.mark = null;
+        putDay(e.date, e);
       });
       save();
       var hit = takeSwapsFor(entries.map(function (e) { return e.date; }));   // v0.4.4
@@ -1444,7 +1467,7 @@
     var parts = h.split('/');
     var tab = parts[0];
     var K = window.KnaggenKjokken;
-    if (tab === 'kjokken' && K) { setTabsHidden(true); document.body.classList.add('k-open'); main.innerHTML = ''; K.show(); return; }
+    if (tab === 'kjokken' && K) { setTabsHidden(true); document.body.classList.add('k-open'); main.innerHTML = ''; K.show(parts[1] || ''); return; }
     if (K) { K.hide(); document.body.classList.remove('k-open'); }
     var join = parseJoin(raw);
     var inn = parseInn(raw), flytt = parseFlytt(raw);
@@ -2233,7 +2256,8 @@
       return !state.oneoffs[d] && !(state.week_plan[d] && recipeById(state.week_plan[d]));
     }).length;
     // v0.4.4: byttemodus gjelder bare mens kilde-dagen er i uka som vises og fortsatt har middag.
-    if (ui.swap && (dates.indexOf(ui.swap.from) < 0 || !dinnerName(ui.swap.from))) ui.swap = null;
+    // v0.16: byttemodus overlever ukeskifte, så en middag kan flyttes til en annen uke (merket følger med).
+    if (ui.swap && !dinnerName(ui.swap.from)) ui.swap = null;
     // Endret en annen telefon kilde-dagen mens vi valgte? Avbryt heller enn å bytte noe annet enn det som ble valgt.
     if (ui.swap && dayEntry(ui.swap.from).sig !== ui.swap.sig) {
       toast(dayName(ui.swap.from) + ' ble endret på en annen telefon – byttet er avbrutt', 4000);
@@ -2241,7 +2265,8 @@
     }
     var swapFrom = ui.swap ? ui.swap.from : null;
     var swapName = swapFrom ? dinnerName(swapFrom) : '';
-    var swapDay = swapFrom ? dayName(swapFrom).toLowerCase() : '';
+    var swapOther = swapFrom && dates.indexOf(swapFrom) < 0;
+    var swapDay = swapFrom ? dayName(swapFrom).toLowerCase() + (swapOther ? ' ' + shortDate(swapFrom) : '') : '';
     // Knappen til høyre på hver dag: «Bytt» (dag med middag), i byttemodus «Bytt hit» / «Flytt hit» / «Avbryt».
     function swapBtn(d, name) {
       var dn = dayName(d).toLowerCase();
@@ -2340,6 +2365,7 @@
         var sel = state.week_plan[d];
         var r = !o && sel ? recipeById(sel) : null;
         var dn = o ? o.name : r ? r.name : '';
+        var mk = dn ? markOf(d) : null;   // v0.16
         // Merke bare ved avvik: hvem som spiser (+2 til middag …), eller tid over det vanlige
         var tag = '';
         if (r && dayDelta(d)) tag = dayTagText(d);
@@ -2347,10 +2373,11 @@
         h += '<li class="day v11-day' + (d === today ? ' today' : '') + (r || o ? '' : ' is-empty') + (o ? ' has-oneoff' : '') +
           (swapFrom === d ? ' swap-from' : swapFrom ? ' swap-target' : '') + '" data-date="' + d + '">' +
           '<div class="v11-row">' +
-          '<button type="button" class="day-open" data-action="day-open" data-date="' + d + '" data-testid="dag" aria-haspopup="dialog" aria-label="' + esc(dayLabel(d) + ': ' + (dn || 'ingen middag') + (tag ? ', ' + tag : '')) + '">' +
+          '<button type="button" class="day-open" data-action="day-open" data-date="' + d + '" data-testid="dag" aria-haspopup="dialog" aria-label="' + esc(dayLabel(d) + ': ' + (dn || 'ingen middag') + (tag ? ', ' + tag : '') + (mk ? (mk === 'rester' ? ', rester' : ', allerede handlet') + ', ikke på handlelista' : '')) + '">' +
           '<span class="dl"><b class="dname">' + DAY_SHORT[i].charAt(0).toUpperCase() + DAY_SHORT[i].slice(1) + '</b><span class="ddate">' + shortDate(d) + '</span></span>' +
           '<span class="t"><b class="' + (dn ? 'day-name' : 'none') + '">' + esc(dn || 'Tom') + '</b>' + (o ? '<span class="s">Engangsmiddag</span>' : '') + '</span>' +
           (tag ? '<span class="v11-tag" data-testid="dag-merke">' + esc(tag) + '</span>' : '') +
+          (mk ? '<span class="v16-mark" data-testid="dag-handlet" data-mark="' + mk + '" aria-hidden="true">' + (mk === 'rester' ? ICON_BOWL + 'Rester' : '✓ Handlet') + '</span>' : '') +
           (swapFrom ? '' : '<span class="go" aria-hidden="true">›</span>') + '</button>' +
           (swapFrom ? swapBtn(d, dn) : '') + '</div></li>';
       });
@@ -2358,13 +2385,14 @@
     }
     if (swapFrom) {
       // v0.6.1 (spec v0.6.1 punkt 5): enklere tekst. Dagen som byttes er markert i lista.
-      h += '<div class="swap-bar" data-testid="bytte-linje"><p id="swap-hint" class="swap-hint">Trykk på dagen du vil bytte med</p><button type="button" class="btn small" data-action="swap-cancel" data-testid="bytt-avbryt">Avbryt</button></div>';
+      h += '<div class="swap-bar" data-testid="bytte-linje"><p id="swap-hint" class="swap-hint">' + (swapOther ? esc(swapName + ' (' + swapDay + ')') + ': trykk på dagen du vil bytte med' : 'Trykk på dagen du vil bytte med') + '</p><button type="button" class="btn small" data-action="swap-cancel" data-testid="bytt-avbryt">Avbryt</button></div>';
     }
     if (V010_LAYOUT) h += '<div class="row-actions"><a class="btn primary" href="#liste">Til handlelista →</a>' +
       (count ? '<button type="button" class="btn" data-action="clear-week" data-testid="tom-uka">Tøm uka</button>' : '') + '</div>';
     if (ui.dayOpen && dates.indexOf(ui.dayOpen) >= 0 && !swapFrom) h += daySheetHtml(ui.dayOpen, dates, rs, usedBy, swapBtn);
     else ui.dayOpen = null;
     if (ui.weekMenu && !swapFrom) h += weekMenuHtml(dates, count, emptyWeekdays, hasRecipes);
+    if (ui.markMenu && dinnerName(ui.markMenu) && !swapFrom && !ui.dayOpen) h += markMenuHtml(ui.markMenu); else ui.markMenu = null;   // v0.16
     h += '</section>';
     // Ny tegning (f.eks. endring fra en annen telefon) skal ikke miste tastaturfokus.
     var ae = document.activeElement, keep = null;
@@ -2401,6 +2429,7 @@
         '<span class="day-meta">' + o.ingredients.length + (o.ingredients.length === 1 ? ' ingrediens' : ' ingredienser') + '</span></div>' +
         '<div class="oneoff-actions">' + (ui.swap ? '' : '<a class="btn small" href="#uke/engang/' + d + '">Rediger</a>' +
         '<button type="button" class="btn small" data-action="remove-oneoff" data-date="' + d + '">Fjern</button>') + swapBtn(d, dn) + '</div>';
+      h += markSegHtml(d);
     } else {
       // Navn med variant når husstanden har flere varianter av samme rett
       var nameCount = {}; rs.forEach(function (x) { nameCount[normName(x.name)] = (nameCount[normName(x.name)] || 0) + 1; });
@@ -2423,10 +2452,72 @@
       }
       h += '<div class="day-foot"><span class="day-meta">' + esc(meta.join(' · ')) + fTag + '</span>' +
         (r ? '' : '<a class="linkbtn" href="#uke/engang/' + d + '">+ Engangsmiddag</a>') + '</div>';
+      if (r) h += markSegHtml(d);
       if (r) h += chipHtml(d, r) || ('<button type="button" class="v11-row v11-who" data-action="hs-day" data-date="' + d + '" data-testid="hs-endre"><span class="t"><b>Hvem spiser: ' +
         esc(hsPeople() ? SC.peopleText(hsPeople(), true) : 'som vanlig') + '</b></span><span class="tid">Endre ›</span></button>');
     }
     return h;
+  }
+  /* ---------- v0.16: «Allerede handlet» / «Rester» ---------- */
+  var ICON_BOWL = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 11h18a9 9 0 0 1-18 0z"/><path d="M8 7c0-1.5 1-1.5 1-3M12 7c0-1.5 1-1.5 1-3M16 7c0-1.5 1-1.5 1-3"/></svg>';
+  var MARKS = [['', 'Kjøp inn'], ['handlet', 'Handlet'], ['rester', 'Rester']];
+  function markSegHtml(d) {
+    var cur = markOf(d) || '';
+    return '<div class="v16-ingr" data-testid="ingredienser"><span class="v16-ingr-h" id="ingr-h-' + d + '">Ingredienser</span>' +
+      '<div class="seg" role="group" aria-labelledby="ingr-h-' + d + '">' + MARKS.map(function (m) {
+        return '<button type="button" data-action="day-mark" data-date="' + d + '" data-mark="' + m[0] + '" aria-pressed="' + (cur === m[0]) + '"' + (cur === m[0] ? ' class="on"' : '') +
+          ' data-testid="merke-' + (m[0] || 'kjop') + '">' + m[1] + '</button>';
+      }).join('') + '</div>' +
+      '<p class="v16-ingr-s">' + (cur ? 'Ingrediensene kommer ikke på handlelista. Merket følger middagen hvis du flytter den.' : 'Ingrediensene kommer på handlelista.') + '</p></div>';
+  }
+  function markMenuHtml(d) {
+    var cur = markOf(d);
+    return '<div class="overlay" id="mark-menu" data-action="mark-menu-close"><div class="sheet menu-sheet" role="dialog" aria-modal="true" aria-labelledby="mm-h" data-testid="merke-meny">' +
+      '<div class="sheet-head"><h3 id="mm-h">' + esc(dayName(d) + ': ' + dinnerName(d)) + '</h3></div><ul class="v11-menu">' +
+      '<li><button type="button" data-action="mark-set" data-date="' + d + '" data-mark="' + (cur === 'handlet' ? '' : 'handlet') + '" data-testid="mm-handlet">' + (cur === 'handlet' ? 'Kjøp inn likevel' : 'Allerede handlet') + '</button></li>' +
+      '<li><button type="button" data-action="mark-set" data-date="' + d + '" data-mark="' + (cur === 'rester' ? '' : 'rester') + '" data-testid="mm-rester">' + (cur === 'rester' ? 'Ikke rester likevel' : 'Rester') + '</button></li>' +
+      '<li><button type="button" class="danger" data-action="mark-clear-day" data-date="' + d + '" data-testid="mm-fjern">Fjern middagen</button></li>' +
+      '</ul><button type="button" class="btn block" data-action="mark-menu-close" data-testid="mm-lukk">Lukk</button></div></div>';
+  }
+  function setMark(d, mark, from) {
+    var e = dayEntry(d);
+    if (!e.sig) return;
+    var prev = e.mark || null;
+    mark = mark === 'handlet' || mark === 'rester' ? mark : null;
+    if (prev === mark) return;
+    ops.setDays([{ date: d, recipe_id: e.recipe_id, oneoff: e.oneoff, mark: mark }]);
+    var sig = dayEntry(d).sig;
+    var msg = dayName(d) + ': ' + (mark === 'handlet' ? 'allerede handlet. Ikke på lista.' : mark === 'rester' ? 'rester. Ikke på lista.' : 'på lista igjen.');
+    if (from !== 'sheet') renderUke(); else rerenderDaySheet(d);
+    toast(msg, UNDO_MS, { label: 'Angre', run: function () {
+      var now = dayEntry(d);
+      if (now.sig !== sig) { toast('Kan ikke angre – uka er endret siden'); return; }
+      ops.setDays([{ date: d, recipe_id: now.recipe_id, oneoff: now.oneoff, mark: prev }]);
+      if (main.querySelector('[data-page="uke"]')) renderUke(); else if (!isFormRoute()) route();
+    } });
+  }
+  function rerenderDaySheet(d) {
+    renderUke();
+    focusEl('#day-sheet [data-action="day-mark"][aria-pressed="true"]');
+  }
+  // Langt trykk (500 ms) eller høyreklikk på en dag i Uke åpner menyen. Klikket etter et langt trykk svelges.
+  var lp = { t: 0, fired: false, x: 0, y: 0 };
+  function lpStart(e) {
+    var b = e.target.closest && e.target.closest('[data-action="day-open"]');
+    if (!b || ui.swap || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    var d = b.getAttribute('data-date');
+    if (!dinnerName(d)) return;
+    clearTimeout(lp.t); lp.fired = false; lp.x = e.clientX; lp.y = e.clientY;
+    lp.t = setTimeout(function () { lp.fired = true; openMarkMenu(d); }, 500);
+  }
+  function lpCancel(e) {
+    if (e && e.type === 'pointermove' && Math.abs(e.clientX - lp.x) + Math.abs(e.clientY - lp.y) < 10) return;
+    clearTimeout(lp.t);
+  }
+  function openMarkMenu(d) {
+    ui.markMenu = d; ui.dayOpen = null; ui.weekMenu = false; renderUke();
+    if (navigator.vibrate) try { navigator.vibrate(10); } catch (x) {}
+    focusEl('#mark-menu button');
   }
   // v0.11: ⋯-menyen på Uke – Fyll man–fre (grå med forklaring når det ikke er noe å fylle) og Tøm uka…
   function weekMenuHtml(dates, count, emptyWeekdays, hasRecipes) {
@@ -2461,9 +2552,10 @@
   }
   function replacedToast(date, before, oldName) {
     var after = dayEntry(date).sig;
-    toast(oldName + ' på ' + dayName(date).toLowerCase() + ' er byttet ut', UNDO_MS, { label: 'Angre', run: function () {
+    // v0.16: et merke («handlet»/«rester») nullstilles når en ny rett velges; Angre gir merket tilbake
+    toast(oldName + ' på ' + dayName(date).toLowerCase() + ' er byttet ut' + (before.mark ? '. Merket fjernet, ny rett' : ''), UNDO_MS, { label: 'Angre', run: function () {
       if (dayEntry(date).sig !== after) { toast('Kan ikke angre – uka er endret siden'); return; }
-      ops.setDays([{ date: date, recipe_id: before.recipe_id, oneoff: before.oneoff }]);
+      ops.setDays([{ date: date, recipe_id: before.recipe_id, oneoff: before.oneoff, mark: before.mark || null }]);
       toast(oldName + ' er tilbake');
       if (main.querySelector('[data-page="uke"]')) { renderUke(); focusEl('#day-' + date); }
       else if (!isFormRoute()) route();
@@ -2622,7 +2714,19 @@
     var mon = weekDates(0)[0], seen = {};
     Object.keys(state.week_plan || {}).forEach(function (d) { if (d >= mon && state.week_plan[d] && recipeById(state.week_plan[d])) seen[d] = 1; });
     Object.keys(state.oneoffs || {}).forEach(function (d) { if (d >= mon && state.oneoffs[d]) seen[d] = 1; });
-    return Object.keys(seen).filter(function (d) { return /^\d{4}-\d\d-\d\d$/.test(d); }).sort();
+    return Object.keys(seen).filter(function (d) { return /^\d{4}-\d\d-\d\d$/.test(d) && !markOf(d); }).sort();   // v0.16: merkede middager er ikke med
+  }
+  // v0.16: middager fra og med mandag som er merket «Allerede handlet» / «Rester» (vises i linja «Ikke med: …»)
+  function markedDates() {
+    var mon = weekDates(0)[0];
+    return Object.keys(marksOf()).filter(function (d) { return d >= mon && markOf(d) && dinnerName(d); }).sort();
+  }
+  function markedLine() {
+    var ds = markedDates();
+    if (!ds.length) return '';
+    var parts = ds.map(function (d) { return '<b>' + esc(dinnerName(d)) + '</b> (' + (markOf(d) === 'rester' ? 'rester' : 'handlet') + ')'; });
+    return '<p class="ikke-med" data-testid="ikke-med"><span>Ikke med: ' + parts.join(', ') + '</span>' +
+      '<a href="#uke" class="ikke-med-vis" data-testid="ikke-med-vis">Vis ›</a></p>';
   }
   function buildList(peek) { return buildFor(listDates(), LIST_KEY, peek); }
   function buildFor(dates, weekKey, peek) {
@@ -3103,14 +3207,14 @@
     route();
   }
   function clearDayToEmpty(date, prevDelta, attempted) {
-    var prevPlan = state.week_plan[date] || null;
+    var prevPlan = state.week_plan[date] || null, prevMark = markOf(date);
     var prevOne = state.oneoffs[date] ? JSON.parse(JSON.stringify(state.oneoffs[date])) : null;
     ops.setDays([{ date: date, recipe_id: null, oneoff: null }]);
     delete state.day_people[date];
     save();
     remote(function (w, hid) { return w.deleteDayPeople(hid, date); });
     toast(dayLabel(date) + ' er satt til Tom', 8000, function () {
-      ops.setDays([{ date: date, recipe_id: prevPlan, oneoff: prevOne }]);
+      ops.setDays([{ date: date, recipe_id: prevPlan, oneoff: prevOne, mark: prevMark }]);
       if (prevDelta || attempted) {
         state.day_people[date] = prevDelta || attempted;
         save();
@@ -3901,6 +4005,7 @@
           return '<li><button type="button" class="menu-row' + (on ? ' on' : '') + '" role="radio" aria-checked="' + on + '" data-action="sort" data-sort="' + x[0] + '" aria-pressed="' + on + '"><span>' + x[1] + '</span><span class="mr-meta">' + x[2] + '</span></button></li>';
         }).join('') + '</ul></div></div>';
     }
+    h += markedLine();   // v0.16
     h += basisStrip(built.basis);
     if (ui.addOpen) h += addItemForm();
     var shown = built.items.filter(visibleItem);
@@ -4872,6 +4977,7 @@
     else fallback();
   }
   function v9SheetAction(a, btn) {
+    if (a === 'nytt-lukk') { closeV9Sheet(true); return; }   // v0.16
     if (a === 'close') { closeV9Sheet(true); return; }
     if (a === 'retry') { if (invSheet.reload) { location.reload(); return; } runInvite(); return; }
     if (a === 'share' && invSheet.inv) {
@@ -5312,6 +5418,8 @@
     var h = '<ul class="hs-group">';
     if (envInfo.phone && !isStandalone()) h += '<li><button type="button" class="hs-row" data-action="inst-open" data-testid="hs-hjemskjerm"><img class="mini" src="icons/icon-192-mork.png" alt=""><span class="t"><b>Legg Knaggen på hjemskjermen</b><span>Så finner du lista igjen</span></span><span class="go" aria-hidden="true">›</span></button></li>';
     h += '<li><a class="hs-row" href="#koble" data-testid="hs-koble"><span class="ic">' + IC.paste + '</span><span class="t"><b>Koble til med lenke eller kode</b><span>' + (hh ? 'Bytter husstand på denne telefonen' : 'Hvis den andre allerede har en husstand') + '</span></span><span class="go" aria-hidden="true">›</span></a></li>';
+    // v0.16: ⚙ for kjøkkenskjermen nås herfra (ikke fra hvileskjermen)
+    h += '<li><a class="hs-row" href="#kjokken/innstillinger" data-testid="hs-kjokken"><span class="t"><b>Kjøkkenskjerm</b><span>Avganger, kalendere og leggetid på denne enheten</span></span><span class="go" aria-hidden="true">›</span></a></li>';
     // v0.10: Forlat husstanden (bare når telefonen er med i en)
     // v0.14: «Slett delte lenker» – lenkene fra «Del lista til Oda» slutter å virke med en gang
     if (hh) h += '<li><button type="button" class="hs-row" data-action="hs-slett-lenker" data-testid="hs-slett-lenker"><span class="t"><b>Slett delte lenker</b><span>Lenker fra «Del lista til Oda» slutter å virke.</span></span><span class="go" aria-hidden="true">›</span></button></li>';
@@ -5448,7 +5556,7 @@
     toast('Lager ny husstand …', 20000);
     Sync.init().then(function () {
       return Sync.createHousehold({
-        recipes: copy.recipes, staples: copy.staples, week_plan: copy.week_plan, oneoffs: copy.oneoffs,
+        recipes: copy.recipes, staples: copy.staples, week_plan: copy.week_plan, oneoffs: copy.oneoffs, marks: copy.marks || {},
         checks: remoteChecksByWeek(copy.checks, copy.check_at), list_adjust: copy.list_adjust, list_extras: copy.list_extras,
         household_size: copy.household_size, day_people: copy.day_people
       }, null);
@@ -5686,7 +5794,22 @@
         toast('Testdata er tilbakestilt');
         renderRetter();
       });
+    } else if (a === 'day-mark') {   // v0.16
+      setMark(btn.getAttribute('data-date'), btn.getAttribute('data-mark'), 'sheet');
+    } else if (a === 'mark-set') {
+      var mdt = btn.getAttribute('data-date'); ui.markMenu = null;
+      setMark(mdt, btn.getAttribute('data-mark'));
+      focusEl('[data-action="day-open"][data-date="' + mdt + '"]');
+    } else if (a === 'mark-clear-day') {
+      var mcd = btn.getAttribute('data-date'); ui.markMenu = null;
+      clearDayToEmpty(mcd, dayDelta(mcd), null);
+      renderUke(); focusEl('[data-action="day-open"][data-date="' + mcd + '"]');
+    } else if (a === 'mark-menu-close' && (btn.tagName === 'BUTTON' || e.target === btn)) {
+      var mmd = ui.markMenu; ui.markMenu = null; renderUke(); focusEl('[data-action="day-open"][data-date="' + mmd + '"]');
+    } else if (a === 'mark-menu-close') {
+      return;
     } else if (a === 'day-open') {   // v0.11
+      if (lp.fired) { lp.fired = false; return; }   // v0.16: klikket etter et langt trykk
       ui.dayOpen = btn.getAttribute('data-date'); ui.weekMenu = false; renderUke();
       var dsel = main.querySelector('#day-sheet select, #day-sheet .btn'); if (dsel) try { dsel.focus({ preventScroll: true }); } catch (x) { dsel.focus(); }
     } else if (a === 'day-close' || (a === 'day-close-bg' && e.target === btn)) {
@@ -5708,8 +5831,7 @@
     } else if (a === 'swap-to') {
       if (ui.swap) swapNow(ui.swap.from, btn.getAttribute('data-date'));
     } else if (a === 'week-prev' || a === 'week-next' || a === 'week-now') {
-      // Én felles uke for Uke og Liste.
-      ui.swap = null;
+      // Én felles uke for Uke og Liste. v0.16: byttemodus beholdes, så middagen kan flyttes til en annen uke.
       ui.weekOffset = a === 'week-now' ? 0 : ui.weekOffset + (a === 'week-next' ? 1 : -1);
       ui.weekTouched = true;
       route();
@@ -5962,6 +6084,17 @@
     }
   });
 
+  // v0.16: langt trykk / høyreklikk på en dag i Uke
+  main.addEventListener('pointerdown', lpStart);
+  ['pointerup', 'pointercancel', 'pointerleave', 'pointermove'].forEach(function (t) { main.addEventListener(t, lpCancel); });
+  main.addEventListener('scroll', lpCancel, true);
+  main.addEventListener('contextmenu', function (e) {
+    var b = e.target.closest && e.target.closest('[data-action="day-open"]');
+    if (!b || ui.swap || !dinnerName(b.getAttribute('data-date'))) return;
+    e.preventDefault(); clearTimeout(lp.t);
+    if (!lp.fired) openMarkMenu(b.getAttribute('data-date'));
+    lp.fired = e.pointerType !== 'mouse' && !!('ontouchstart' in window);
+  });
   main.addEventListener('change', function (e) {
     var t = e.target;
     if (t.hasAttribute && t.hasAttribute('data-finn-var')) {   // v0.11: valgt variant i Matrett-byggeren
@@ -6148,6 +6281,61 @@
     history.replaceState(null, '', location.pathname + location.search + '#liste');
   }
   if (NEW_HOME) runOldAddress(); else route();
+
+  /* ---------- v0.16: versjonsnummeret ved logoen og «Nytt i Knaggen» ----------
+   * Trykk på «0.16» åpner arket. Etter en oppdatering åpnes det av seg selv én gang (ikke ved aller første åpning,
+   * ikke på kjøkkenskjermen og ikke i automatiserte tester uten testkroken KNAGGEN_TEST_NYTT). */
+  var APP_VERSION = '0.16.0', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var NEWS = [
+    ['0.16', ['Kjøkkenskjermen viser avganger fra holdeplassene i nærheten, med tid til å gå dit.',
+      'Kjøkkenskjermen kan vise opptil fire kalendere (Google, Outlook, iCloud). Bare den som la inn adressen ser den.',
+      'Merk en middag «Allerede handlet» eller «Rester», så kommer ingrediensene ikke på handlelista. Hold fingeren på dagen i Uke, eller åpne dagen.',
+      'Du kan flytte en middag til en annen uke: trykk ⇅ Bytt og bla til uka du vil.',
+      'Versjonsnummeret står ved logoen. Trykk på det for å se hva som er nytt.']],
+    ['0.15', ['Kjøkkenskjerm for nettbrettet på kjøkkenet: klokke, dagens middag, været og oppskriften med stor skrift når dere lager mat.']],
+    ['0.14', ['Del lista til Oda: send handlelista som en lenke og legg alt i Oda-handlekurven på én gang.',
+      'Appen åpner på handlelista, der du oftest skal.']],
+    ['0.13', ['Første kobling til Oda: varene kunne søkes opp én om gangen (erstattet av «Del lista til Oda» i 0.14).']]
+  ];
+  function newsHtml() {
+    return '<div class="sheet-head"><h3 id="nytt-h">Nytt i Knaggen</h3><span class="nytt-ver">Versjon ' + APP_VERSION + '</span></div>' +
+      '<div class="nytt-body">' + NEWS.map(function (n, i) {
+        return '<section class="nytt-v"><h4>' + (i === 0 ? 'Nå i ' : '') + n[0] + '</h4><ul>' + n[1].map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ul></section>';
+      }).join('') + '</div>' +
+      '<button type="button" class="btn primary block" data-v9="nytt-lukk" data-testid="nytt-lukk">Fint</button>';
+  }
+  function openNews() {
+    lsSet(SEEN_VER_KEY, APP_VERSION);
+    var ov = openV9Sheet('nytt', newsHtml());
+    ov.querySelector('.sheet').setAttribute('data-testid', 'nytt-ark');
+    ov.addEventListener('keydown', function (e) { if (e.key === 'Tab') trapTab(ov, e); });
+  }
+  (function versionBadge() {
+    var h1 = document.querySelector('.topbar h1');
+    if (h1 && !document.getElementById('ver-badge')) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.id = 'ver-badge'; b.className = 'ver-badge'; b.setAttribute('data-testid', 'versjon');
+      b.setAttribute('aria-label', 'Versjon ' + APP_VERSION + ' – se hva som er nytt');
+      b.textContent = APP_VERSION.replace(/\.0$/, '');
+      h1.insertAdjacentElement('afterend', b);
+      b.addEventListener('click', openNews);
+    }
+    var seen = lsGet(SEEN_VER_KEY);
+    if (seen === APP_VERSION) return;
+    var used = USED_BEFORE;
+    var auto = navigator.webdriver ? !!window.KNAGGEN_TEST_NYTT : true;
+    if (!seen && !used) { lsSet(SEEN_VER_KEY, APP_VERSION); return; }   // aller første åpning: ikke vis
+    if (!auto) return;
+    function tryOpen() {
+      if (/^#kjokken/.test(location.hash) || v9Sheet() || askOpen || document.querySelector('.overlay')) return false;
+      openNews(); return true;
+    }
+    setTimeout(function () {
+      if (tryOpen()) return;
+      var onHash = function () { setTimeout(function () { if (lsGet(SEEN_VER_KEY) === APP_VERSION || tryOpen()) window.removeEventListener('hashchange', onHash); }, 400); };
+      window.addEventListener('hashchange', onHash);
+    }, 600);
+  })();
 
   // Åpnes appen igjen etter en stund (f.eks. søndag kveld → mandag), velges riktig uke på nytt.
   var hiddenAt = 0;
