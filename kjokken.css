@@ -249,7 +249,10 @@ html.k-html, html.k-html body { overflow: hidden; }
 .kj .k-swl input { width: 24px; height: 24px; flex: 0 0 24px; margin: 0; accent-color: var(--k-brand); }
 .kj .k-foot .k-gear { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin: -10px auto -10px 12px; padding: 0 12px; font-size: 14px; color: var(--k-muted); text-decoration: none; }
 .kj .k-foot .k-til-appen + .k-gear { margin-left: 4px; }
-/* v0.16.1: innstillingene og alle ark der vises alltid i appens vanlige lyse utgave – bare tavla følger Dag/Kveld/Natt. */
-.kj .k-sheet { --k-bg: #f4f2ed; --k-surface: #ebe8e1; --k-line: #dcd7cd; --k-ink: #252a28; --k-muted: #596260; --k-clock: #252a28;
-  --k-brand: #3f6e5a; --k-on-brand: #ffffff; --k-mark: #252a28; --k-brass: #a5813f; --k-fade: 1; --k-late: #7c5d28; --k-accent: #7c5d28;
-  --k-cal-1: #3f6e5a; --k-cal-2: #44617a; --k-cal-3: #7a4f6a; --k-cal-4: #8a5232; color: var(--k-ink); color-scheme: light; }
+/* v0.16.2: innstillingene og alle ark der følger appens vanlige tema (systemets lys/mørk), ikke tavlas Dag/Kveld/Natt. */
+.kj .k-sheet { --k-bg: var(--bg); --k-surface: var(--card-2); --k-line: var(--line); --k-ink: var(--ink); --k-muted: var(--muted); --k-clock: var(--ink);
+  --k-brand: var(--brand); --k-on-brand: var(--brand-ink); --k-mark: var(--ink); --k-brass: var(--accent); --k-fade: 1; --k-late: var(--accent-ink); --k-accent: var(--accent-ink);
+  --k-cal-1: #86a898; --k-cal-2: #8fa8c0; --k-cal-3: #c39ab4; --k-cal-4: #d1a07e; color: var(--k-ink); color-scheme: dark; }
+@media (prefers-color-scheme: light) {
+  .kj .k-sheet { --k-cal-1: #3f6e5a; --k-cal-2: #44617a; --k-cal-3: #7a4f6a; --k-cal-4: #8a5232; color-scheme: light; }
+}

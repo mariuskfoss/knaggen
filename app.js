@@ -1,4 +1,4 @@
-/* Knaggen (arbeidsnavn Ukeshandel) v0.16.1 — ukeplan for middager + handleliste, delt i husstanden via Firebase.
+/* Knaggen (arbeidsnavn Ukeshandel) v0.16.2 — ukeplan for middager + handleliste, delt i husstanden via Firebase.
  * Uten Firebase-oppsett (eller før husstand er opprettet) lagres alt lokalt i nettleseren som før.
  */
 (function () {
@@ -6291,8 +6291,9 @@
   /* ---------- v0.16: versjonsnummeret ved logoen og «Nytt i Knaggen» ----------
    * Trykk på «0.16» åpner arket. Etter en oppdatering åpnes det av seg selv én gang (ikke ved aller første åpning,
    * ikke på kjøkkenskjermen og ikke i automatiserte tester uten testkroken KNAGGEN_TEST_NYTT). */
-  var APP_VERSION = '0.16.1', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.16.2', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.16.2', ['Innstillingene på kjøkkenskjermen følger nå samme lyse eller mørke tema som resten av appen (etter innstillingen på enheten), og er lette å lese i begge.']],
     ['0.16.1', ['Nettbrettet kan starte rett på kjøkkenskjermen: slå på «Start som kjøkkenskjerm på denne enheten» under Husstand → Kjøkkenskjerm. «Til appen» nederst tar deg til lista.',
       '⚙ Innstillinger er tilbake nederst på kjøkkenskjermen.',
       'Trykk på «● Delt» øverst til høyre for å åpne Husstand og delingslenken.',
