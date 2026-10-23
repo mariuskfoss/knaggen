@@ -187,6 +187,17 @@ Lokal modus: `localStorage['ukeshandel:v1']`, `version: 1` (uendret, så eldre s
 - **Firestore-reglene endres** (bakoverkompatibelt med 0.10.0): se `../firestore.rules.v011-READY.txt` og `../sjekkliste-v011.md`.
 - **Tester:** `tests/e2e-v011.js` (godkjenningskriteriene, inkl. en 0.10.0-telefon i samme husstand). Eldre suiter kjører med testkrokene `KNAGGEN_SEED_RECIPES` og `KNAGGEN_V010_LAYOUT` (v0.10-oppsettet av Uke, Retter, Handleliste og Husstand, kopiert uendret), se `tests/v09compat.js`.
 
+## v0.15 «Kjøkkenskjerm» (`#kjokken`, design `../merkevare/v015-kjokken/`)
+- `kjokken.js` + `kjokken.css`: egen fullskjermmodus på `#kjokken`. Resten av appen er uendret, bortsett fra «⌂ Kjøkkenskjerm»-knappen, som bare vises når appen ble åpnet derfra (`sessionStorage`).
+- Hvile: klokke (oppdateres på minuttskiftet), dato + uke, middag i dag, de neste tre dagene og vær (nå + høy/lav i dag) med egne ikoner og «Værdata fra MET Norway». Hendelsesraden er skjult.
+- Døgnrytme: Dag → Kveld 30 min før solnedgang, men tidligst 16:00 (senest 21:00 når sola går ned etter leggetid), 45 min. Kveld → Natt ved leggetid, 20 min. Natt → Dag ved det seneste av soloppgang og «Stå opp», 30 min. Tokenene blandes i OKLab hvert 30. s. Sola regnes lokalt (SunCalc).
+- Innbrenning: `--k-shift-x/y` på en Lissajous-bane, ±8 px (1 px/min). Om natta ±40 px, hvert 5. min, og bare klokka tegnes. Første trykk om natta viser bare Kveld-fargene i 30 s.
+- Matlaging: ett steg om gangen (knapper eller sveip), ingredienser kan strykes og er skalert som handlelista (`dayFactor`/`scaleQty`). Wake Lock tas på nytt ved `visibilitychange`, og teksten vises bare når låsen er tatt. Lukkes med × eller etter 30 min uten trykk. Om natta brukes Kveld-fargene.
+- Vanlig Knaggen åpnet herfra går tilbake etter 2 min uten trykk, men ikke mens et ark er åpent eller et skjema har ulagrede endringer.
+- Innstillinger per enhet (`localStorage` `knaggen:kjokken`): leggetid, stå opp, stedsnavn og breddegrad/lengdegrad (avrundet til 2 desimaler, fra nettleserens posisjon etter trykk eller skrevet inn). Standard: Oslo.
+- `functions/vaer.js` + `hentVaer` (callable, europe-west1, 256MiB, `knaggen-fn-runtime`, maxInstances 3): krever et innlogget husstandsmedlem og har kvote per husstand (20/t, 200/døgn). Funksjonen er en proxy til MET Locationforecast 2.0 compact med User-Agent `Knaggen/0.15 https://app.knaggen.no`. Cachen ligger i `vaercache/{lat_lon}` (bare tilgjengelig for funksjonen; reglene er uendret) og gjelder i minst 30 min eller til `Expires`, med `If-Modified-Since` og 304. Svaret til appen er `{sym,temp,hi,lo,lat,lon,updated}`. Uten husstand viser skjermen ikke vær.
+- Tester: `tests/fn-v015.test.js` og `tests/e2e-v015.js` mot falsk MET (`tests/metmock.js`, 127.0.0.1:8768; `testkit/fn-emulator.sh` setter `KNAGGEN_TEST_MET`, som bare virker i emulatoren). Testkroker: `window.KNAGGEN_NOW`, `KNAGGEN_KJOKKEN_IDLE_MS`, `KNAGGEN_KJOKKEN_FADE_MS`.
+
 ## v0.14.1 (startfanen)
 - Første åpning er uendret (introen → Uke/ukeplanen). Deretter åpner appen alltid på Handleliste (`#liste`) når den åpnes uten adresse; lenker med `#…`, invitasjoner og delt innhold (`?url=`) går dit de peker. Test: `tests/e2e-v0141.js`.
 

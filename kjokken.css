@@ -1,0 +1,110 @@
+/* Knaggen v0.15 «Kjøkkenskjerm» (#kjokken). Fra merkevare/v015-kjokken/_bygg/kjokken.css, avgrenset til .kj.
+ * --k-*-tokenene settes av kjokken.js (blandet i OKLab mellom Dag, Kveld og Natt). Ingen kanter. */
+html.k-html, html.k-html body { overflow: hidden; }
+.kj { --k-bg: #f4f2ed; --k-surface: #ebe8e1; --k-line: #dcd7cd; --k-ink: #252a28; --k-muted: #596260; --k-clock: #252a28;
+  --k-brand: #3f6e5a; --k-on-brand: #ffffff; --k-mark: #252a28; --k-brass: #a5813f; --k-fade: 1;
+  position: fixed; inset: 0; z-index: 2000; background: var(--k-bg); color: var(--k-ink); overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-variant-numeric: tabular-nums; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none;
+  transition: opacity .6s ease; }
+.kj[hidden] { display: none; }
+.kj.k-in { animation: k-in .6s ease; }
+@keyframes k-in { from { opacity: 0; } to { opacity: 1; } }
+.kj.k-fading, body.k-fading > :not(.kj) { opacity: 0; transition: opacity .6s ease; }
+.kj * { box-sizing: border-box; }
+.kj button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; text-align: inherit; cursor: pointer; }
+.kj button:focus-visible { outline: 3px solid var(--k-brand); outline-offset: 4px; border-radius: 8px; }
+.kj .k-stage { position: absolute; inset: 0; padding: 48px 56px 40px; transform: translate(var(--k-shift-x, 0px), var(--k-shift-y, 0px)); }
+.kj .k-fadeable { opacity: var(--k-fade); }
+.kj .k-lbl { font-size: 15px; letter-spacing: .08em; text-transform: uppercase; color: var(--k-muted); margin: 0 0 6px; font-weight: 600; }
+.kj .k-clock { font-size: min(168px, 13.2vw, 21vh); line-height: .95; font-weight: 300; letter-spacing: -.025em; color: var(--k-clock); margin: 0; }
+.kj .k-date { font-size: min(32px, 4.2vh); color: var(--k-muted); margin: 10px 0 0; }
+.kj .k-dinbtn { display: block; width: 100%; }
+.kj .k-dinner { font-size: min(46px, 5.8vh); line-height: 1.15; font-weight: 650; margin: 0; }
+.kj .k-dinner.k-none { color: var(--k-muted); font-weight: 500; }
+.kj .k-dmeta { font-size: 22px; color: var(--k-muted); margin: 6px 0 0; }
+.kj .k-next { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 20px; color: var(--k-muted); }
+.kj .k-next b { color: var(--k-ink); font-weight: 600; }
+.kj .k-wx { display: grid; grid-template-columns: auto 1fr; gap: 4px 18px; align-items: center; }
+.kj .k-wx svg { width: 96px; height: 96px; grid-row: span 2; }
+.kj .k-temp { font-size: 72px; font-weight: 300; line-height: 1; }
+.kj .k-wxt { font-size: 20px; color: var(--k-muted); margin: 0; }
+.kj .k-hl { font-size: 24px; margin: 10px 0 0; grid-column: 1 / -1; }
+.kj .k-hl span { color: var(--k-muted); }
+.kj .k-credit { font-size: 14px; color: var(--k-muted); }
+.kj .k-mark { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; color: var(--k-muted); }
+.kj .k-mark svg { width: 24px; height: 24px; }
+.kj .k-set { font-size: 14px; color: var(--k-muted); padding: 10px 12px; margin-left: 12px; margin-right: auto; }
+.kj .k-foot { position: absolute; left: 56px; right: 56px; bottom: 28px; display: flex; justify-content: space-between; align-items: center; }
+
+/* Liggende: to kolonner */
+.kj .k-grid { display: grid; grid-template-columns: 1.45fr 1fr; gap: 56px; height: calc(100% - 52px); }
+.kj .k-left { display: grid; align-content: start; gap: min(40px, 4vh); }
+.kj .k-right { display: grid; align-content: start; gap: min(40px, 4vh); padding-top: 18px; }
+/* Stående: én kolonne, været etter middagen */
+@media (orientation: portrait) {
+  .kj .k-stage { padding: 64px 48px 40px; }
+  .kj .k-grid { grid-template-columns: 1fr; gap: 48px; align-content: start; height: auto; }
+  .kj .k-left, .kj .k-right { gap: 44px; padding-top: 0; }
+  .kj .k-dinner { font-size: min(56px, 7vw); }
+  .kj .k-clock { font-size: min(176px, 22vw); }
+  .kj .k-foot { left: 48px; right: 48px; }
+}
+@media (max-width: 700px) {
+  .kj .k-stage { padding: 28px 22px 24px; }
+  .kj .k-foot { left: 22px; right: 22px; bottom: 14px; }
+}
+
+/* Natt: bare klokka, midtstilt, tynn */
+.kj.k-natt .k-grid > .k-right, .kj.k-natt .k-left > :not(.k-timeblock), .kj.k-natt .k-date, .kj.k-natt .k-foot { display: none !important; }
+.kj.k-natt .k-grid { display: grid; place-items: center; align-content: center; height: 100%; grid-template-columns: 1fr; }
+.kj.k-natt .k-left { display: block; text-align: center; }
+.kj.k-natt .k-clock { font-size: min(220px, 17vw, 28vh); font-weight: 200; }
+@media (orientation: portrait) { .kj.k-natt .k-clock { font-size: min(220px, 26vw); } }
+
+/* Matlaging */
+.kj.k-cook .k-stage { padding: 36px 48px 32px; display: flex; flex-direction: column; }
+.kj .k-ctop { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; margin: 0 0 24px; }
+.kj .k-ctop h1 { font-size: min(40px, 5vh); margin: 0; font-weight: 700; }
+.kj .k-ctop > div { display: flex; align-items: baseline; gap: 20px; flex: 1; flex-wrap: wrap; }
+.kj .k-ctop .m { font-size: 22px; color: var(--k-muted); }
+.kj .k-cgrid { display: grid; grid-template-columns: 1fr 1.5fr; gap: 40px; flex: 1; min-height: 0; }
+.kj .k-ing { list-style: none; margin: 0; padding: 0; font-size: 26px; line-height: 1.25; display: grid; gap: 4px; align-content: start; overflow: auto; }
+.kj .k-ing button { display: block; width: 100%; padding: 6px 0; min-height: 44px; }
+.kj .k-ing b { font-weight: 650; }
+.kj .k-ing button.done { color: var(--k-muted); text-decoration: line-through; }
+.kj .k-step { background: var(--k-surface); border-radius: 20px; padding: 32px 36px; display: grid; grid-template-rows: auto 1fr auto; gap: 18px; min-height: 0; }
+.kj .k-step .n { font-size: 20px; color: var(--k-muted); font-weight: 600; }
+.kj .k-step .t { font-size: min(44px, 5.5vh); line-height: 1.25; font-weight: 500; margin: 0; align-self: center; overflow: auto; }
+.kj .k-steps { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.kj .k-btn { min-height: 88px; border-radius: 16px; font-size: 28px; font-weight: 650; background: var(--k-bg); color: var(--k-ink); text-align: center; padding: 0 16px; }
+.kj .k-btn.pri { background: var(--k-brand); color: var(--k-on-brand); }
+.kj .k-btn:disabled { opacity: .45; cursor: default; }
+.kj .k-awake { font-size: 16px; color: var(--k-muted); display: inline-flex; align-items: center; gap: 8px; }
+.kj .k-awake[hidden] { display: none; }
+.kj .k-x { min-width: 72px; min-height: 72px; border-radius: 14px; background: var(--k-surface); color: var(--k-ink); font-size: 30px; text-align: center; }
+@media (orientation: portrait) {
+  .kj .k-cgrid { grid-template-columns: 1fr; grid-template-rows: auto 1fr; gap: 28px; }
+  .kj .k-ing { grid-template-columns: 1fr 1fr; gap: 0 24px; font-size: 26px; max-height: 38vh; }
+  .kj .k-ctop { position: relative; padding-right: 90px; flex-wrap: wrap; }
+  .kj .k-ctop > div { flex-direction: column; gap: 6px; flex-basis: 100%; }
+  .kj .k-ctop .k-x { position: absolute; top: 0; right: 0; }
+}
+
+/* Innstillinger (per enhet) */
+.kj .k-sheet { position: absolute; inset: 0; background: color-mix(in srgb, var(--k-bg) 70%, transparent); display: grid; place-items: center; padding: 24px; z-index: 2; }
+.kj .k-form { background: var(--k-surface); border-radius: 20px; padding: 28px 32px; width: min(620px, 100%); max-height: 100%; overflow: auto; display: grid; gap: 14px; user-select: text; }
+.kj .k-form h2 { margin: 0; font-size: 28px; }
+.kj .k-help { margin: 0; font-size: 16px; color: var(--k-muted); }
+.kj .k-err { color: var(--k-ink); font-weight: 600; }
+.kj .k-row { display: flex; gap: 16px; flex-wrap: wrap; }
+.kj .k-row label { flex: 1 1 180px; display: grid; gap: 6px; font-size: 16px; color: var(--k-muted); font-weight: 600; }
+.kj .k-row input { font: inherit; font-size: 22px; font-weight: 400; padding: 12px 14px; border-radius: 12px; border: 0; background: var(--k-bg); color: var(--k-ink); min-height: 56px; }
+.kj .k-form .k-btn { min-height: 64px; font-size: 22px; }
+.kj .k-acts { justify-content: flex-end; }
+.kj .k-acts .k-btn { flex: 0 1 180px; }
+
+/* Vanlig Knaggen åpnet fra kjøkkenskjermen */
+.k-home { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 8px); right: 12px; z-index: 900; display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 999px; background: var(--card-2, #ebe8e1); color: var(--ink, #252a28); font-size: 15px; font-weight: 600; text-decoration: none; }
+.k-home[hidden] { display: none; }

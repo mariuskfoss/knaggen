@@ -468,7 +468,9 @@ async function makeShareList(hid, lines, title, people) {
   return { url: fnBase(pid) + '/visDeleliste/' + r.id, expiresAt: r.expiresAt };
 }
 function deleteShareLists(hid) { return callFn('slettDelelister', { hid }); }
+// v0.15: vær til kjøkkenskjermen via hentVaer (MET-proxy; nettleseren kan ikke sette User-Agent).
+function fetchWeather(hid, lat, lon) { return callFn('hentVaer', { hid, lat, lon }, 15000); }
 
-window.UkeshandelSync = { fetchRecipe, makeShareList, deleteShareLists, mode, init, randomCode, createHousehold, joinHousehold, isMember, subscribe, write: W, uid: () => ctx && ctx.uid,
+window.UkeshandelSync = { fetchRecipe, makeShareList, deleteShareLists, fetchWeather, mode, init, randomCode, createHousehold, joinHousehold, isMember, subscribe, write: W, uid: () => ctx && ctx.uid,
   inviteCode, createInvite, getInvite, leaveHousehold, deleteHousehold, stillMember };
 window.dispatchEvent(new Event('ukeshandel-sync-ready'));

@@ -1,4 +1,4 @@
-/* Knaggen (arbeidsnavn Ukeshandel) v0.14.1 — ukeplan for middager + handleliste, delt i husstanden via Firebase.
+/* Knaggen (arbeidsnavn Ukeshandel) v0.15.0 — ukeplan for middager + handleliste, delt i husstanden via Firebase.
  * Uten Firebase-oppsett (eller før husstand er opprettet) lagres alt lokalt i nettleseren som før.
  */
 (function () {
@@ -1232,6 +1232,37 @@
     });
   }
 
+  // v0.15 «Kjøkkenskjerm» (#kjokken, kjokken.js): appen gir bare data; skjermen tegner selv.
+  function kitchenMeal(d) {
+    var o = state.oneoffs[d];
+    var r = o ? { name: o.name, ingredients: o.ingredients || [], _oneoff: true, id: o.id } : (state.week_plan[d] ? recipeById(state.week_plan[d]) : null);
+    if (!r) return null;
+    var f = r._oneoff ? 1 : dayFactor(d, r);
+    var tom = f === 'Tom';
+    var por = r._oneoff ? null : (tom ? 0 : SC.servingsOf(r) * f);
+    return {
+      date: d, name: r.name, id: r.id || null, time: r._oneoff ? '' : timeText(r), oneoff: !!r._oneoff,
+      portions: por == null ? '' : fmtPor(por) + (por === 1 ? ' porsjon' : ' porsjoner'),
+      ingredients: (r.ingredients || []).filter(function (i) { return i && String(i.name || '').trim(); }).map(function (i) {
+        var q = (tom || f === 1) ? i.qty : scaleQty(i.qty, i.unit, f, normName(i.name));
+        var a = q == null || !isFinite(q) ? '' : formatQty(q) + (i.unit ? ' ' + i.unit : '');
+        return { amount: a, name: String(i.name).trim() };
+      }),
+      steps: r._oneoff ? [] : stepsFor(r)
+    };
+  }
+  window.KnaggenKitchenApi = {
+    meal: function (d) { return kitchenMeal(d); },
+    isoDate: isoDate, isoWeek: isoWeek,
+    hid: function () { return hh ? hh.hid : null; },
+    weather: function (lat, lon) {
+      var S = window.UkeshandelSync;
+      if (!hh || !S || !S.fetchWeather) return Promise.reject(new Error('no-household'));
+      return S.fetchWeather(hh.hid, lat, lon);
+    },
+    toApp: function () { location.hash = '#uke'; }
+  };
+
   function dinnerName(d) {
     var o = state.oneoffs[d];
     if (o) return o.name;
@@ -1412,6 +1443,9 @@
     var h = raw.replace(/^#\/?/, '');
     var parts = h.split('/');
     var tab = parts[0];
+    var K = window.KnaggenKjokken;
+    if (tab === 'kjokken' && K) { setTabsHidden(true); document.body.classList.add('k-open'); main.innerHTML = ''; K.show(); return; }
+    if (K) { K.hide(); document.body.classList.remove('k-open'); }
     var join = parseJoin(raw);
     var inn = parseInn(raw), flytt = parseFlytt(raw);
     var connectFirst = !raw.replace(/^#/, '') || tab === 'uke' && !parts[1] ? showConnectFirst() : false;
