@@ -23,6 +23,10 @@
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function lsGet(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+  // v0.16.1: «Start som kjøkkenskjerm på denne enheten» (per enhet). app.js leser samme nøkkel ved åpning uten #.
+  var START_KEY = 'knaggen:start-kjokken';
+  function startKitchen() { return lsGet(START_KEY) === true; }
+  function setStartKitchen(on) { if (on) lsSet(START_KEY, true); else { try { localStorage.removeItem(START_KEY); } catch (e) {} } }
   function round2(x) { return Math.round(x * 100) / 100; }
   function settings() {
     var s = lsGet(LS_KEY) || {}, o = {};
@@ -317,7 +321,7 @@
         }).join('');
         return '<div class="ln" data-testid="k-avg-linje">' + modeIcon(l.transportMode) + '<span class="no">' + esc(l.publicCode || '') + '</span><span class="dir">' + esc(front) + '</span><span class="tms">' + tms + '</span></div>';
       });
-      if (!rows.length) rows.push('<p class="note">Ingen avganger den neste timen.</p>');
+      if (!rows.length) rows.push('<p class="note" data-testid="k-avg-tom">' + (until <= t ? 'Etter leggetid – avgangene vises igjen i morgen.' : until < t + DEP_WINDOW ? 'Ingen avganger før leggetid.' : 'Ingen avganger den neste timen.') + '</p>');
       html.push('<div class="stop">' + (many ? '<p class="sn">' + esc(st.name) + '</p>' : '') + rows.join('') + '</div>');
     });
     var upd = new Date(dep.at), note = (many ? '' : esc(a.stops[0].name) + ' · ') + 'oppdatert ' + two(upd.getHours()) + ':' + two(upd.getMinutes()) +
@@ -424,7 +428,8 @@
       '<div class="k-fadeable k-o2">' + dinner + '</div>' + (cal || '') +
       '</div><div class="k-right"><div class="k-o3">' + weatherHtml(s) + '</div>' + dep + next +
       '</div></div>' +
-      '<div class="k-foot k-fadeable"><span class="k-mark">' + MARK + 'Knaggen</span>' +
+      '<div class="k-foot k-fadeable"><a class="k-mark k-til-appen" href="#liste" data-k="toapp" data-testid="k-til-appen">' + MARK + 'Knaggen<span class="k-ta">Til appen ›</span></a>' +
+        '<a class="k-gear" href="#kjokken/innstillinger" data-k="settings" data-testid="k-innstillinger" aria-label="Innstillinger for kjøkkenskjermen"><span aria-hidden="true">⚙</span> Innstillinger</a>' +
       '<span class="k-credit" data-testid="k-kreditering">Værdata fra MET Norway · Avganger fra Entur</span></div></div>';
   }
   function cookHtml() {
@@ -468,9 +473,9 @@
     view = 'cook'; lastTap = Date.now(); render(); takeLock();
   }
   function closeCook() { view = 'idle'; cook = null; dropLock(); render(); }   // strykingene nullstilles ved lukking
-  function toApp() {
+  function toApp(h) {
     try { sessionStorage.setItem(SS_FROM, '1'); } catch (e) {}
-    fadeOut(function () { api().toApp(); });
+    fadeOut(function () { api().toApp(h); });
   }
   function fadeOut(cb) {
     var el = open && root ? root : document.body;
@@ -482,7 +487,7 @@
     lastTap = Date.now();
     var t = e.target.closest ? e.target.closest('[data-k]') : null, k = t && t.getAttribute('data-k');
     if (root.querySelector('.k-sheet')) return sheetTap(k, e);
-    if (view === 'idle' && isNight()) { woke = now(); render(); return; }   // natt: første trykk bare vekker
+    if (view === 'idle' && isNight()) { if (e.preventDefault) e.preventDefault(); woke = now(); render(); return; }   // natt: første trykk bare vekker (lenker følges ikke)
     if (view === 'cook') {
       if (k === 'close') closeCook();
       else if (k === 'next') { cook.step++; render(); }
@@ -492,14 +497,22 @@
       return;
     }
     if (k === 'cook') return openCook();
+    if (k === 'toapp') { e.preventDefault(); return toApp('#liste'); }
+    if (k === 'settings') { e.preventDefault(); location.hash = '#kjokken/innstillinger'; return; }   // v0.16.1: ⚙ tilbake på hvileskjermen   // v0.16.1: «Til appen» → lista
     toApp();
   }
   /* ---------- ⚙ Innstillinger (v0.16: ark til høyre med tre faner) ---------- */
   var sheet = { tab: 'tid', near: null, nearErr: '', nearBusy: false, dirs: {}, adding: false, color: 1, calErr: '', calBusy: false, rmBusy: '' };
   var KAL_ERR = { 'bad-scheme': 'Adressen må begynne med https:// eller webcal://.', blocked: 'Den adressen kan ikke brukes.', 'bad-url': 'Det ser ikke ut som en nettadresse.',
     'not-ics': 'Fant ingen kalender på adressen. Bruk «Hemmelig adresse i iCal-format».', gone: 'Adressen virker ikke (finnes ikke, eller er tilbakestilt).',
-    'too-large': 'Kalenderen er for stor (over 2 MB).', timeout: 'Kalenderen svarte ikke i tide. Prøv igjen.', max: 'Dere har allerede 4 kalendere.', rate: 'For mange forsøk. Vent litt og prøv igjen.',
-    name: 'Gi kalenderen et navn (opptil 30 tegn).', 'no-key': 'Kalender er ikke slått på ennå.', 'no-server': 'Fikk ikke kontakt. Er enheten på nett?' };
+    'too-large': 'Kalenderen er for stor (over 8 MB).', timeout: 'Kalenderen svarte ikke i tide. Prøv igjen.', max: 'Dere har allerede 4 kalendere.', rate: 'For mange forsøk. Vent litt og prøv igjen.',
+    name: 'Gi kalenderen et navn (opptil 30 tegn).', 'no-key': 'Kalender er ikke slått på ennå.', 'no-server': 'Fikk ikke kontakt. Er enheten på nett?',
+    // v0.16.1: mer presise meldinger i stedet for «Prøv igjen»
+    dns: 'Fant ikke nettstedet i adressen. Sjekk at hele adressen er limt inn.', net: 'Kalendertjenesten svarte ikke. Prøv igjen om litt.',
+    http: 'Adressen ble ikke godtatt av kalendertjenesten.', redirects: 'Adressen sendte oss videre for mange ganger.',
+    google: 'Kalendertjenesten svarte ikke (feil hos dem). Prøv igjen om litt.', slow: 'Kalenderen er for stor til å lese i tide.',
+    'functions/deadline-exceeded': 'Kalenderen er for stor eller svarte for sent.', 'functions/unavailable': 'Fikk ikke kontakt med Knaggen. Prøv igjen.',
+    'functions/internal': 'Noe gikk galt hos Knaggen da kalenderen ble lest. Prøv igjen, eller si fra.' };
   function tabsHtml() {
     return '<div class="k-seg" role="tablist">' + [['tid', 'Tid og sted'], ['avg', 'Avganger'], ['kal', 'Kalendere']].map(function (x) {
       return '<button type="button" role="tab" data-k="tab" data-tab="' + x[0] + '" data-testid="k-fane-' + x[0] + '" aria-selected="' + (sheet.tab === x[0]) + '" class="' + (sheet.tab === x[0] ? 'on' : '') + '">' + x[1] + '</button>';
@@ -507,7 +520,10 @@
   }
   function tidHtml() {
     var s = settings();
-    return '<form class="k-form" data-k="form">' +
+    return '<div class="k-startk"><label class="k-swl"><input type="checkbox" data-k="startk" data-testid="k-start-kjokken"' + (startKitchen() ? ' checked' : '') + '>' +
+      '<span>Start som kjøkkenskjerm på denne enheten</span></label>' +
+      '<p class="k-help">Åpner du Knaggen uten en lenke, kommer du rett hit. Lenker, invitasjoner og delte lister virker som før. «Til appen» nederst på skjermen tar deg til lista.</p></div>' +
+      '<form class="k-form" data-k="form">' +
       '<p class="lead">Lagres bare på denne enheten.</p>' +
       '<div class="k-row"><label>Leggetid<input type="time" name="bed" value="' + esc(s.bed) + '" required data-testid="k-leggetid"></label>' +
       '<label>Stå opp<input type="time" name="wake" value="' + esc(s.wake) + '" required data-testid="k-staopp"></label></div>' +
@@ -623,7 +639,7 @@
   }
   function sheetBody() {
     var title = sheet.adding && sheet.tab === 'kal' ? 'Legg til kalender' : 'Kjøkkenskjerm';
-    return '<div class="k-set" data-testid="k-innstillinger-panel"><div class="top"><h2 id="k-set-h">' + title + '</h2><button type="button" data-k="cancel" aria-label="Lukk" data-testid="k-set-lukk">×</button></div>' +
+    return '<div class="k-set" data-testid="k-innstillinger-panel"><div class="top"><h2 id="k-set-h">' + title + '</h2><a class="kb k-set-app" href="#liste" data-k="toapp" data-testid="k-set-til-appen">Til appen</a><button type="button" data-k="cancel" aria-label="Lukk" data-testid="k-set-lukk">×</button></div>' +
       (sheet.adding && sheet.tab === 'kal' ? '' : tabsHtml()) +
       '<div class="k-setbody">' + (sheet.tab === 'avg' ? avgHtml() : sheet.tab === 'kal' ? kalHtml() : tidHtml()) + '</div></div>';
   }
@@ -661,6 +677,8 @@
   function sheetTap(k, e) {
     var t = e.target.closest('[data-k]'), id = t && t.getAttribute('data-id');
     if (k === 'cancel') return closeSheet();
+    if (k === 'toapp') { e.preventDefault(); var sh = root.querySelector('.k-sheet'); if (sh) sh.remove(); return toApp('#liste'); }
+    if (k === 'startk') { setStartKitchen(t.checked); return; }
     if (k === 'tab') { sheet.tab = t.getAttribute('data-tab'); sheet.adding = false; sheet.calErr = ''; return refreshSheet(); }
     if (k === 'geo') {
       sheetErr('');

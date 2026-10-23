@@ -1,4 +1,4 @@
-/* Knaggen (arbeidsnavn Ukeshandel) v0.16.0 — ukeplan for middager + handleliste, delt i husstanden via Firebase.
+/* Knaggen (arbeidsnavn Ukeshandel) v0.16.1 — ukeplan for middager + handleliste, delt i husstanden via Firebase.
  * Uten Firebase-oppsett (eller før husstand er opprettet) lagres alt lokalt i nettleseren som før.
  */
 (function () {
@@ -883,6 +883,8 @@
   function renderSyncStatus() {
     var el = document.getElementById('sync-status');
     if (!el) return;
+    var link = document.getElementById('sync-link');   // v0.16.1: «● Delt» er en lenke til Husstand → Del
+    if (link) link.hidden = !hh;
     if (!hh) { el.hidden = true; return; }
     el.hidden = false;
     var offline = !navigator.onLine || syncStatus.fromCache || syncStatus.failed;
@@ -895,6 +897,7 @@
     el.textContent = txt;
     el.className = 'sync-status ' + cls;
     el.setAttribute('data-state', cls);
+    if (link) link.setAttribute('aria-label', txt + ' – åpne Husstand og delingslenken');
   }
   window.addEventListener('online', renderSyncStatus);
   window.addEventListener('online', function () { processSwaps(); });   // v0.4.4
@@ -1038,6 +1041,7 @@
     var prev = main.querySelectorAll('[data-page="husstand"] details.hs-sec');
     if (prev.length) { HS_OPEN = {}; prev.forEach(function (d) { if (d.open) HS_OPEN[d.getAttribute('data-sec')] = true; }); }
     if (/^#husstand\/hverdag/.test(location.hash)) HS_OPEN.hverdag = true;
+    if (/^#husstand\/del/.test(location.hash)) HS_OPEN.del = true;   // v0.16.1: fra «● Delt»
     if (ui.justCreated) HS_OPEN.del = true;
     var hp = hsPeople() || { voksen: 2, barn: 2, smabarn: 0 };
     var hasP = !!hsPeople();
@@ -1278,7 +1282,7 @@
     weekDates: function (off) { return weekDates(off || 0); },
     dinnerName: function (d) { return dinnerName(d); },
     online: function () { return navigator.onLine; },
-    toApp: function () { location.hash = '#uke'; }
+    toApp: function (h) { location.hash = h === '#liste' ? '#liste' : '#uke'; }
   };
 
   function dinnerName(d) {
@@ -6278,15 +6282,23 @@
   // åpning uten adresse (#…): lenker, invitasjoner og delt innhold går dit de peker.
   // Testkrok KNAGGEN_START_UKE: eldre testsuiter forventer Uke ved ny åpning.
   if (!NEW_HOME && !window.KNAGGEN_START_UKE && !(location.hash || '').replace(/^#\/?/, '') && (hh || hsAsked()) && !showIntro() && !showConnectFirst()) {
-    history.replaceState(null, '', location.pathname + location.search + '#liste');
+    // v0.16.1: «Start som kjøkkenskjerm på denne enheten» (knaggen:start-kjokken, satt i #kjokken/innstillinger)
+    var startK = false; try { startK = JSON.parse(localStorage.getItem('knaggen:start-kjokken') || 'null') === true; } catch (e) {}
+    history.replaceState(null, '', location.pathname + location.search + (startK ? '#kjokken' : '#liste'));
   }
   if (NEW_HOME) runOldAddress(); else route();
 
   /* ---------- v0.16: versjonsnummeret ved logoen og «Nytt i Knaggen» ----------
    * Trykk på «0.16» åpner arket. Etter en oppdatering åpnes det av seg selv én gang (ikke ved aller første åpning,
    * ikke på kjøkkenskjermen og ikke i automatiserte tester uten testkroken KNAGGEN_TEST_NYTT). */
-  var APP_VERSION = '0.16.0', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.16.1', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.16.1', ['Nettbrettet kan starte rett på kjøkkenskjermen: slå på «Start som kjøkkenskjerm på denne enheten» under Husstand → Kjøkkenskjerm. «Til appen» nederst tar deg til lista.',
+      '⚙ Innstillinger er tilbake nederst på kjøkkenskjermen.',
+      'Trykk på «● Delt» øverst til høyre for å åpne Husstand og delingslenken.',
+      'Store familiekalendere fra Google kan legges til (rettet: «Fikk ikke lagt til kalenderen»), og feilmeldingene sier nå hva som gikk galt.',
+      'Innstillingene på kjøkkenskjermen er alltid lyse og lette å lese, også om kvelden og natta.',
+      'Etter leggetid står det «Etter leggetid» på avgangstavla i stedet for «Ingen avganger».']],
     ['0.16', ['Kjøkkenskjermen viser avganger fra holdeplassene i nærheten, med tid til å gå dit.',
       'Kjøkkenskjermen kan vise opptil fire kalendere (Google, Outlook, iCloud). Bare den som la inn adressen ser den.',
       'Merk en middag «Allerede handlet» eller «Rester», så kommer ingrediensene ikke på handlelista. Hold fingeren på dagen i Uke, eller åpne dagen.',

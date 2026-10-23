@@ -1240,3 +1240,8 @@ a.btn { display: flex; align-items: center; justify-content: center; text-decora
 .nytt-v:first-child h4 { margin-top: 2px; }
 .nytt-v ul { margin: 0; padding-left: 20px; }
 .nytt-v li { margin: 4px 0; line-height: 1.4; }
+
+/* v0.16.1: «● Delt» er trykkbar (Husstand → Del). Ser lik ut; treffområdet er 44 × 44 uten å flytte noe. */
+.sync-link { display: inline-flex; align-items: center; justify-content: flex-end; min-height: 44px; min-width: 44px; margin: -8px -8px -8px 0; padding: 0 8px; color: inherit; text-decoration: none; border-radius: 8px; -webkit-tap-highlight-color: transparent; }
+.sync-link[hidden] { display: none; }
+.sync-link:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }

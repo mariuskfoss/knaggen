@@ -239,3 +239,17 @@ html.k-html, html.k-html body { overflow: hidden; }
 .kj .k-cal .more { padding-left: 22px; }
 .kj .k-wx1 { flex-wrap: nowrap; white-space: nowrap; min-width: 0; }
 .kj .k-wx1 .k-wxt { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+.kj .k-til-appen { text-decoration: none; min-height: 44px; padding: 0 4px; margin: -10px 0; }
+.kj .k-til-appen .k-ta { margin-left: 10px; font-weight: 600; color: var(--k-ink); border-bottom: 1px solid currentColor; }
+.kj .k-set .top { gap: 8px; }
+.kj .k-set .top h2 { margin-right: auto; }
+.kj .k-set-app { text-decoration: none; display: inline-flex; align-items: center; min-height: 44px; }
+.kj .k-startk { margin: 0 0 16px; }
+.kj .k-swl { display: flex; align-items: center; gap: 12px; min-height: 44px; font-weight: 600; cursor: pointer; }
+.kj .k-swl input { width: 24px; height: 24px; flex: 0 0 24px; margin: 0; accent-color: var(--k-brand); }
+.kj .k-foot .k-gear { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin: -10px auto -10px 12px; padding: 0 12px; font-size: 14px; color: var(--k-muted); text-decoration: none; }
+.kj .k-foot .k-til-appen + .k-gear { margin-left: 4px; }
+/* v0.16.1: innstillingene og alle ark der vises alltid i appens vanlige lyse utgave – bare tavla følger Dag/Kveld/Natt. */
+.kj .k-sheet { --k-bg: #f4f2ed; --k-surface: #ebe8e1; --k-line: #dcd7cd; --k-ink: #252a28; --k-muted: #596260; --k-clock: #252a28;
+  --k-brand: #3f6e5a; --k-on-brand: #ffffff; --k-mark: #252a28; --k-brass: #a5813f; --k-fade: 1; --k-late: #7c5d28; --k-accent: #7c5d28;
+  --k-cal-1: #3f6e5a; --k-cal-2: #44617a; --k-cal-3: #7a4f6a; --k-cal-4: #8a5232; color: var(--k-ink); color-scheme: light; }
