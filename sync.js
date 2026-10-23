@@ -457,6 +457,7 @@ async function callFn(name, data, ms) {
   if (!body || body.error || !res.ok) {
     const er = new Error((body && body.error && body.error.message) || 'fn-failed');
     er.code = String((body && body.error && body.error.status) || 'fn-failed').toLowerCase().replace(/_/g, '-');   // INVALID_ARGUMENT → invalid-argument
+    if (body && body.error && body.error.details) er.details = body.error.details;
     throw er;
   }
   return body.result;

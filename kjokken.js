@@ -510,6 +510,7 @@
     // v0.16.1: mer presise meldinger i stedet for «Prøv igjen»
     dns: 'Fant ikke nettstedet i adressen. Sjekk at hele adressen er limt inn.', net: 'Kalendertjenesten svarte ikke. Prøv igjen om litt.',
     http: 'Adressen ble ikke godtatt av kalendertjenesten.', redirects: 'Adressen sendte oss videre for mange ganger.',
+    'google-429': 'Google slapp oss ikke inn til kalenderen akkurat nå (for mange forespørsler). Prøv igjen om noen minutter.',
     google: 'Kalendertjenesten svarte ikke (feil hos dem). Prøv igjen om litt.', slow: 'Kalenderen er for stor til å lese i tide.',
     'functions/deadline-exceeded': 'Kalenderen er for stor eller svarte for sent.', 'functions/unavailable': 'Fikk ikke kontakt med Knaggen. Prøv igjen.',
     'functions/internal': 'Noe gikk galt hos Knaggen da kalenderen ble lest. Prøv igjen, eller si fra.' };
