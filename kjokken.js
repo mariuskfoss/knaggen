@@ -425,6 +425,8 @@
   var pos = { on: false, at: 0, lat: null, lon: null, err: '', busy: false, near: null, nearAt: 0, nearKey: '', dep: null, depAt: 0, depBusy: false };
   function posWanted() { return lsGet(NA_POS_KEY) === true && !!navigator.geolocation; }
   function homeAt() {
+    var A = api(), hm = A && A.home ? A.home() : null;   // v0.18.1: husstandens hjemmeadresse først
+    if (hm && hm.lat != null && hm.lon != null) return { lat: +hm.lat, lon: +hm.lon };
     var sh = sharedK(); if (sh && sh.lat != null && sh.lon != null) return { lat: +sh.lat, lon: +sh.lon };
     var l = lsGet(LS_KEY); if (l && l.lat != null && l.lon != null) return { lat: +l.lat, lon: +l.lon };
     return null;
@@ -563,9 +565,22 @@
     return h;
   }
   function naPlace() {
-    var hd = document.querySelector('.topbar'), tb = document.querySelector('.tabs');
-    root.style.top = (hd ? Math.max(0, hd.getBoundingClientRect().bottom) : 0) + 'px';
-    root.style.bottom = (tb && tb.getBoundingClientRect().height > 0 ? Math.max(0, window.innerHeight - tb.getBoundingClientRect().top) : 0) + 'px';
+    // Topp = nederste kant av topplinja (og fanelinja hvis den ligger øverst); bunn = fanelinja hvis den ligger nederst.
+    var hd = document.querySelector('.topbar'), tb = document.querySelector('.tabs'), ih = window.innerHeight;
+    var top = hd ? Math.max(0, hd.getBoundingClientRect().bottom) : 0, bot = 0;
+    if (tb) {
+      var r = tb.getBoundingClientRect();
+      if (r.height > 0) { if (r.top + r.height / 2 < ih / 2) top = Math.max(top, r.bottom); else bot = Math.max(0, ih - r.top); }
+    }
+    root.style.top = top + 'px'; root.style.bottom = bot + 'px';
+  }
+  // v0.18.1: toppen og fanelinja kan endre høyde eller vises etter at «Nå» er tegnet (innlasting, bannere) – mål på nytt.
+  var naObs = null;
+  function naWatch() {
+    if (naObs || typeof ResizeObserver === 'undefined') return;
+    naObs = new ResizeObserver(function () { if (root && root.classList.contains('k-na')) naPlace(); });
+    ['.topbar', '.tabs'].forEach(function (q) { var el = document.querySelector(q); if (el) naObs.observe(el); });
+    try { new MutationObserver(function () { if (root && root.classList.contains('k-na')) naPlace(); }).observe(document.body, { attributes: true, attributeFilter: ['class'] }); } catch (e) { }
   }
   function naClear() { for (var k in TOK.dag) root.style.removeProperty('--k-' + k); ['--k-fade', '--k-shift-x', '--k-shift-y', 'top', 'bottom'].forEach(function (p) { root.style.removeProperty(p); }); root.classList.remove('k-natt'); root.removeAttribute('data-fase'); }
   function naTap(k, t, e) {
@@ -941,7 +956,7 @@
     if (naOn()) {   // v0.18: «Nå» på smale skjermer – appens tema, mellom toppen og fanelinja
       if (!root.classList.contains('k-na')) { root.classList.add('k-na'); naClear(); }
       root.classList.remove('k-land', 'k-port', 'k-cook');
-      var sy = root.scrollTop; root.innerHTML = naHtml(); naPlace(); root.scrollTop = sy; root.setAttribute('data-kutt', '0');
+      var sy = root.scrollTop; root.innerHTML = naHtml(); naPlace(); naWatch(); requestAnimationFrame(function () { if (root.classList.contains('k-na')) naPlace(); }); root.scrollTop = sy; root.setAttribute('data-kutt', '0');
       return;
     }
     if (root.classList.contains('k-na')) { root.classList.remove('k-na'); naClear(); }

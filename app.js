@@ -1305,6 +1305,7 @@
     hid: function () { return hh ? hh.hid : null; },
     // v0.17: felles kjøkkenoppsett (null = ikke lest / finnes ikke / eldre regler)
     sharedKitchen: function () { return hh && K17.kitchen ? K17.kitchen : null; },
+    home: function () { return hh && K17.hjem ? { lat: K17.hjem.lat, lon: K17.hjem.lon } : null; },   // v0.18.1
     setSharedKitchen: function (k) {
       if (!hh || !Sync) return;
       K17.kitchen = { stops: (k.stops || []).slice(0, 3), lat: k.lat, lon: k.lon };
@@ -4238,6 +4239,7 @@
     focusEl(od ? '[data-action="day-open"][data-date="' + od + '"]' : '[data-action="week-menu"]');
   });
   main.addEventListener('input', function (e) {
+    if (e.target && e.target.id === 'hjem-sok') { var qv = e.target.value; clearTimeout(hjemTimer); hjemTimer = setTimeout(function () { hjemSearch(qv); }, 300); return; }
     var t = e.target;
     if (t.id === 'finn-q') { finn.q = t.value; renderFinnList(); return; }   // v0.11
     if (t.id === 'fv-q') {
@@ -5435,7 +5437,7 @@
    * Spec: spec-v017-husstand.md, design: merkevare/v017-husstand. Alt nytt er nye dokumenter (settings/profil,
    * settings/kjokken, devices/{uid}); ingenting eksisterende flyttes eller slettes. */
   var K17_REG_KEY = 'knaggen:enhet-registrert';   // v0.17: hid der denne enheten har en enhetsoppføring
-  var K17 = { name: '', devices: null, memberDocs: null, selfSeen: false, creating: false, kitchen: null, kitchenSeen: false, sheet: null, removing: false };
+  var K17 = { name: '', devices: null, memberDocs: null, selfSeen: false, creating: false, kitchen: null, kitchenSeen: false, sheet: null, removing: false, hjem: null, hjemEdit: false, hjemHits: [], hjemSeq: 0 };
   var DEV_TOUCH_KEY = 'knaggen:enhet-sett', NAME_LATER_KEY = 'knaggen:navn-senere', KIND_ASK_KEY = 'knaggen:enhet-spor';
   var PLAT = { android: 'Android-telefon', iphone: 'iPhone', ipad: 'iPad', nettbrett: 'Nettbrett', windows: 'PC med Windows', mac: 'Mac', linux: 'PC med Linux', annet: 'Nettleser' };
   function devPlatform() {
@@ -5468,6 +5470,43 @@
   }
   function hhName() { return K17.name || ''; }
   function myUid() { return Sync && Sync.uid ? Sync.uid() : null; }
+  // v0.18.1: tema per enhet (System / Lys / Mørk). index.html setter html[data-tema] før CSS-en tegnes.
+  var TEMA_KEY = 'knaggen:tema';
+  function temaGet() { var t = null; try { t = JSON.parse(localStorage.getItem(TEMA_KEY) || 'null'); } catch (e) { } return t === 'lys' || t === 'mork' ? t : 'system'; }
+  function temaMedia(root) {   // <picture>/<meta> med prefers-color-scheme følger valget
+    var t = temaGet();
+    (root || document).querySelectorAll('source[media*="prefers-color-scheme"], source[data-tema-media], meta[name="theme-color"][media]').forEach(function (el) {
+      if (el.closest && el.closest('#kjokken') && el.tagName === 'META') return;
+      if (!el.hasAttribute('data-tema-media')) el.setAttribute('data-tema-media', el.getAttribute('media'));
+      var orig = el.getAttribute('data-tema-media'), light = /light/.test(orig);
+      el.setAttribute('media', t === 'system' ? orig : (t === 'lys') === light ? 'all' : 'not all');
+    });
+  }
+  function temaSet(t) {
+    if (t === 'lys' || t === 'mork') { lsSet(TEMA_KEY, JSON.stringify(t)); document.documentElement.setAttribute('data-tema', t); }
+    else { try { localStorage.removeItem(TEMA_KEY); } catch (e) { } document.documentElement.removeAttribute('data-tema'); }
+    temaMedia();
+  }
+  temaMedia();
+  try { new MutationObserver(function (ms) { if (temaGet() === 'system') return; ms.forEach(function (m) { m.addedNodes.forEach(function (n) { if (n.nodeType === 1 && n.querySelector && (n.tagName === 'SOURCE' || n.querySelector('source'))) temaMedia(n.parentNode || n); }); }); }).observe(document.body, { childList: true, subtree: true }); } catch (e) { }
+  // v0.18.1: hjemmeadresse – oppslag i Entur Geocoder (autocomplete) rett fra nettleseren. Adressen logges aldri.
+  var GEO_URL = 'https://api.entur.io/geocoder/v1/autocomplete';
+  var hjemTimer = null;
+  function hjemSearch(q) {
+    var seq = ++K17.hjemSeq, ul = main.querySelector('[data-testid="hjem-forslag"]');
+    if (!ul) return;
+    if (q.trim().length < 3) { K17.hjemHits = []; ul.innerHTML = ''; return; }
+    fetch(GEO_URL + '?text=' + encodeURIComponent(q.trim()) + '&lang=no&size=5&layers=address,venue', { headers: { 'ET-Client-Name': 'mariuskfoss-knaggen' } })
+      .then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); })
+      .then(function (d) {
+        if (seq !== K17.hjemSeq) return;
+        K17.hjemHits = ((d && d.features) || []).map(function (f) { var c = f.geometry && f.geometry.coordinates, pr = f.properties || {}; return c ? { adresse: String(pr.label || pr.name || '').slice(0, 200), lat: +c[1], lon: +c[0] } : null; })
+          .filter(function (x) { return x && x.adresse && isFinite(x.lat) && isFinite(x.lon); });
+        var u = main.querySelector('[data-testid="hjem-forslag"]'); if (!u) return;
+        u.innerHTML = K17.hjemHits.length ? K17.hjemHits.map(function (x, i) { return '<li><button type="button" class="k17-row" role="option" data-action="hjem-velg" data-i="' + i + '" data-testid="hjem-treff">' + esc(x.adresse) + '</button></li>'; }).join('') : '<li class="k17-note">Fant ingen adresse.</li>';
+      }, function () { var u = main.querySelector('[data-testid="hjem-forslag"]'); if (u && seq === K17.hjemSeq) u.innerHTML = '<li class="k17-note">Fikk ikke slått opp adressen nå.</li>'; });
+  }
+  function r4(x) { return Math.round(x * 10000) / 10000; }
   // v0.18: posisjon i «Nå» – bare et av/på-valg på denne enheten. Selve posisjonen lagres aldri.
   function naPosOn() { try { return localStorage.getItem('knaggen:na-posisjon') === 'true'; } catch (e) { return false; } }
   function startKitchenOn() { try { return localStorage.getItem('knaggen:start-kjokken') === 'true'; } catch (e) { return false; } }
@@ -5578,6 +5617,8 @@
     K17.name = p && typeof p.name === 'string' ? p.name : '';
     var k = docs.filter(function (d) { return d.id === 'kjokken'; })[0];
     K17.kitchen = k && Array.isArray(k.stops) ? { stops: k.stops, lat: k.lat, lon: k.lon } : null;
+    var hj = docs.filter(function (d) { return d.id === 'hjem'; })[0];   // v0.18.1: hjemmeadresse
+    K17.hjem = hj && typeof hj.adresse === 'string' && typeof hj.lat === 'number' && typeof hj.lon === 'number' ? { adresse: hj.adresse, lat: hj.lat, lon: hj.lon } : null;
     // Migrering (spec §9): første skjerm med lokalt oppsett kopierer holdeplassene til husstanden hvis feltet er tomt.
     if (meta && !meta.fromCache && hh && !K17.kitchenSeen) {
       K17.kitchenSeen = true;
@@ -5791,6 +5832,14 @@
     // 3. Faste varer
     var nS = state.staples.length;
     h += lbl('Handleliste') + '<div class="k17-grp"><a class="k17-row" href="#liste/faste" data-testid="hs-sek-faste"><span class="t"><b>Faste varer</b><span>' + (nS ? nS + (nS === 1 ? ' vare' : ' varer') : 'Ingen ennå') + '</span></span><span class="go" aria-hidden="true">›</span></a></div>';
+    // 4a. v0.18.1: Hjemmeadresse (felles i husstanden, brukes av «Nå» for Hjemme/Borte)
+    h += lbl('Hjem') + '<div class="k17-grp" data-testid="hjem-grp">' + (K17.hjemEdit
+      ? '<div class="k17-hjem"><label class="field"><span>Hjemmeadresse</span><input type="search" id="hjem-sok" data-testid="hjem-sok" autocomplete="off" placeholder="Gate og nummer, sted" value=""></label>' +
+        '<ul class="k17-hjem-hits" data-testid="hjem-forslag" role="listbox"></ul>' +
+        '<div class="row"><button type="button" class="btn" data-action="hjem-avbryt" data-testid="hjem-avbryt">Avbryt</button></div></div>'
+      : '<button type="button" class="k17-row" data-action="hjem-endre" data-testid="hjem-rad"><span class="t"><b>Hjemmeadresse</b><span data-testid="hjem-adresse">' + esc(K17.hjem ? K17.hjem.adresse : 'Ikke satt') + '</span></span><span class="go" aria-hidden="true">›</span></button>' +
+        (K17.hjem ? '<button type="button" class="k17-row k17-danger" data-action="hjem-fjern" data-testid="hjem-fjern"><span class="t"><b>Fjern adresse</b></span></button>' : '')) + '</div>' +
+      '<p class="k17-note">Felles for husstanden. «Nå» på telefonen bruker den til å se om du er hjemme. Adressen slås opp hos Entur.</p>';
     // 4. Kjøkkenskjerm · felles
     var ks = K17.kitchen && K17.kitchen.stops.length ? K17.kitchen.stops.map(function (s) { return s.name; }).join(' + ') : 'Ingen holdeplasser ennå';
     h += lbl('Kjøkkenskjerm · felles') + '<div class="k17-grp"><a class="k17-row" href="#kjokken/innstillinger/avg" data-testid="hs-kjokken"><span class="t"><b>Kalendere og avganger</b><span>' + esc(ks) + '</span></span><span class="go" aria-hidden="true">›</span></a></div>' +
@@ -5800,6 +5849,8 @@
     h += lbl('Denne enheten') + '<div class="k17-grp">' +
       (me ? '<button type="button" class="k17-row" data-action="k17-enhet" data-uid="' + esc(me.id) + '" data-testid="k17-denne-navn"><span class="t"><b>Navn</b><span>' + esc(me.name) + '</span></span><span class="go" aria-hidden="true">›</span></button>' : '') +
       '<a class="k17-row" href="#kjokken/innstillinger" data-testid="k17-start-kjokken"><span class="t"><b>Start som kjøkkenskjerm</b><span>' + (startKitchenOn() ? 'På' : 'Av') + '</span></span><span class="go" aria-hidden="true">›</span></a>' +
+      '<div class="k17-row k17-tema"><span class="t"><b>Tema</b><span>Bare på denne enheten</span></span><span class="k17-seg" role="radiogroup" aria-label="Tema">' +
+        [['system', 'System'], ['lys', 'Lys'], ['mork', 'Mørk']].map(function (x) { var on = temaGet() === x[0]; return '<button type="button" role="radio" aria-checked="' + on + '" class="' + (on ? 'on' : '') + '" data-action="tema" data-v="' + x[0] + '" data-testid="tema-' + x[0] + '">' + x[1] + '</button>'; }).join('') + '</span></div>' +
       '<button type="button" class="k17-row" role="switch" aria-checked="' + naPosOn() + '" data-action="na-posisjon" data-testid="hs-posisjon"><span class="t"><b>Bruk posisjon i «Nå»</b><span>' + (naPosOn() ? 'På · bytter Hjemme/Borte og finner holdeplasser nær deg' : 'Av') + '</span></span><span class="go" aria-hidden="true">' + (naPosOn() ? 'På' : 'Av') + '</span></button>' +
       (envInfo.phone && !isStandalone() ? '<button type="button" class="k17-row" data-action="inst-open" data-testid="hs-hjemskjerm"><span class="t"><b>Legg på hjemskjermen</b><span>Slik gjør du det</span></span><span class="go" aria-hidden="true">›</span></button>' : '') +
       '<a class="k17-row" href="#koble" data-testid="hs-koble"><span class="t"><b>Bytt husstand</b><span>Koble til med lenke eller kode</span></span><span class="go" aria-hidden="true">›</span></a>' +
@@ -5895,7 +5946,7 @@
     if (unsubscribe) { unsubscribe(); unsubscribe = null; }
     hh = null; syncReady = null; swapOverlays = []; lastDays = []; weeklyExtras = []; sharedExtras = []; migratingHid = null;
     ui.members = null; ui.invite = null; ui.justCreated = false; ui.busy = false;
-    K17.name = ''; K17.devices = null; K17.memberDocs = null; K17.selfSeen = false; K17.creating = false; K17.kitchen = null; K17.kitchenSeen = false; k17Close(); lsDel(K17_REG_KEY);
+    K17.name = ''; K17.devices = null; K17.memberDocs = null; K17.selfSeen = false; K17.creating = false; K17.kitchen = null; K17.kitchenSeen = false; K17.hjem = null; K17.hjemEdit = false; k17Close(); lsDel(K17_REG_KEY);
     clearTimeout(connectTimer); syncStatus.connecting = false;
     lsDel(HH_KEY);
     if (hid) { lsDel(MIRROR_PREFIX + hid); lsDel(SWAPQ_PREFIX + hid); }
@@ -6521,6 +6572,27 @@
       if (hh) lsSet(NAME_LATER_KEY, hh.hid); renderHousehold();
     } else if (a === 'k17-hva') {
       answerKind(btn.getAttribute('data-v'));
+    } else if (a === 'tema') {   // v0.18.1
+      temaSet(btn.getAttribute('data-v')); renderHousehold();
+    } else if (a === 'hjem-endre') {
+      K17.hjemEdit = true; K17.hjemHits = []; renderHousehold(); var hi = main.querySelector('#hjem-sok'); if (hi) hi.focus();
+    } else if (a === 'hjem-avbryt') {
+      K17.hjemEdit = false; renderHousehold();
+    } else if (a === 'hjem-velg') {
+      var hit = K17.hjemHits[+btn.getAttribute('data-i')];
+      if (hit && hh && Sync) {
+        K17.hjem = { adresse: hit.adresse, lat: r4(hit.lat), lon: r4(hit.lon) }; K17.hjemEdit = false; K17.hjemHits = [];
+        Sync.write.setHome(hh.hid, K17.hjem).then(function () { toast('Hjemmeadressen er lagret'); }, function () { toast('Fikk ikke lagret adressen. Prøv igjen.'); });
+        if (window.KnaggenKjokken && window.KnaggenKjokken.sharedChanged) window.KnaggenKjokken.sharedChanged();
+        renderHousehold();
+      }
+    } else if (a === 'hjem-fjern') {
+      if (hh && Sync) {
+        K17.hjem = null;
+        Sync.write.removeHome(hh.hid).then(function () { toast('Hjemmeadressen er fjernet'); }, function () { toast('Fikk ikke fjernet adressen. Prøv igjen.'); });
+        if (window.KnaggenKjokken && window.KnaggenKjokken.sharedChanged) window.KnaggenKjokken.sharedChanged();
+        renderHousehold();
+      }
     } else if (a === 'na-posisjon') {   // v0.18
       var onP = !naPosOn();
       if (onP) lsSet('knaggen:na-posisjon', true); else { try { localStorage.removeItem('knaggen:na-posisjon'); } catch (e) {} }
@@ -6745,8 +6817,9 @@
   /* ---------- v0.16: versjonsnummeret ved logoen og «Nytt i Knaggen» ----------
    * Trykk på «0.16» åpner arket. Etter en oppdatering åpnes det av seg selv én gang (ikke ved aller første åpning,
    * ikke på kjøkkenskjermen og ikke i automatiserte tester uten testkroken KNAGGEN_TEST_NYTT). */
-  var APP_VERSION = '0.18.0', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.18.1', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.18.1', ['Husstanden kan legge inn en hjemmeadresse under Husstand → Hjem. «Nå» bruker den til å se om du er hjemme, og du kan fjerne den når som helst.', 'Velg tema på hver enhet: System, Lys eller Mørk (Husstand → Denne enheten). Kjøkkenskjermen på nettbrettet følger fortsatt tiden på døgnet.']],
     ['0.18.0', ['Ny «Nå»-side på telefonen (Kjøkken-lenken på smale skjermer): Hjemme viser klokke, vær, dagens middag, kvelden og neste avganger. Borte viser avganger, det du må kjøpe til middagen i dag og familiens ettermiddag. Du kan la telefonen bytte selv med posisjon (Husstand → Denne enheten). Posisjonen lagres aldri.']],
     ['0.17.0', ['Husstanden kan få et navn, og under Husstand ser du nå hver enhet med navn, hvem den tilhører og når den sist ble brukt. Du kan gi enheter nytt navn og fjerne dem du ikke bruker.', 'Holdeplassene på kjøkkenskjermen er felles for husstanden, så et nytt nettbrett får dem med en gang. ⚙ ligger nå øverst til høyre.', 'Ny rett i biblioteket: Flygande Jacob – svensk ovnsrett med kylling, fløte, chilisaus, banan, bacon og peanøtter, servert med ris.']],
     ['0.16.2', ['Innstillingene på kjøkkenskjermen følger nå samme lyse eller mørke tema som resten av appen (etter innstillingen på enheten), og er lette å lese i begge.']],
