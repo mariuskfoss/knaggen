@@ -1506,6 +1506,13 @@
 
   /* ---------- Router ---------- */
 
+  // v0.18.2: telefon (enhetstype, se KnaggenKjokken.phone) får egen «Nå»-fane i fanelinja
+  function isPhoneDev() { var K = window.KnaggenKjokken; return !!(K && K.phone && K.phone()); }
+  function markPhone() { document.body.classList.toggle('k-phone', isPhoneDev()); }
+  function tabActive(t) {
+    var ls = document.querySelectorAll('.tabs a');
+    for (var i = 0; i < ls.length; i++) { var on = ls[i].getAttribute('data-tab') === t; ls[i].classList.toggle('active', on); if (on) ls[i].setAttribute('aria-current', 'page'); else ls[i].removeAttribute('aria-current'); }
+  }
   function route() {
     var raw = location.hash || '';
     if (NEW_HOME) return renderMovePage();   // v0.9: den gamle adressen viser bare flyttesiden
@@ -1513,7 +1520,8 @@
     var parts = h.split('/');
     var tab = parts[0];
     var K = window.KnaggenKjokken;
-    if (tab === 'kjokken' && K && K.narrow && K.narrow() && !parts[1]) { setTabsHidden(false); document.body.classList.add('k-open'); document.body.classList.add('k-na-open'); main.innerHTML = ''; K.show(''); return; }   // v0.18: «Nå» – fanelinja blir stående
+    markPhone();
+    if (tab === 'kjokken' && K && K.narrow && K.narrow() && !parts[1]) { tabActive('na'); setTabsHidden(false); document.body.classList.add('k-open'); document.body.classList.add('k-na-open'); main.innerHTML = ''; K.show(''); return; }   // v0.18: «Nå» – fanelinja blir stående
     document.body.classList.remove('k-na-open');
     if (tab === 'kjokken' && K) { setTabsHidden(true); document.body.classList.add('k-open'); main.innerHTML = ''; K.show(parts.slice(1).join('/')); return; }
     if (K) { K.hide(); document.body.classList.remove('k-open'); }
@@ -6810,15 +6818,17 @@
   if (!NEW_HOME && !window.KNAGGEN_START_UKE && !(location.hash || '').replace(/^#\/?/, '') && (hh || hsAsked()) && !showIntro() && !showConnectFirst()) {
     // v0.16.1: «Start som kjøkkenskjerm på denne enheten» (knaggen:start-kjokken, satt i #kjokken/innstillinger)
     var startK = false; try { startK = JSON.parse(localStorage.getItem('knaggen:start-kjokken') || 'null') === true; } catch (e) {}
-    history.replaceState(null, '', location.pathname + location.search + (startK ? '#kjokken' : '#liste'));
+    // v0.18.2: på telefon åpner appen på «Nå» (#kjokken); nettbrett og PC som før (Handleliste, eller kjøkkenskjermen med bryteren)
+    history.replaceState(null, '', location.pathname + location.search + (startK || isPhoneDev() ? '#kjokken' : '#liste'));
   }
   if (NEW_HOME) runOldAddress(); else route();
 
   /* ---------- v0.16: versjonsnummeret ved logoen og «Nytt i Knaggen» ----------
    * Trykk på «0.16» åpner arket. Etter en oppdatering åpnes det av seg selv én gang (ikke ved aller første åpning,
    * ikke på kjøkkenskjermen og ikke i automatiserte tester uten testkroken KNAGGEN_TEST_NYTT). */
-  var APP_VERSION = '0.18.1', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.18.2', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.18.2', ['På telefonen har «Nå» fått egen fane, og appen åpner der. Telefonen kjennes igjen også når den holdes på tvers. Nettbrett og PC er som før.']],
     ['0.18.1', ['Husstanden kan legge inn en hjemmeadresse under Husstand → Hjem. «Nå» bruker den til å se om du er hjemme, og du kan fjerne den når som helst.', 'Velg tema på hver enhet: System, Lys eller Mørk (Husstand → Denne enheten). Kjøkkenskjermen på nettbrettet følger fortsatt tiden på døgnet.']],
     ['0.18.0', ['Ny «Nå»-side på telefonen (Kjøkken-lenken på smale skjermer): Hjemme viser klokke, vær, dagens middag, kvelden og neste avganger. Borte viser avganger, det du må kjøpe til middagen i dag og familiens ettermiddag. Du kan la telefonen bytte selv med posisjon (Husstand → Denne enheten). Posisjonen lagres aldri.']],
     ['0.17.0', ['Husstanden kan få et navn, og under Husstand ser du nå hver enhet med navn, hvem den tilhører og når den sist ble brukt. Du kan gi enheter nytt navn og fjerne dem du ikke bruker.', 'Holdeplassene på kjøkkenskjermen er felles for husstanden, så et nytt nettbrett får dem med en gang. ⚙ ligger nå øverst til høyre.', 'Ny rett i biblioteket: Flygande Jacob – svensk ovnsrett med kylling, fløte, chilisaus, banan, bacon og peanøtter, servert med ris.']],

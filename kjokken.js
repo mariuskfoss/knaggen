@@ -420,7 +420,14 @@
    * Posisjon (valgfritt, per enhet): koordinatene finnes bare i minnet, rundes til 3 desimaler (~100 m) og sendes
    * bare til Entur for å finne holdeplasser i nærheten. Aldri til Firestore, Functions, logger eller localStorage. */
   var NA_W = 600, NA_MODE_KEY = 'knaggen:na-modus', NA_POS_KEY = 'knaggen:na-posisjon', NA_HOME_M = 300, NA_POS_EVERY = 5 * 60000;
-  function naOn() { return view === 'idle' && window.innerWidth < NA_W; }
+  // v0.18.2: telefon avgjøres av enhetstypen, ikke vindusbredden: berøring (grov peker eller berøringspunkter) og korteste skjermside under ~600 px.
+  // Da får også en telefon på tvers «Nå». Nettbrett og PC beholder den store kjøkkenskjermen.
+  function isPhone() {
+    var coarse = (navigator.maxTouchPoints || 0) > 0; try { coarse = coarse || window.matchMedia('(pointer: coarse)').matches; } catch (e) { }
+    var sw = (window.screen && screen.width) || window.innerWidth, sh = (window.screen && screen.height) || window.innerHeight;
+    return coarse && Math.min(sw, sh) < NA_W;
+  }
+  function naOn() { return view === 'idle' && isPhone(); }
   function round3(x) { return Math.round(x * 1000) / 1000; }
   var pos = { on: false, at: 0, lat: null, lon: null, err: '', busy: false, near: null, nearAt: 0, nearKey: '', dep: null, depAt: 0, depBusy: false };
   function posWanted() { return lsGet(NA_POS_KEY) === true && !!navigator.geolocation; }
@@ -681,7 +688,7 @@
     lastTap = Date.now();
     var t = e.target.closest ? e.target.closest('[data-k]') : null, k = t && t.getAttribute('data-k');
     if (root.querySelector('.k-sheet')) return sheetTap(k, e);
-    if (view === 'idle' && isNight()) { if (e.preventDefault) e.preventDefault(); woke = now(); render(); return; }   // natt: første trykk bare vekker (lenker følges ikke)
+    if (view === 'idle' && isNight() && !root.classList.contains('k-na')) { if (e.preventDefault) e.preventDefault(); woke = now(); render(); return; }   // natt: første trykk bare vekker (lenker følges ikke)
     if (view === 'cook') {
       if (k === 'close') closeCook();
       else if (k === 'next') { cook.step++; render(); }
@@ -1062,6 +1069,6 @@
   document.addEventListener('submit', function () { if (!open) dirty = false; }, true);
   window.addEventListener('hashchange', function () { dirty = false; });
 
-  window.KnaggenKjokken = { show: show, hide: hide, sharedChanged: sharedChanged, isOpen: function () { return open; }, isNa: function () { return open && naOn(); }, narrow: function () { return window.innerWidth < NA_W; },
+  window.KnaggenKjokken = { show: show, hide: hide, sharedChanged: sharedChanged, isOpen: function () { return open; }, isNa: function () { return open && naOn(); }, narrow: function () { return isPhone(); }, phone: function () { return isPhone(); },
     _test: { refresh: function () { render(); }, naMode: function () { return naMode(); }, posMode: function () { return posMode(); }, poll: function () { dep.fails = 0; dep.until = 0; pollDep(); }, loadCal: function () { loadCal(true); }, fit: function () { return fit.lvl; }, bedMs: bedMs, phaseAt: phaseAt, schedule: schedule, sunTimes: sunTimes, settings: settings, mixHex: mixHex, wxIcon: wxIcon, wxText: wxText } };
 })();
