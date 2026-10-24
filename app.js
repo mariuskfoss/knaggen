@@ -1281,6 +1281,26 @@
   }
   window.KnaggenKitchenApi = {
     meal: function (d) { return kitchenMeal(d); },
+    // v0.18 «Nå»: varene til dagens middag (Kjøp på vei hjem), avkrysning og tallene til snarveiene
+    naBuy: function () {
+      var b = buildList(true), today = isoDate(new Date()), out = [];
+      b.source.forEach(function (g) {
+        if (g.date !== today) return;
+        g.rows.forEach(function (r) { if (r.item && !(r.item.qty === 0) && !out.some(function (x) { return x.key === r.item.key; })) out.push({ key: r.item.key, name: cap(r.item.name), amount: r.amount, checked: !!r.item.checked }); });
+      });
+      return { items: out, open: b.items.filter(isOpen).length };
+    },
+    naCheck: function (key, on) {
+      var cur = currentItems(), week = cur.length ? cur[0].week : LIST_KEY, m = {}, wchecks = state.checks[week] || {};
+      cur.forEach(function (i) {
+        if (i.key !== key) return;
+        i.checked = on; m[key] = on ? tickValue(i) : false;
+        (i.legacyKeys || []).forEach(function (x) { if (wchecks[x.k]) m[x.k] = false; });
+      });
+      if (!m.hasOwnProperty(key)) m[key] = on;
+      ops.setChecks(week, m);
+    },
+    naCounts: function () { var b = buildList(true); return { list: b.items.filter(isOpen).length, week: isoWeek(new Date()), recipes: state.recipes.length }; },
     isoDate: isoDate, isoWeek: isoWeek,
     hid: function () { return hh ? hh.hid : null; },
     // v0.17: felles kjøkkenoppsett (null = ikke lest / finnes ikke / eldre regler)
@@ -1492,6 +1512,8 @@
     var parts = h.split('/');
     var tab = parts[0];
     var K = window.KnaggenKjokken;
+    if (tab === 'kjokken' && K && K.narrow && K.narrow() && !parts[1]) { setTabsHidden(false); document.body.classList.add('k-open'); document.body.classList.add('k-na-open'); main.innerHTML = ''; K.show(''); return; }   // v0.18: «Nå» – fanelinja blir stående
+    document.body.classList.remove('k-na-open');
     if (tab === 'kjokken' && K) { setTabsHidden(true); document.body.classList.add('k-open'); main.innerHTML = ''; K.show(parts.slice(1).join('/')); return; }
     if (K) { K.hide(); document.body.classList.remove('k-open'); }
     var join = parseJoin(raw);
@@ -5446,6 +5468,8 @@
   }
   function hhName() { return K17.name || ''; }
   function myUid() { return Sync && Sync.uid ? Sync.uid() : null; }
+  // v0.18: posisjon i «Nå» – bare et av/på-valg på denne enheten. Selve posisjonen lagres aldri.
+  function naPosOn() { try { return localStorage.getItem('knaggen:na-posisjon') === 'true'; } catch (e) { return false; } }
   function startKitchenOn() { try { return localStorage.getItem('knaggen:start-kjokken') === 'true'; } catch (e) { return false; } }
   // Enhetslista: medlemmene er sannheten for hvem som har tilgang; devices gir navn, type og sist aktiv.
   function deviceList() {
@@ -5776,6 +5800,7 @@
     h += lbl('Denne enheten') + '<div class="k17-grp">' +
       (me ? '<button type="button" class="k17-row" data-action="k17-enhet" data-uid="' + esc(me.id) + '" data-testid="k17-denne-navn"><span class="t"><b>Navn</b><span>' + esc(me.name) + '</span></span><span class="go" aria-hidden="true">›</span></button>' : '') +
       '<a class="k17-row" href="#kjokken/innstillinger" data-testid="k17-start-kjokken"><span class="t"><b>Start som kjøkkenskjerm</b><span>' + (startKitchenOn() ? 'På' : 'Av') + '</span></span><span class="go" aria-hidden="true">›</span></a>' +
+      '<button type="button" class="k17-row" role="switch" aria-checked="' + naPosOn() + '" data-action="na-posisjon" data-testid="hs-posisjon"><span class="t"><b>Bruk posisjon i «Nå»</b><span>' + (naPosOn() ? 'På · bytter Hjemme/Borte og finner holdeplasser nær deg' : 'Av') + '</span></span><span class="go" aria-hidden="true">' + (naPosOn() ? 'På' : 'Av') + '</span></button>' +
       (envInfo.phone && !isStandalone() ? '<button type="button" class="k17-row" data-action="inst-open" data-testid="hs-hjemskjerm"><span class="t"><b>Legg på hjemskjermen</b><span>Slik gjør du det</span></span><span class="go" aria-hidden="true">›</span></button>' : '') +
       '<a class="k17-row" href="#koble" data-testid="hs-koble"><span class="t"><b>Bytt husstand</b><span>Koble til med lenke eller kode</span></span><span class="go" aria-hidden="true">›</span></a>' +
       '<button type="button" class="k17-row k17-danger" data-action="hs-forlat" data-testid="hs-forlat"><span class="t"><b>Forlat ' + esc(name || 'husstanden') + '</b></span></button></div>';
@@ -6496,6 +6521,11 @@
       if (hh) lsSet(NAME_LATER_KEY, hh.hid); renderHousehold();
     } else if (a === 'k17-hva') {
       answerKind(btn.getAttribute('data-v'));
+    } else if (a === 'na-posisjon') {   // v0.18
+      var onP = !naPosOn();
+      if (onP) lsSet('knaggen:na-posisjon', true); else { try { localStorage.removeItem('knaggen:na-posisjon'); } catch (e) {} }
+      try { window.dispatchEvent(new Event('knaggen-na-pos')); } catch (e) {}
+      renderHousehold(); toast(onP ? 'Posisjon i «Nå» er på – den lagres aldri' : 'Posisjon i «Nå» er av');
     } else if (a === 'hs-forlat') {
       openLeave();
     } else if (a === 'hs-slett') {
@@ -6715,8 +6745,9 @@
   /* ---------- v0.16: versjonsnummeret ved logoen og «Nytt i Knaggen» ----------
    * Trykk på «0.16» åpner arket. Etter en oppdatering åpnes det av seg selv én gang (ikke ved aller første åpning,
    * ikke på kjøkkenskjermen og ikke i automatiserte tester uten testkroken KNAGGEN_TEST_NYTT). */
-  var APP_VERSION = '0.17.0', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.18.0', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.18.0', ['Ny «Nå»-side på telefonen (Kjøkken-lenken på smale skjermer): Hjemme viser klokke, vær, dagens middag, kvelden og neste avganger. Borte viser avganger, det du må kjøpe til middagen i dag og familiens ettermiddag. Du kan la telefonen bytte selv med posisjon (Husstand → Denne enheten). Posisjonen lagres aldri.']],
     ['0.17.0', ['Husstanden kan få et navn, og under Husstand ser du nå hver enhet med navn, hvem den tilhører og når den sist ble brukt. Du kan gi enheter nytt navn og fjerne dem du ikke bruker.', 'Holdeplassene på kjøkkenskjermen er felles for husstanden, så et nytt nettbrett får dem med en gang. ⚙ ligger nå øverst til høyre.', 'Ny rett i biblioteket: Flygande Jacob – svensk ovnsrett med kylling, fløte, chilisaus, banan, bacon og peanøtter, servert med ris.']],
     ['0.16.2', ['Innstillingene på kjøkkenskjermen følger nå samme lyse eller mørke tema som resten av appen (etter innstillingen på enheten), og er lette å lese i begge.']],
     ['0.16.1', ['Nettbrettet kan starte rett på kjøkkenskjermen: slå på «Start som kjøkkenskjerm på denne enheten» under Husstand → Kjøkkenskjerm. «Til appen» nederst tar deg til lista.',

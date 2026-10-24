@@ -139,7 +139,7 @@
     return p;
   }
   function applyPhase() {
-    if (!root) return;
+    if (!root || root.classList.contains('k-na')) return;
     var p = effPhase(), A = TOK[p.a], B = TOK[p.b];
     for (var k in A) root.style.setProperty('--k-' + k, mixHex(A[k], B[k], p.t));
     var name = phaseName(p), full = p.a === 'natt' && p.b === 'natt';
@@ -250,6 +250,7 @@
     var k = JSON.stringify(avg().stops || []);
     if (k === sharedKey) return;   // eget ekko eller ingen endring: ikke hent avgangene på nytt
     sharedKey = k; dep.data = null; refreshSheet(); if (view === 'idle') render();
+    if (open && naOn()) { dep.at = 0; pollDep(); }   // v0.18: «Nå» henter med en gang når de felles holdeplassene kommer
   }
   function avgPos(a) { var s = settings(); return a.lat != null && a.lon != null ? { lat: +a.lat, lon: +a.lon } : { lat: s.lat, lon: s.lon }; }
   function enturCall(query, vars) {
@@ -414,6 +415,168 @@
     return over;
   }
 
+  /* ---------- v0.18: «Nå» – kjøkkenskjermen i telefonformat (smale skjermer, under 600 px) ----------
+   * Hjemme | Borte øverst. Manuelt valg varer til midnatt, eller til posisjonen ser en ny overgang (hjemme ↔ borte).
+   * Posisjon (valgfritt, per enhet): koordinatene finnes bare i minnet, rundes til 3 desimaler (~100 m) og sendes
+   * bare til Entur for å finne holdeplasser i nærheten. Aldri til Firestore, Functions, logger eller localStorage. */
+  var NA_W = 600, NA_MODE_KEY = 'knaggen:na-modus', NA_POS_KEY = 'knaggen:na-posisjon', NA_HOME_M = 300, NA_POS_EVERY = 5 * 60000;
+  function naOn() { return view === 'idle' && window.innerWidth < NA_W; }
+  function round3(x) { return Math.round(x * 1000) / 1000; }
+  var pos = { on: false, at: 0, lat: null, lon: null, err: '', busy: false, near: null, nearAt: 0, nearKey: '', dep: null, depAt: 0, depBusy: false };
+  function posWanted() { return lsGet(NA_POS_KEY) === true && !!navigator.geolocation; }
+  function homeAt() {
+    var sh = sharedK(); if (sh && sh.lat != null && sh.lon != null) return { lat: +sh.lat, lon: +sh.lon };
+    var l = lsGet(LS_KEY); if (l && l.lat != null && l.lon != null) return { lat: +l.lat, lon: +l.lon };
+    return null;
+  }
+  function distM(a, b) {
+    var R = 6371e3, p1 = a.lat * RAD, p2 = b.lat * RAD, dp = (b.lat - a.lat) * RAD, dl = (b.lon - a.lon) * RAD;
+    var h = Math.sin(dp / 2) * Math.sin(dp / 2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) * Math.sin(dl / 2);
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+  function posMode() {   // 'hjemme' | 'borte' | null (ingen posisjon eller ikke noe hjemmested)
+    if (!posWanted() || pos.lat == null) return null;
+    var h = homeAt(); if (!h) return null;
+    return distM({ lat: pos.lat, lon: pos.lon }, h) <= NA_HOME_M ? 'hjemme' : 'borte';
+  }
+  function naMode() {
+    var m = lsGet(NA_MODE_KEY), today = dayIso(now()), auto = posMode();
+    if (m && m.day === today && (m.mode === 'hjemme' || m.mode === 'borte') && (!auto || !m.auto || m.auto === auto)) return { mode: m.mode, why: 'manuell' };
+    if (auto) return { mode: auto, why: 'posisjon' };
+    return { mode: 'hjemme', why: 'standard' };
+  }
+  function setNaMode(mode) { lsSet(NA_MODE_KEY, { mode: mode, day: dayIso(now()), auto: posMode() }); render(); if (mode === 'borte') naPoll(); }
+  function readPos() {
+    if (!posWanted() || pos.busy) return;
+    if (pos.at && Date.now() - pos.at < NA_POS_EVERY) return;
+    pos.busy = true;
+    navigator.geolocation.getCurrentPosition(function (p) {
+      pos.busy = false; pos.at = Date.now(); pos.err = '';
+      pos.lat = round3(p.coords.latitude); pos.lon = round3(p.coords.longitude);   // bare avrundet, og bare i minnet
+      if (open && naOn()) { render(); naPoll(); }
+    }, function (e) {
+      pos.busy = false; pos.at = Date.now(); pos.err = e && e.code === 1 ? 'nektet' : 'ukjent';
+      if (open && naOn()) render();
+    }, { enableHighAccuracy: false, maximumAge: 120000, timeout: 15000 });
+  }
+  function forgetPos() { pos.lat = pos.lon = null; pos.at = 0; pos.near = null; pos.nearKey = ''; pos.dep = null; pos.err = ''; }
+  function borteStops() {   // holdeplassene for Borte: nær posisjonen, ellers de valgte (felles eller egne på denne enheten)
+    if (posWanted() && pos.near && pos.near.length) return { stops: pos.near, src: 'posisjon' };
+    var a = avg(); return { stops: a.stops, src: a.shared ? 'felles' : 'egen' };
+  }
+  function naPoll() {
+    if (!open || !naOn() || document.visibilityState === 'hidden' || navigator.onLine === false) return;
+    readPos();
+    if (naMode().mode !== 'borte' || !posWanted() || pos.lat == null) return;
+    var key = pos.lat + ',' + pos.lon;
+    if (pos.nearKey !== key && !pos.depBusy) {
+      pos.depBusy = true;
+      enturCall(Q_NEAR, { lat: pos.lat, lon: pos.lon }).then(function (d) {
+        var seen = {}, l = [];
+        ((d.nearest && d.nearest.edges) || []).forEach(function (e) {
+          var n = e && e.node, p = n && n.place; if (!p || seen[p.id]) return; seen[p.id] = 1;
+          l.push({ id: p.id, name: p.name, dist: n.distance, walk: walkDefault(n.distance), all: true, sel: [] });
+        });
+        pos.near = l.slice(0, 2); pos.nearKey = key;
+      }, function () { pos.nearKey = key; pos.near = []; }).then(function () { pos.depBusy = false; naDep(); });
+    } else naDep();
+  }
+  function naDep() {
+    var b = borteStops();
+    if (b.src !== 'posisjon' || !b.stops.length || pos.depBusy || (pos.depAt && Date.now() - pos.depAt < sc(POLL))) { if (open && naOn()) render(); return; }
+    pos.depBusy = true;
+    enturCall(Q_DEP, { ids: b.stops.map(function (x) { return x.id; }), n: 40, range: 3600 }).then(function (d) { pos.dep = d.stopPlaces || []; pos.depAt = Date.now(); }, function () { }).then(function () { pos.depBusy = false; if (open && naOn()) render(); });
+  }
+  function naRows(stops, data, t, max, walkCut) {
+    var rows = [];
+    (stops || []).forEach(function (st) {
+      var sp = null; (data || []).forEach(function (x) { if (x && x.id === st.id) sp = x; });
+      if (!sp) return;
+      var seen = {};
+      (sp.estimatedCalls || []).forEach(function (c) {
+        if (!c || !c.quay || !c.serviceJourney || !c.serviceJourney.line || c.cancellation) return;
+        var k = depKey(c); if (!st.all && st.sel.indexOf(k) < 0) return;
+        var ms = Date.parse(c.expectedDepartureTime || c.aimedDepartureTime);
+        if (!(ms > t - 30000) || (walkCut && ms - t < (st.walk || 0) * 60000) || seen[k]) return;
+        seen[k] = 1;
+        rows.push({ ms: ms, no: c.serviceJourney.line.publicCode || '', front: (c.destinationDisplay && c.destinationDisplay.frontText) || '', stop: st.name });
+      });
+    });
+    rows.sort(function (a, b) { return a.ms - b.ms; });
+    return rows.slice(0, max);
+  }
+  function minTxt(ms, t) { var m = Math.floor((ms - t) / 60000); return m < 1 ? 'nå' : m + ' min'; }
+  function naEvents(t) {
+    if (!kal.list || !kal.ev) return [];
+    var A = api(), d = new Date(t), ds = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(), de = ds + 864e5 + 3600e3 * ((new Date(ds + 864e5).getTimezoneOffset() - new Date(ds).getTimezoneOffset()) / 60), iso = A.isoDate(new Date(ds)), names = {};
+    de = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
+    kal.list.forEach(function (c) { names[c.id] = c.name || ''; });
+    return kal.ev.filter(function (e) { return evOn(e, iso, ds, de) && typeof e.s !== 'string' && e.e > t; })
+      .sort(function (a, b) { return a.s - b.s; })
+      .map(function (e) { var x = new Date(Math.max(e.s, ds)); return { tm: e.s < ds ? 'Før' : two(x.getHours()) + ':' + two(x.getMinutes()), t: e.t, who: names[e.c] || '' }; });
+  }
+  function naHtml() {
+    var t = now(), d = new Date(t), A = api(), mm = naMode(), home = mm.mode === 'hjemme';
+    var pw = posWanted();
+    var why = mm.why === 'posisjon' ? 'Satt av posisjon (lagres bare på telefonen)'
+      : (mm.why === 'manuell' ? 'Valgt av deg' : 'Hjemme til du velger noe annet') + ' · ' + (pw ? (pos.err === 'nektet' ? 'posisjon er ikke tillatt' : homeAt() ? 'posisjon er på' : 'posisjon er på, men hjemmestedet mangler') : 'posisjon er av');
+    var h = '<div class="na" data-testid="na" data-modus="' + mm.mode + '">' +
+      '<div class="na-seg" role="group" aria-label="Hjemme eller borte">' +
+      '<button type="button" data-k="na-hjemme" data-testid="na-hjemme" aria-pressed="' + home + '"' + (home ? ' class="on"' : '') + '>Hjemme</button>' +
+      '<button type="button" data-k="na-borte" data-testid="na-borte" aria-pressed="' + !home + '"' + (!home ? ' class="on"' : '') + '>Borte</button></div>' +
+      '<p class="na-why" data-testid="na-hvorfor">' + esc(why) + '</p>';
+    var m = A.meal(dayIso(t));
+    if (home) {
+      var clock = two(d.getHours()) + ':' + two(d.getMinutes()), s = settings();
+      var w = wx && wx.d && Date.now() - wx.at < 3 * 3600e3 ? (wx.d.temp == null ? '' : wx.d.temp + '° ') + (wxText(wx.d.sym) || '').toLowerCase() : '';
+      h += '<p class="na-clock" data-testid="na-klokke">' + clock + '</p><p class="na-date" data-testid="na-dato">' + esc(DAYS[d.getDay()] + ' ' + d.getDate() + '. ' + MONTHS[d.getMonth()] + (w ? ' · ' + w : '')) + '</p>';
+      h += '<p class="na-lbl">Middag i dag</p>' + (m
+        ? '<button type="button" class="na-din" data-k="cook" data-testid="na-middag"><b>' + esc(m.mark === 'rester' ? 'Rester – ' + m.name : m.name) + '</b>' + (m.time ? '<span>' + esc(m.time) + '</span>' : '') + '</button>'
+        : '<p class="na-din none" data-testid="na-middag-tom">Ingen middag valgt</p>');
+      var ev = naEvents(t);
+      if (ev.length) h += '<p class="na-lbl">I kveld</p><ul class="na-card" data-testid="na-ikveld">' + ev.slice(0, 3).map(function (e) { return '<li><b>' + esc(e.tm + ' ' + e.t) + '</b>' + (e.who ? '<span>' + esc(e.who) + '</span>' : '') + '</li>'; }).join('') + '</ul>';
+      var a = avg();
+      if (a.stops.length) {
+        var r = naRows(a.stops, dep.data, t, 3, true);
+        h += '<p class="na-lbl">Neste avganger</p><ul class="na-card na-dep" data-testid="na-avganger">' + (r.length ? r.map(function (x) { return '<li><span class="no">' + esc(x.no) + '</span><b>' + esc(x.front) + '</b><span class="mn">' + minTxt(x.ms, t) + '</span></li>'; }).join('') : '<li class="note">' + (dep.data ? 'Ingen avganger den neste timen' : 'Henter avganger …') + '</li>') + '</ul>';
+      }
+    } else {
+      var bs = borteStops(), data = bs.src === 'posisjon' ? pos.dep : dep.data, rr = naRows(bs.stops, data, t, 4, false);
+      h += '<p class="na-lbl">Avganger herfra</p>';
+      if (bs.stops.length) h += '<ul class="na-card na-dep" data-testid="na-avg-her">' + (rr.length ? rr.map(function (x) { return '<li><span class="no">' + esc(x.no) + '</span><b>' + esc(x.stop) + '<span>mot ' + esc(x.front) + '</span></b><span class="mn">' + minTxt(x.ms, t) + '</span></li>'; }).join('') : '<li class="note">' + (data ? 'Ingen avganger den neste timen' : 'Henter avganger …') + '</li>') + '</ul>';
+      else h += '<p class="na-note">Ingen holdeplass valgt.</p>';
+      h += '<p class="na-src" data-testid="na-holdeplass-kilde">' + (bs.src === 'posisjon' ? 'Holdeplasser nær deg' : bs.src === 'felles' ? 'Husstandens holdeplasser' : 'Holdeplass valgt manuelt') + ' · <a href="#kjokken/innstillinger/avg" data-k="na-endre" data-testid="na-endre">Endre</a></p>';
+      var buy = A.naBuy ? A.naBuy() : { items: [], open: 0 };
+      h += '<p class="na-lbl">Kjøp på vei hjem</p><div class="na-card" data-testid="na-kjop">' +
+        (!m ? '<p class="note">Ingen middag valgt i dag.</p>' : !buy.items.length ? '<p class="note">Alt til ' + esc(m.name) + ' er handlet.</p>' :
+          buy.items.map(function (i) { return '<label class="na-cb"><input type="checkbox" data-na-key="' + esc(i.key) + '"' + (i.checked ? ' checked' : '') + ' data-testid="na-vare"><span>' + esc(i.name) + '</span></label>'; }).join('')) +
+        '<a class="na-all" href="#liste" data-k="na-lista" data-testid="na-hele-lista"><b>Hele handlelista</b><span>' + buy.open + (buy.open === 1 ? ' vare' : ' varer') + '</span><i aria-hidden="true">›</i></a></div>';
+      var ev2 = naEvents(t);
+      h += '<p class="na-lbl">Familiens ettermiddag</p><ul class="na-card" data-testid="na-ettermiddag">' + (ev2.length ? ev2.slice(0, 4).map(function (e) { return '<li><b>' + esc(e.tm + ' ' + e.t) + '</b>' + (e.who ? '<span>' + esc(e.who) + '</span>' : '') + '</li>'; }).join('') : '<li class="note">' + (kal.list && kal.list.length ? 'Ingenting mer i kalenderen i dag' : 'Ingen kalendere lagt til') + '</li>') +
+        (m ? '<li><b>Middag</b><span>' + esc(m.name) + '</span></li>' : '') + '</ul>';
+    }
+    var c = A.naCounts ? A.naCounts() : { list: 0, week: A.isoWeek(d), recipes: 0 };
+    h += '<div class="na-short" data-testid="na-snarveier">' +
+      '<a href="#liste" data-k="na-go" data-testid="na-snarvei-liste"><b>Handleliste</b><span>' + c.list + (c.list === 1 ? ' vare' : ' varer') + '</span></a>' +
+      '<a href="#uke" data-k="na-go" data-testid="na-snarvei-uke"><b>Uke</b><span>uke ' + c.week + '</span></a>' +
+      '<a href="#retter" data-k="na-go" data-testid="na-snarvei-retter"><b>Retter</b><span>' + c.recipes + '</span></a></div></div>';
+    return h;
+  }
+  function naPlace() {
+    var hd = document.querySelector('.topbar'), tb = document.querySelector('.tabs');
+    root.style.top = (hd ? Math.max(0, hd.getBoundingClientRect().bottom) : 0) + 'px';
+    root.style.bottom = (tb && tb.getBoundingClientRect().height > 0 ? Math.max(0, window.innerHeight - tb.getBoundingClientRect().top) : 0) + 'px';
+  }
+  function naClear() { for (var k in TOK.dag) root.style.removeProperty('--k-' + k); ['--k-fade', '--k-shift-x', '--k-shift-y', 'top', 'bottom'].forEach(function (p) { root.style.removeProperty(p); }); root.classList.remove('k-natt'); root.removeAttribute('data-fase'); }
+  function naTap(k, t, e) {
+    if (k === 'na-hjemme' || k === 'na-borte') { setNaMode(k === 'na-hjemme' ? 'hjemme' : 'borte'); return true; }
+    if (k === 'na-endre') { e.preventDefault(); location.hash = '#kjokken/innstillinger/avg'; return true; }
+    if (k === 'na-go' || k === 'na-lista') { return true; }   // vanlige lenker (fanelinja-sidene)
+    if (t && t.hasAttribute && t.hasAttribute('data-na-key')) return true;
+    return false;
+  }
+  window.addEventListener('knaggen-na-pos', function () { if (!posWanted()) forgetPos(); else pos.at = 0; if (open && naOn()) { render(); naPoll(); } });
+
   /* ---------- Tegning ---------- */
   var DAYS = ['Søndag', 'Mandag', 'Tirsdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lørdag'];
   var MONTHS = ['januar', 'februar', 'mars', 'april', 'mai', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'desember'];
@@ -475,7 +638,7 @@
   }
   function dropLock() { var l = wakeLock; wakeLock = null; if (l) l.release().catch(function () {}); showAwake(); }
   function showAwake() { var e = root && root.querySelector('[data-testid="k-vaaken"]'); if (e) e.hidden = !wakeLock; }
-  document.addEventListener('visibilitychange', function () { if (open && document.visibilityState === 'visible' && view === 'idle') { pollDep(); loadCal(false); } });
+  document.addEventListener('visibilitychange', function () { if (open && document.visibilityState === 'visible' && view === 'idle') { pollDep(); loadCal(false); naPoll(); } });
   window.addEventListener('online', function () { if (open) { dep.fails = 0; pollDep(); loadCal(false); } });
   window.addEventListener('resize', function () { if (open && view === 'idle') render(); });
   document.addEventListener('visibilitychange', function () { if (open && view === 'cook' && document.visibilityState === 'visible' && !wakeLock) takeLock(); });
@@ -512,6 +675,8 @@
       if (wakeLock == null) takeLock();
       return;
     }
+    if (root.classList.contains('k-na') && naTap(k, e.target, e)) return;
+    if (root.classList.contains('k-na') && !k) return;   // trykk på tomt område i «Nå» gjør ingenting
     if (k === 'cook') return openCook();
     if (k === 'toapp') { e.preventDefault(); return toApp('#liste'); }
     if (k === 'settings') { e.preventDefault(); location.hash = '#kjokken/innstillinger'; return; }   // v0.16.1: ⚙ tilbake på hvileskjermen   // v0.16.1: «Til appen» → lista
@@ -773,6 +938,13 @@
     if (root.querySelector('.k-sheet')) return;   // ikke tegn over innstillingene mens de er åpne
     root.classList.toggle('k-cook', view === 'cook');
     root.classList.add('k-v16');
+    if (naOn()) {   // v0.18: «Nå» på smale skjermer – appens tema, mellom toppen og fanelinja
+      if (!root.classList.contains('k-na')) { root.classList.add('k-na'); naClear(); }
+      root.classList.remove('k-land', 'k-port', 'k-cook');
+      var sy = root.scrollTop; root.innerHTML = naHtml(); naPlace(); root.scrollTop = sy; root.setAttribute('data-kutt', '0');
+      return;
+    }
+    if (root.classList.contains('k-na')) { root.classList.remove('k-na'); naClear(); }
     var land = window.innerWidth > window.innerHeight;
     root.classList.toggle('k-land', land); root.classList.toggle('k-port', !land);
     if (view === 'cook' && cook) { root.innerHTML = cookHtml(); applyPhase(); return; }
@@ -805,6 +977,7 @@
     }, 30000));
     timers.push(setInterval(function () { if (open) { loadWeather(false); loadCal(false); } }, 5 * 60000));
     timers.push(setInterval(function () { if (open) loadCal(false); }, 60000));
+    timers.push(setInterval(function () { if (open && naOn()) naPoll(); }, sc(POLL)));
   }
 
   function ensureRoot() {
@@ -813,6 +986,7 @@
     root.id = 'kjokken'; root.className = 'kj'; root.setAttribute('data-testid', 'kjokken');
     root.addEventListener('click', onTap);
     root.addEventListener('submit', onSubmit);
+    root.addEventListener('change', function (e) { var t = e.target; if (t && t.hasAttribute('data-na-key') && api().naCheck) { api().naCheck(t.getAttribute('data-na-key'), t.checked); setTimeout(render, 400); } });
     root.addEventListener('touchstart', onSwipeStart, { passive: true });
     root.addEventListener('touchend', onSwipeEnd);
     document.body.appendChild(root);
@@ -829,12 +1003,13 @@
     if (sub !== 'innstillinger' && root.querySelector('.k-sheet')) root.querySelector('.k-sheet').remove();
     render();
     if (!was) pollDep();
+    if (naOn()) naPoll();
     if (sub === 'innstillinger' && view === 'idle') openSheet(subTab ? subTab[1] : 'tid');
     if (view === 'cook' && !wakeLock) takeLock();
   }
   function hide() {
     if (!open) { homeBtn(fromKitchen()); return; }
-    open = false; clearTimers(); dropLock();
+    open = false; clearTimers(); dropLock(); forgetPos();
     if (root) { root.hidden = true; root.innerHTML = ''; }
     document.documentElement.classList.remove('k-html');
     homeBtn(fromKitchen());
@@ -872,6 +1047,6 @@
   document.addEventListener('submit', function () { if (!open) dirty = false; }, true);
   window.addEventListener('hashchange', function () { dirty = false; });
 
-  window.KnaggenKjokken = { show: show, hide: hide, sharedChanged: sharedChanged, isOpen: function () { return open; },
-    _test: { refresh: function () { render(); }, poll: function () { dep.fails = 0; dep.until = 0; pollDep(); }, loadCal: function () { loadCal(true); }, fit: function () { return fit.lvl; }, bedMs: bedMs, phaseAt: phaseAt, schedule: schedule, sunTimes: sunTimes, settings: settings, mixHex: mixHex, wxIcon: wxIcon, wxText: wxText } };
+  window.KnaggenKjokken = { show: show, hide: hide, sharedChanged: sharedChanged, isOpen: function () { return open; }, isNa: function () { return open && naOn(); }, narrow: function () { return window.innerWidth < NA_W; },
+    _test: { refresh: function () { render(); }, naMode: function () { return naMode(); }, posMode: function () { return posMode(); }, poll: function () { dep.fails = 0; dep.until = 0; pollDep(); }, loadCal: function () { loadCal(true); }, fit: function () { return fit.lvl; }, bedMs: bedMs, phaseAt: phaseAt, schedule: schedule, sunTimes: sunTimes, settings: settings, mixHex: mixHex, wxIcon: wxIcon, wxText: wxText } };
 })();
