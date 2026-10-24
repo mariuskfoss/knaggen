@@ -1,4 +1,4 @@
-/* Knaggen (arbeidsnavn Ukeshandel) v0.16.2 — ukeplan for middager + handleliste, delt i husstanden via Firebase.
+/* Knaggen (arbeidsnavn Ukeshandel) v0.17.0 — ukeplan for middager + handleliste, delt i husstanden via Firebase.
  * Uten Firebase-oppsett (eller før husstand er opprettet) lagres alt lokalt i nettleseren som før.
  */
 (function () {
@@ -653,6 +653,7 @@
     if (!hh) return;
     clearTimeout(saveMirror.t);
     saveMirror.t = setTimeout(function () {
+      if (!hh) return;   // v0.17: husstanden ble sluppet i mellomtiden
       var m = {
         recipes: state.recipes, staples: state.staples, week_plan: state.week_plan, oneoffs: state.oneoffs,
         checks: state.checks, list_adjust: state.list_adjust, list_extras: state.list_extras, check_at: state.check_at,
@@ -684,6 +685,9 @@
     renderSyncStatus();
     syncReady = Sync.init().then(function () {
       return Sync.isMember(hh.hid).then(function (m) {
+        // v0.17: enheten var registrert i husstanden og er ikke lenger medlem = fjernet. Ikke koble til på nytt.
+        if (!hh) return;
+        if (m === false && lsGet(K17_REG_KEY) === hh.hid) { var e17 = new Error('removed'); e17.k17removed = true; throw e17; }
         if (m === false) return Sync.joinHousehold(hh.hid, hh.secret);
       });
     }).then(function () {
@@ -696,6 +700,7 @@
     syncReady.catch(function (e) {
       syncStatus.failed = true; syncStatus.connecting = false;
       renderSyncStatus();
+      if (e && e.k17removed) { if (hh && hh.hid === info.hid) checkRemoved(); return; }
       if (e && e.code === 'permission-denied') {
         if (hh && hh.hid === info.hid) { householdGone(); return; }   // v0.10: slettet av en annen telefon
         toast('Ingen tilgang til husstanden. Åpne invitasjonslenka på nytt.', 5000);
@@ -820,7 +825,8 @@
         state.list_extras = weeklyExtras.concat(sharedExtras);
         remoteChanged();
       },
-      settings: function (docs) {
+      settings: function (docs, meta) {
+        settingsK17(docs, meta);   // v0.17: navn og felles kjøkkenoppsett
         var hv = docs.filter(function (d) { return d.id === 'hverdag'; })[0];   // v0.11
         state.weekday_limit = hv && [20, 30, 45].indexOf(hv.limit) >= 0 ? hv.limit : null;
         var doc = docs.filter(function (d) { return d.id === 'household'; })[0];
@@ -849,8 +855,11 @@
         // v0.10: ingen medlemmer igjen = husstanden er slettet av en annen telefon (sjekkes mot serveren først)
         if (!docs.length && meta && !meta.fromCache && hh && !ui.deleting) { checkGone(); return; }
         ui.members = docs.length;
+        K17.memberDocs = docs;   // v0.17: enhetslista (ukjente enheter og «koblet til»)
         membersChanged();
+        k17Refresh();
       },
+      devices: devicesSnapshot,   // v0.17
       invite: function (docs) {
         if (!docs) return;
         var d = docs.filter(function (x) { return x.id === 'current'; })[0];
@@ -868,6 +877,8 @@
       },
       error: function (err) {
         // v0.10: nytt forsøk høyst hvert 5. sekund (før: bare ett forsøk per økt, så en slettet husstand ble ikke oppdaget)
+        // v0.17: enheten var registrert og har mistet tilgangen = fjernet (eller husstanden slettet). Ikke koble til på nytt.
+        if (err && err.code === 'permission-denied' && (K17.selfSeen || (hh && lsGet(K17_REG_KEY) === hh.hid))) { checkRemoved(); return; }
         if (err && err.code === 'permission-denied' && !(Date.now() - (subscribeHousehold.retriedAt || 0) < 5000)) {
           subscribeHousehold.retriedAt = Date.now();
           Sync.joinHousehold(hh.hid, hh.secret).then(subscribeHousehold, function (e2) {
@@ -1012,10 +1023,12 @@
       if (ui.bring) ui.bring.hid = hid;
       enterHousehold(info);
       ui.installMoment = 'B';   // v0.9: hjemskjerm-kortet etter Bli med
+      if (!window.KNAGGEN_V016_HUSSTAND) lsSet(KIND_ASK_KEY, hid);   // v0.17: «Hva er denne enheten?»
       history.replaceState(null, '', location.pathname + location.search + '#uke');
       setTabsHidden(false);
       route();
       toast('Du er med i husstanden. Uka og lista er felles.', 4000);
+      showKindBanner();
     }, function (e) {
       ui.busy = false; ui.bring = null;
       ui.error = e && e.code === 'permission-denied' ? 'Lenka virker ikke. Be om en ny lenke fra den som delte den.' : errorText(e);
@@ -1038,6 +1051,7 @@
   var HS_OPEN = {};
   function renderHousehold() {
     if (V010_LAYOUT) return renderHouseholdV010();
+    if (hh && !window.KNAGGEN_V016_HUSSTAND) return renderHouseholdV017();   // v0.17 (testkrok for den gamle siden)
     var prev = main.querySelectorAll('[data-page="husstand"] details.hs-sec');
     if (prev.length) { HS_OPEN = {}; prev.forEach(function (d) { if (d.open) HS_OPEN[d.getAttribute('data-sec')] = true; }); }
     if (/^#husstand\/hverdag/.test(location.hash)) HS_OPEN.hverdag = true;
@@ -1269,6 +1283,13 @@
     meal: function (d) { return kitchenMeal(d); },
     isoDate: isoDate, isoWeek: isoWeek,
     hid: function () { return hh ? hh.hid : null; },
+    // v0.17: felles kjøkkenoppsett (null = ikke lest / finnes ikke / eldre regler)
+    sharedKitchen: function () { return hh && K17.kitchen ? K17.kitchen : null; },
+    setSharedKitchen: function (k) {
+      if (!hh || !Sync) return;
+      K17.kitchen = { stops: (k.stops || []).slice(0, 3), lat: k.lat, lon: k.lon };
+      Sync.write.setKitchenShared(hh.hid, K17.kitchen).catch(function () { /* eldre regler: lokalt som før */ });
+    },
     weather: function (lat, lon) {
       var S = window.UkeshandelSync;
       if (!hh || !S || !S.fetchWeather) return Promise.reject(new Error('no-household'));
@@ -1471,7 +1492,7 @@
     var parts = h.split('/');
     var tab = parts[0];
     var K = window.KnaggenKjokken;
-    if (tab === 'kjokken' && K) { setTabsHidden(true); document.body.classList.add('k-open'); main.innerHTML = ''; K.show(parts[1] || ''); return; }
+    if (tab === 'kjokken' && K) { setTabsHidden(true); document.body.classList.add('k-open'); main.innerHTML = ''; K.show(parts.slice(1).join('/')); return; }
     if (K) { K.hide(); document.body.classList.remove('k-open'); }
     var join = parseJoin(raw);
     var inn = parseInn(raw), flytt = parseFlytt(raw);
@@ -5388,6 +5409,395 @@
     if (f) try { f.focus({ preventScroll: true }); } catch (e) { f.focus(); }
   }
 
+  /* ---------- v0.17: husstandsnavn, enheter, Legg til, «Delt»-status og felles kjøkkenoppsett ----------
+   * Spec: spec-v017-husstand.md, design: merkevare/v017-husstand. Alt nytt er nye dokumenter (settings/profil,
+   * settings/kjokken, devices/{uid}); ingenting eksisterende flyttes eller slettes. */
+  var K17_REG_KEY = 'knaggen:enhet-registrert';   // v0.17: hid der denne enheten har en enhetsoppføring
+  var K17 = { name: '', devices: null, memberDocs: null, selfSeen: false, creating: false, kitchen: null, kitchenSeen: false, sheet: null, removing: false };
+  var DEV_TOUCH_KEY = 'knaggen:enhet-sett', NAME_LATER_KEY = 'knaggen:navn-senere', KIND_ASK_KEY = 'knaggen:enhet-spor';
+  var PLAT = { android: 'Android-telefon', iphone: 'iPhone', ipad: 'iPad', nettbrett: 'Nettbrett', windows: 'PC med Windows', mac: 'Mac', linux: 'PC med Linux', annet: 'Nettleser' };
+  function devPlatform() {
+    var ua = navigator.userAgent || '';
+    if (envInfo.ipad) return 'ipad';
+    if (/iPhone|iPod/.test(ua)) return 'iphone';
+    if (/Android/.test(ua)) return /Mobile/.test(ua) ? 'android' : 'nettbrett';
+    if (/Windows/.test(ua)) return 'windows';
+    if (/Macintosh/.test(ua)) return 'mac';
+    if (/Linux|CrOS/.test(ua)) return 'linux';
+    return 'annet';
+  }
+  // Bare grov type lagres; nettlesernavnet brukes bare i navneforslaget (aldri hele user agent-strengen).
+  function devSuggestion(p) {
+    var ua = navigator.userAgent || '';
+    if (p === 'windows' || p === 'mac' || p === 'linux') {
+      var b = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : '';
+      return b ? b + ' på ' + (p === 'windows' ? 'Windows' : p === 'mac' ? 'Mac' : 'Linux') : PLAT[p];
+    }
+    return PLAT[p] || 'Nettleser';
+  }
+  function dayNum(ms) { var t = ms == null ? Date.now() : ms; return Math.floor((t - new Date(t).getTimezoneOffset() * 60000) / 864e5); }
+  function agoText(day) {
+    var n = dayNum() - day;
+    if (n <= 0) return 'i dag';
+    if (n === 1) return 'i går';
+    if (n < 14) return 'for ' + n + ' dager siden';
+    if (n < 60) return 'for ' + Math.round(n / 7) + ' uker siden';
+    var m = Math.round(n / 30); return 'for ' + m + (m === 1 ? ' måned' : ' måneder') + ' siden';
+  }
+  function hhName() { return K17.name || ''; }
+  function myUid() { return Sync && Sync.uid ? Sync.uid() : null; }
+  function startKitchenOn() { try { return localStorage.getItem('knaggen:start-kjokken') === 'true'; } catch (e) { return false; } }
+  // Enhetslista: medlemmene er sannheten for hvem som har tilgang; devices gir navn, type og sist aktiv.
+  function deviceList() {
+    var devs = {}, out = [], me = myUid();
+    (K17.devices || []).forEach(function (d) { devs[d.id] = d; });
+    var ids = K17.memberDocs ? K17.memberDocs.map(function (m) { return m.id; }) : Object.keys(devs);
+    var joined = {};
+    (K17.memberDocs || []).forEach(function (m) { joined[m.id] = m.joined_at && m.joined_at.toMillis ? m.joined_at.toMillis() : 0; });
+    ids.forEach(function (id) {
+      var d = devs[id];
+      var last = d ? d.last_seen : (joined[id] ? dayNum(joined[id]) : null);
+      out.push({ id: id, known: !!d, me: id === me, name: d ? d.name : 'Ukjent enhet', type: d ? d.type : 'person', owner: d ? d.owner_label || '' : '',
+        platform: d ? d.platform : '', last: last, joined: joined[id] || (d && d.created_at) || 0, nameSet: !!(d && d.name_set), old: last != null && dayNum() - last > 90 });
+    });
+    out.sort(function (a, b) { return (b.me - a.me) || (b.known - a.known) || ((b.last || 0) - (a.last || 0)); });
+    return out;
+  }
+  var DEV_IC = {
+    phone: IC.phone,
+    tablet: SVG0 + '><rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M10.5 18h3"/></svg>',
+    pc: SVG0 + '><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16.5V20"/></svg>',
+    kjokken: SVG0 + '><rect x="2.75" y="4.5" width="18.5" height="12.5" rx="2"/><path d="M12 17v3M8 20h8"/></svg>',
+    ukjent: SVG0 + '><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.4"/><circle cx="12" cy="16.9" r=".9" fill="currentColor" stroke="none"/></svg>'
+  };
+  function devIcon(d) {
+    if (!d.known) return '<span class="k17-ic q">' + DEV_IC.ukjent + '</span>';
+    var k = d.type === 'kjokken' ? 'kjokken' : (d.platform === 'ipad' || d.platform === 'nettbrett') ? 'tablet' : (d.platform === 'windows' || d.platform === 'mac' || d.platform === 'linux') ? 'pc' : 'phone';
+    return '<span class="k17-ic">' + DEV_IC[k] + '</span>';
+  }
+  function devSub(d) {
+    if (!d.known) return 'koblet til ' + (d.joined ? dm(d.joined) : 'tidligere') + (d.last != null ? ' · ' + agoText(d.last) : '');
+    return [d.owner, d.last != null ? agoText(d.last) : ''].filter(Boolean).join(' · ');
+  }
+  function devRow(d) {
+    return '<button type="button" class="k17-row" data-action="k17-enhet" data-uid="' + esc(d.id) + '" data-testid="k17-enhet' + (d.me ? '-denne' : '') + '">' + devIcon(d) +
+      '<span class="t"><b>' + esc(d.name) + (d.me ? '<span class="k17-tag">denne</span>' : '') + '</b><span>' + esc(devSub(d)) + '</span></span><span class="go" aria-hidden="true">›</span></button>';
+  }
+  function devicesHtml() {
+    var l = deviceList(), cur = l.filter(function (d) { return !d.old || d.me; }), old = l.filter(function (d) { return d.old && !d.me; });
+    var h = '<div class="k17-grp" data-testid="k17-enheter">' + cur.map(devRow).join('');
+    if (old.length) h += '<details class="k17-old" data-testid="k17-gamle"' + (K17.oldOpen ? ' open' : '') + '><summary class="k17-row"><span class="t"><b>Ikke brukt på lenge</b></span><span class="end">' + old.length + ' ›</span></summary>' +
+      '<p class="k17-note">Fjern den hvis den er borte.</p>' + old.map(devRow).join('') + '</details>';
+    h += '<button type="button" class="k17-row k17-add" data-action="k17-legg-til" data-testid="k17-legg-til"><span class="k17-ic">' + IC.plus + '</span><span class="t"><b>Legg til enhet eller person</b></span></button></div>';
+    h += '<p class="k17-note">Navn, «tilhører» og sist aktiv (bare dag) er synlige for alle i husstanden.</p>';
+    return h;
+  }
+  function countText() {
+    var n = K17.memberDocs ? K17.memberDocs.length : ui.members;
+    return n ? n + (n === 1 ? ' enhet' : ' enheter') : 'Delt husstand';
+  }
+  // Egen enhet: opprettes første gang v0.17 åpnes, last_seen høyst én gang i timen (og bare når dagen er ny).
+  function devicesSnapshot(docs, meta) {
+    if (!docs) return;   // eldre regler: ingen enhetsliste
+    K17.devices = docs;
+    var me = myUid(), mine = docs.filter(function (d) { return d.id === me; })[0];
+    if (meta && !meta.fromCache && hh && me) {
+      if (mine) { K17.selfSeen = true; if (lsGet(K17_REG_KEY) !== hh.hid) lsSet(K17_REG_KEY, hh.hid); }
+      else if (K17.selfSeen && !ui.deleting) { checkRemoved(); return; }
+      else if (!K17.creating) {
+        K17.creating = true;
+        var p = devPlatform(), pend = null;
+        try { pend = JSON.parse(localStorage.getItem(KIND_ASK_KEY + ':valg') || 'null'); } catch (e) { pend = null; }
+        var kitchen = pend ? pend.type === 'kjokken' : startKitchenOn();
+        var d = { name: kitchen ? 'Kjøkkenskjerm' : devSuggestion(p), type: kitchen ? 'kjokken' : 'person', owner_label: kitchen ? 'Kjøkkenet' : null, platform: p, last_seen: dayNum(), created_at: Date.now(), name_set: false };
+        Sync.write.createDevice(hh.hid, d).then(function () { lsDel(KIND_ASK_KEY + ':valg'); lsSet(DEV_TOUCH_KEY, JSON.stringify({ hid: hh && hh.hid, at: Date.now() })); }, function () { K17.creating = false; });
+      }
+      if (mine && mine.last_seen < dayNum()) {
+        var t = null; try { t = JSON.parse(lsGet(DEV_TOUCH_KEY) || 'null'); } catch (e) { t = null; }
+        if (!t || t.hid !== hh.hid || Date.now() - t.at > 3600e3) {
+          lsSet(DEV_TOUCH_KEY, JSON.stringify({ hid: hh.hid, at: Date.now() }));
+          Sync.write.updateDevice(hh.hid, me, { last_seen: dayNum() }).catch(function () { /* frakoblet */ });
+        }
+      }
+    }
+    k17Refresh();
+  }
+  // Fjernet fra en annen enhet: ikke koble til på nytt automatisk (det ville gjort «Fjern» virkningsløs).
+  function checkRemoved() {
+    if (!hh || checkRemoved.busy) return;
+    var cur = hh; checkRemoved.busy = true;
+    Sync.stillMember(cur.hid).then(function (m) {
+      if (hh !== cur || m !== false) { checkRemoved.busy = false; return; }
+      // Fjernet eller slettet? Bare den slettede husstanden avviser hemmeligheten. Ved fjerning meldes enheten straks ut igjen.
+      return Sync.joinHousehold(cur.hid, cur.secret).then(function () {
+        return Sync.leaveHousehold(cur.hid).catch(function () { /* ignorer */ }).then(function () {
+          checkRemoved.busy = false;
+          if (hh === cur) deviceRemoved();
+        });
+      }, function (e) {
+        checkRemoved.busy = false;
+        if (hh !== cur) return;
+        if (e && e.code === 'permission-denied') householdGone(); else deviceRemoved();
+      });
+    }, function () { checkRemoved.busy = false; });
+  }
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && hh && K17.selfSeen) checkRemoved(); });
+  function deviceRemoved() {
+    if (!hh || ui.deleting) return;
+    K17.selfSeen = false;
+    dropHousehold();
+    resetToIntro('Denne enheten er ikke lenger med i husstanden.');
+    toast('Denne enheten er ikke lenger med i husstanden. Be om en ny kode for å bli med igjen.', 7000);
+  }
+  function settingsK17(docs, meta) {
+    var p = docs.filter(function (d) { return d.id === 'profil'; })[0];
+    K17.name = p && typeof p.name === 'string' ? p.name : '';
+    var k = docs.filter(function (d) { return d.id === 'kjokken'; })[0];
+    K17.kitchen = k && Array.isArray(k.stops) ? { stops: k.stops, lat: k.lat, lon: k.lon } : null;
+    // Migrering (spec §9): første skjerm med lokalt oppsett kopierer holdeplassene til husstanden hvis feltet er tomt.
+    if (meta && !meta.fromCache && hh && !K17.kitchenSeen) {
+      K17.kitchenSeen = true;
+      var loc = null; try { loc = JSON.parse(localStorage.getItem('knaggen:kjokken-avganger') || 'null'); } catch (e) { loc = null; }
+      if ((!K17.kitchen || !K17.kitchen.stops.length) && loc && Array.isArray(loc.stops) && loc.stops.length && !loc.own) {
+        K17.kitchen = { stops: loc.stops.slice(0, 3), lat: loc.lat == null ? null : loc.lat, lon: loc.lon == null ? null : loc.lon };
+        Sync.write.setKitchenShared(hh.hid, K17.kitchen).catch(function () { /* eldre regler: blir lokalt */ });
+      }
+    }
+    if (window.KnaggenKjokken && window.KnaggenKjokken.sharedChanged) window.KnaggenKjokken.sharedChanged();
+    k17Refresh();
+  }
+  function k17Refresh() {
+    if (main.querySelector('[data-page="husstand"][data-v17]') && !main.querySelector('[data-page="husstand"] input:focus')) renderHousehold();
+    if (K17.sheet && K17.sheet.refresh) K17.sheet.refresh();
+  }
+
+  /* --- ark (felles for v0.17) --- */
+  function k17Open(id, html, opts) {
+    k17Close();
+    var ov = document.createElement('div');
+    ov.className = 'k17-ov' + (opts && opts.mid ? ' mid' : '');
+    ov.id = id;
+    ov.innerHTML = '<div class="k17-sheet" role="dialog" aria-modal="true" aria-labelledby="' + id + '-h" data-testid="' + id + '">' + html + '</div>';
+    var back = document.activeElement;
+    function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); k17Close(); } else if (e.key === 'Tab') trapTab(ov, e); }
+    ov.addEventListener('click', function (e) { if (e.target === ov || e.target.closest('[data-k17="close"]')) k17Close(); });
+    document.body.appendChild(ov);
+    document.addEventListener('keydown', onKey, true);
+    K17.sheet = { id: id, ov: ov, refresh: opts && opts.refresh, close: function () { document.removeEventListener('keydown', onKey, true); if (ov.parentNode) ov.parentNode.removeChild(ov); if (back && document.body.contains(back)) try { back.focus({ preventScroll: true }); } catch (e) { } } };
+    var f = ov.querySelector('[autofocus]') || ov.querySelector('input, button:not([data-k17="close"])');
+    if (f) try { f.focus({ preventScroll: true }); } catch (e) { f.focus(); }
+    return ov;
+  }
+  function k17Close() { var s = K17.sheet; K17.sheet = null; if (s) s.close(); }
+  function k17Head(id, title) { return '<div class="k17-grab"></div><div class="k17-sh"><h3 id="' + id + '-h">' + esc(title) + '</h3><button type="button" class="k17-x" data-k17="close" aria-label="Lukk">✕</button></div>'; }
+
+  // Husstandens navn
+  function openNameSheet() {
+    var ov = k17Open('k17-navn', k17Head('k17-navn', 'Husstandens navn') +
+      '<form data-k17="navn"><div class="k17-field"><label for="k17-navn-in">Navn</label><input class="k17-in" id="k17-navn-in" maxlength="40" required value="' + esc(hhName() || 'Hjemme') + '" data-testid="k17-navn-felt" autofocus>' +
+      '<p class="hint">Alle i husstanden ser navnet.</p></div><div class="k17-acts"><button type="button" class="k17-btn" data-k17="close">Avbryt</button><button type="submit" class="k17-btn pri" data-testid="k17-navn-lagre">Lagre</button></div></form>');
+    ov.querySelector('form').addEventListener('submit', function (e) { e.preventDefault(); saveName(ov.querySelector('input').value); k17Close(); });
+  }
+  function saveName(v) {
+    v = String(v || '').trim().slice(0, 40);
+    if (!v || !hh) return;
+    K17.name = v;
+    Sync.write.setProfile(hh.hid, v).catch(function () { toast('Fikk ikke lagret navnet. Prøv igjen.'); });
+    renderHousehold();
+  }
+
+  // Enhetsarket: navn, type, tilhører; «Fjern fra husstanden» (andre) eller «Forlat» (egen)
+  function openDeviceSheet(uid) {
+    var d = deviceList().filter(function (x) { return x.id === uid; })[0];
+    if (!d) return;
+    var type = d.type;
+    var sug = d.known && !d.nameSet && d.platform ? devSuggestion(d.platform) : '';
+    var h = k17Head('k17-enhet-ark', d.me ? 'Denne enheten' : d.name) +
+      (d.known ? '<form data-k17="enhet">' +
+        '<div class="k17-field"><label for="k17-en-navn">Navn</label><input class="k17-in" id="k17-en-navn" name="name" maxlength="40" required value="' + esc(d.name) + '" data-testid="k17-enhet-navn">' +
+        '<p class="hint">' + (sug ? 'Forslag fra enheten var «' + esc(sug) + '». ' : '') + 'Alle i husstanden ser navnet.</p></div>' +
+        '<div class="k17-field"><label>Type</label><div class="k17-seg" role="radiogroup">' +
+          [['person', 'Person'], ['kjokken', 'Kjøkkenskjerm']].map(function (x) { return '<button type="button" role="radio" data-k17t="' + x[0] + '" aria-checked="' + (type === x[0]) + '" class="' + (type === x[0] ? 'on' : '') + '" data-testid="k17-type-' + x[0] + '">' + x[1] + '</button>'; }).join('') + '</div></div>' +
+        '<div class="k17-field"><label for="k17-en-eier">Tilhører</label><input class="k17-in" id="k17-en-eier" name="owner" maxlength="40" value="' + esc(d.owner) + '" placeholder="F.eks. Lena, Alle eller Kjøkkenet" data-testid="k17-enhet-eier"></div>' +
+        '<p class="k17-note">' + (d.last != null ? 'Sist aktiv ' + esc(agoText(d.last)) : '') + (d.joined ? ' · koblet til ' + dm(d.joined) : '') + '</p>' +
+        '<div class="k17-acts"><button type="submit" class="k17-btn pri" data-testid="k17-enhet-lagre">Lagre</button></div></form>'
+        : '<p class="k17-note">Denne enheten har ikke åpnet Knaggen 0.17 ennå, så vi vet ikke hva den er. Koblet til ' + (d.joined ? dm(d.joined) : 'tidligere') + '.</p>') +
+      '<div class="k17-acts">' + (d.me ? '<button type="button" class="k17-btn txt full" data-k17="forlat" data-testid="k17-forlat">Forlat ' + esc(hhName() || 'husstanden') + '</button>'
+        : '<button type="button" class="k17-btn txt full" data-k17="fjern" data-testid="k17-fjern">Fjern fra husstanden</button>') + '</div>';
+    var ov = k17Open('k17-enhet-ark', h);
+    ov.addEventListener('click', function (e) {
+      var t = e.target.closest('[data-k17t]');
+      if (t) { type = t.getAttribute('data-k17t'); ov.querySelectorAll('[data-k17t]').forEach(function (b) { var on = b === t; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); }); return; }
+      var a = e.target.closest('[data-k17]');
+      if (!a) return;
+      var k = a.getAttribute('data-k17');
+      if (k === 'forlat') { k17Close(); openLeave(); }
+      else if (k === 'fjern') { k17Close(); confirmRemove(d); }
+    });
+    var f = ov.querySelector('form');
+    if (f) f.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var name = f.name.value.trim().slice(0, 40), owner = f.owner.value.trim().slice(0, 40);
+      if (!name || !hh) return;
+      var fields = { name: name, type: type, owner_label: owner || null, name_set: true };
+      Sync.write.updateDevice(hh.hid, d.id, fields).catch(function () { toast('Fikk ikke lagret. Prøv igjen.'); });
+      if (d.me) { if (type === 'kjokken') lsSet('knaggen:start-kjokken', 'true'); }
+      k17Close();
+    });
+  }
+  function confirmRemove(d) {
+    var hn = hhName() || 'husstanden';
+    ask({ id: 'k17-fjern-bekreft', title: 'Fjerne ' + d.name + '?', text: 'Den mister tilgang til ' + hn + '. Uka, lista og de andre enhetene påvirkes ikke.', ok: 'Fjern', cancel: 'Avbryt', danger: true }).then(function (ok) {
+      if (!ok || !hh) return;
+      Sync.write.removeDevice(hh.hid, d.id).then(function () { toast(d.name + ' er fjernet'); }, function (e) {
+        toast(e && e.code === 'permission-denied' ? 'Fikk ikke fjerne enheten (reglene er ikke oppdatert ennå).' : 'Fikk ikke kontakt. Prøv igjen.', 5000);
+      });
+    });
+  }
+
+  // Legg til enhet eller person: ett ark med tre valg, så koden (samme invitasjon for alle tre)
+  function openAddSheet(kind) {
+    if (!kind) {
+      var ch = [['person', 'En person', 'Send en melding med lenke eller kode'], ['min', 'En av mine enheter', 'Vis koden her og skriv den inn på den andre'], ['kjokken', 'Nettbrett som kjøkkenskjerm', 'Henter kalendere og avganger selv']];
+      k17Open('k17-legg-til-ark', k17Head('k17-legg-til-ark', 'Legg til enhet eller person') +
+        '<div class="k17-grp">' + ch.map(function (c) { return '<button type="button" class="k17-row" data-k17v="' + c[0] + '" data-testid="k17-valg-' + c[0] + '"><span class="t"><b>' + c[1] + '</b><span>' + c[2] + '</span></span><span class="go" aria-hidden="true">›</span></button>'; }).join('') + '</div>' +
+        '<p class="k17-note">Alle tre bruker samme invitasjon. Koden gjelder i 7 dager.</p>').addEventListener('click', function (e) {
+        var b = e.target.closest('[data-k17v]'); if (b) openAddSheet(b.getAttribute('data-k17v'));
+      });
+      return;
+    }
+    var title = kind === 'person' ? 'Inviter en person' : kind === 'min' ? 'Legg til en av mine enheter' : 'Nettbrett som kjøkkenskjerm';
+    function body() {
+      var inv = validInvite(), h = k17Head('k17-kode-ark', title);
+      h += inv ? '<div class="k17-code" data-testid="k17-kode">' + esc(fmtCode(inv.code)) + '</div><p class="k17-note" style="text-align:center">Gyldig til ' + dm(inv.expires_at) + '</p>'
+        : ui.inviteErr ? '<p class="form-error" role="alert">' + esc(ui.inviteErr) + '</p>' : '<p class="inv-wait" role="status">Lager koden …</p>';
+      if (kind === 'person') h += '<div class="k17-acts"><button type="button" class="k17-btn pri" data-action="hs-inviter" data-testid="k17-inviter">Inviter med melding</button><button type="button" class="k17-btn" data-action="copy-link">Kopier lenke</button></div>';
+      else h += '<ol class="k17-steps"><li>Åpne <b>app.knaggen.no</b> på ' + (kind === 'kjokken' ? 'nettbrettet' : 'den andre enheten') + '.</li><li>Velg «Koble til med lenke eller kode» under Husstand, og skriv inn koden.</li>' +
+        (kind === 'kjokken' ? '<li>Velg «Kjøkkenskjerm» når den spør hva enheten er. Kalendere og avganger hentes fra husstanden, så du trenger ikke sette opp noe mer.</li>' : '') + '</ol>' +
+        '<div class="k17-acts"><button type="button" class="k17-btn" data-action="copy-link">Kopier lenke</button></div>';
+      return h;
+    }
+    var ov = k17Open('k17-kode-ark', body(), { refresh: function () { var s = ov.querySelector('.k17-sheet'); if (s) s.innerHTML = body(); } });
+    if (!validInvite()) {
+      ui.inviteErr = '';
+      ensureInvite(false).then(function () { if (K17.sheet && K17.sheet.refresh) K17.sheet.refresh(); }, function (e) { ui.inviteErr = inviteErrText(e); if (K17.sheet && K17.sheet.refresh) K17.sheet.refresh(); });
+    }
+    // knappene med data-action håndteres av hovedlytteren på main; arket ligger utenfor main
+    ov.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-action]'); if (!b) return;
+      var a = b.getAttribute('data-action');
+      if (a === 'copy-link') copyInviteLink(); else if (a === 'hs-inviter') { var x = main.querySelector('[data-action="hs-inviter"]'); if (x) x.click(); else copyInviteLink(); }
+    });
+  }
+
+  // «Delt» er bare status (spec §4): et lite ark med hvem vi er i synk med
+  function openSyncSheet() {
+    var st = document.getElementById('sync-status'), txt = st ? st.textContent : 'Delt';
+    var h = k17Head('k17-delt', txt === 'Delt' ? 'Synkronisert' : txt) +
+      '<p data-testid="k17-delt-tekst">' + (txt === 'Delt' ? 'Synkronisert med <b>' + esc(hhName() || 'husstanden') + '</b>' : esc(txt) + ' · <b>' + esc(hhName() || 'husstanden') + '</b>') + '</p>' +
+      '<p class="k17-note">' + esc(countText()) + '</p>' +
+      '<div class="k17-grp" style="margin-top:12px"><a class="k17-row" href="#husstand" data-k17="close" data-testid="k17-apne-husstand"><span class="t"><b>Åpne Husstand</b></span><span class="go" aria-hidden="true">›</span></a></div>' +
+      '<p class="k17-note">Uten nett kan du fortsatt bruke lista. Endringene sendes når enheten er på nett igjen.</p>';
+    k17Open('k17-delt', h);
+  }
+  document.addEventListener('click', function (e) {
+    var l = e.target.closest && e.target.closest('#sync-link');
+    if (!l || !hh || V010_LAYOUT) return;
+    e.preventDefault();
+    openSyncSheet();
+  }, true);
+
+  // «Hva er denne enheten?» etter tilkobling (ikke modalt, så ingenting blokkeres)
+  function kindBannerHtml() {
+    if (!hh || lsGet(KIND_ASK_KEY) !== hh.hid) return '';
+    return '<div class="k17-banner" data-testid="k17-hva"><b>Hva er denne enheten?</b><p>Velg Kjøkkenskjerm for et nettbrett på kjøkkenet. Den starter da rett på kjøkkenskjermen.</p>' +
+      '<div class="row"><button type="button" class="k17-btn pri" data-action="k17-hva" data-v="kjokken" data-testid="k17-hva-kjokken">Kjøkkenskjerm</button>' +
+      '<button type="button" class="k17-btn" data-action="k17-hva" data-v="person" data-testid="k17-hva-person">Min enhet</button></div></div>';
+  }
+  function showKindBanner() {
+    var pg = main.querySelector('.page');
+    if (pg && !pg.querySelector('[data-testid="k17-hva"]')) pg.insertAdjacentHTML('afterbegin', kindBannerHtml());
+  }
+  function answerKind(v) {
+    lsDel(KIND_ASK_KEY);
+    var me = myUid(), mine = (K17.devices || []).filter(function (d) { return d.id === me; })[0];
+    if (v === 'kjokken') lsSet('knaggen:start-kjokken', 'true');
+    if (hh && mine) Sync.write.updateDevice(hh.hid, me, v === 'kjokken' ? { type: 'kjokken', name: mine.name_set ? mine.name : 'Kjøkkenskjerm', owner_label: mine.owner_label || 'Kjøkkenet' } : { type: 'person' }).catch(function () { });
+    else lsSet(KIND_ASK_KEY + ':valg', JSON.stringify({ type: v }));
+    var b = document.querySelector('[data-testid="k17-hva"]'); if (b) b.parentNode.removeChild(b);
+    if (v === 'kjokken') { location.hash = '#kjokken'; toast('Kjøkkenskjermen starter her neste gang. Legg Knaggen på hjem-skjermen for å åpne den raskt.', 6000); }
+  }
+
+  // Husstand-siden (v0.17, spec §4 / skissen husstand). Uten husstand vises v0.16-siden (opprett / koble til).
+  function renderHouseholdV017() {
+    var prev = main.querySelectorAll('[data-page="husstand"] details');
+    if (prev.length) { HS_OPEN = {}; prev.forEach(function (d) { if (d.open) HS_OPEN[d.getAttribute('data-sec')] = true; }); }
+    if (/^#husstand\/hverdag/.test(location.hash)) HS_OPEN.hverdag = true;
+    if (/^#husstand\/del/.test(location.hash) || ui.justCreated) HS_OPEN.del = true;
+    var hp = hsPeople() || { voksen: 2, barn: 2, smabarn: 0 }, hasP = !!hsPeople(), name = hhName();
+    function sec(key, title, sum, body, testid) {
+      return '<details class="hs-sec k17-dsec" data-sec="' + key + '" data-testid="hs-sek-' + testid + '"' + (HS_OPEN[key] ? ' open' : '') + '>' +
+        '<summary><span class="t"><b>' + title + '</b><span class="hs-sum-line" data-testid="hs-sum-' + testid + '">' + esc(sum) + '</span></span><span class="go" aria-hidden="true">›</span></summary>' +
+        '<div class="hs-sec-body">' + body + '</div></details>';
+    }
+    function lbl(t) { return '<p class="k17-lbl">' + t + '</p>'; }
+    var off = !navigator.onLine || syncStatus.fromCache || syncStatus.failed;
+    var h = '<section class="page k17" data-page="husstand" data-v17="1">';
+    h += '<div class="k17-head"><div class="t"><button type="button" class="k17-name" data-action="k17-navn" data-testid="k17-hh-navn">' + esc(name || 'Husstand') + (name ? ' <span class="pen">Endre</span>' : '') + '</button>' +
+      '<div class="k17-sub" data-testid="k17-hh-sub"><span class="dot">●</span> ' + esc(countText()) + ' · ' + (off ? 'frakoblet' : 'synkronisert') + '</div></div>' +
+      '<a class="btn" href="#uke" data-testid="husstand-tilbake">Tilbake</a></div>';
+    if (!name && lsGet(NAME_LATER_KEY) !== hh.hid) h += '<div class="k17-banner" data-testid="k17-navn-banner"><b>Gi husstanden et navn</b><p>Så ser alle enhetene hvilken husstand de er med i.</p>' +
+      '<div class="row"><input class="k17-in" id="k17-banner-in" maxlength="40" value="Hjemme" aria-label="Navn på husstanden" data-testid="k17-banner-felt"></div><div class="row" style="margin-top:8px"><button type="button" class="k17-btn pri" data-action="k17-banner-lagre" data-testid="k17-banner-lagre">Lagre</button><button type="button" class="k17-btn" data-action="k17-banner-senere" data-testid="k17-banner-senere">Senere</button></div></div>';
+    h += kindBannerHtml();
+    if (ui.justCreated) h += '<p class="notice" data-testid="opprettet">Husstanden er opprettet' + (ui.movedOwn ? ', og rettene, uka og lista fra denne telefonen er flyttet inn.' : '.') + ' Legg til de andre under Enheter.</p>';
+    // 1. Enheter
+    h += lbl('Enheter') + devicesHtml();
+    // 2. Middag
+    var scalePref = hsState().scale !== false, lim = weekdayLimit();
+    var b1 = peopleCountersHtml('hsh', hasP ? hsPeople() : hp, { testid: 'hs-innstillinger' }) +
+      '<button type="button" class="hs-switch" role="switch" data-action="hs-scale-toggle" aria-checked="' + (scalePref ? 'true' : 'false') + '" data-testid="hs-tilpass-bryter">' +
+      '<div class="t"><b>Tilpass retter fra Knaggen</b><span>Egne retter endres ikke</span></div><span class="sw' + (scalePref ? ' on' : '') + '" aria-hidden="true"></span></button>' +
+      '<p class="hs-note">Vektene følger Helsedirektoratets energibehov (omtrent). Under 1 år telles ikke.</p>' +
+      '<div class="form-actions plain"><button type="button" class="btn primary" data-action="hs-lagre-innstillinger" data-testid="hs-lagre">Lagre</button></div>';
+    var b2 = '<fieldset class="hv-limit"><legend class="sr-only">Middag i hverdagen</legend>' + [[0, 'Ingen grense'], [20, 'Helst under 20 min'], [30, 'Helst under 30 min'], [45, 'Helst under 45 min']].map(function (x) {
+      return '<label class="hv-opt"><input type="radio" name="hv-limit" value="' + x[0] + '" data-testid="hv-grense-' + x[0] + '"' + ((lim || 0) === x[0] ? ' checked' : '') + '> ' + x[1] + '</label>';
+    }).join('') + '</fieldset><p class="hs-note">Gjelder aktiv tid ved benken. Matrett-byggeren forhåndsvelger tidsfilteret, og «Fyll man–fre» velger helst retter innenfor grensen.</p>';
+    h += lbl('Middag') + '<div class="k17-dgrp">' + sec('husstanden', 'Hvem spiser middag', hasP ? SC.peopleText(hsPeople(), true) + ' · ' + fmtPor(SC.porsjoner(hsPeople())) + ' porsjoner' : 'Ikke satt – regnes som 4', b1, 'husstanden') +
+      sec('hverdag', 'Middag i hverdagen', lim ? 'Helst under ' + lim + ' min' : 'Ingen grense', b2, 'hverdag') + '</div>';
+    // 3. Faste varer
+    var nS = state.staples.length;
+    h += lbl('Handleliste') + '<div class="k17-grp"><a class="k17-row" href="#liste/faste" data-testid="hs-sek-faste"><span class="t"><b>Faste varer</b><span>' + (nS ? nS + (nS === 1 ? ' vare' : ' varer') : 'Ingen ennå') + '</span></span><span class="go" aria-hidden="true">›</span></a></div>';
+    // 4. Kjøkkenskjerm · felles
+    var ks = K17.kitchen && K17.kitchen.stops.length ? K17.kitchen.stops.map(function (s) { return s.name; }).join(' + ') : 'Ingen holdeplasser ennå';
+    h += lbl('Kjøkkenskjerm · felles') + '<div class="k17-grp"><a class="k17-row" href="#kjokken/innstillinger/avg" data-testid="hs-kjokken"><span class="t"><b>Kalendere og avganger</b><span>' + esc(ks) + '</span></span><span class="go" aria-hidden="true">›</span></a></div>' +
+      '<p class="k17-note">Felles for alle skjermer i husstanden. Leggetid og sted for vær stilles på hver skjerm.</p>';
+    // 5. Denne enheten
+    var me = deviceList().filter(function (d) { return d.me; })[0];
+    h += lbl('Denne enheten') + '<div class="k17-grp">' +
+      (me ? '<button type="button" class="k17-row" data-action="k17-enhet" data-uid="' + esc(me.id) + '" data-testid="k17-denne-navn"><span class="t"><b>Navn</b><span>' + esc(me.name) + '</span></span><span class="go" aria-hidden="true">›</span></button>' : '') +
+      '<a class="k17-row" href="#kjokken/innstillinger" data-testid="k17-start-kjokken"><span class="t"><b>Start som kjøkkenskjerm</b><span>' + (startKitchenOn() ? 'På' : 'Av') + '</span></span><span class="go" aria-hidden="true">›</span></a>' +
+      (envInfo.phone && !isStandalone() ? '<button type="button" class="k17-row" data-action="inst-open" data-testid="hs-hjemskjerm"><span class="t"><b>Legg på hjemskjermen</b><span>Slik gjør du det</span></span><span class="go" aria-hidden="true">›</span></button>' : '') +
+      '<a class="k17-row" href="#koble" data-testid="hs-koble"><span class="t"><b>Bytt husstand</b><span>Koble til med lenke eller kode</span></span><span class="go" aria-hidden="true">›</span></a>' +
+      '<button type="button" class="k17-row k17-danger" data-action="hs-forlat" data-testid="hs-forlat"><span class="t"><b>Forlat ' + esc(name || 'husstanden') + '</b></span></button></div>';
+    // 6. Avansert (lukket)
+    var inv = validInvite();
+    var b6 = '<div id="hs-deling"><ul class="hs-group">' +
+      '<li class="hs-code">' + (inv ? '<div class="code small"><span><b data-testid="hs-kode">' + fmtCode(inv.code) + '</b><br><span class="sub">Kode til invitasjonen · gjelder til ' + dm(inv.expires_at) + '</span></span></div>' : ui.inviteBusy ? '<p class="inv-wait" role="status">Lager koden …</p>' : '') +
+      (ui.inviteErr ? '<p class="form-error" role="alert" data-testid="hs-kode-feil">' + esc(ui.inviteErr) + '</p>' : '') +
+      '<div class="inv-acts"><div class="row"><button type="button" class="btn" data-action="hs-inviter" data-testid="hs-inviter">' + IC.msg + 'Inviter med melding</button>' +
+      '<button type="button" class="btn" data-action="copy-link" data-testid="kopier-lenke">' + IC.copy + 'Kopier lenke</button>' +
+      '<button type="button" class="btn" data-action="hs-ny-kode" data-testid="hs-ny-kode">Lag ny kode</button></div></div></li></ul>' +
+      '<label class="field"><span>Varig lenke</span><input type="text" id="share-link" readonly value="' + esc(shareLink()) + '"></label>' +
+      '<button type="button" class="btn small" data-action="copy-long" data-testid="kopier-varig">Kopier varig lenke</button>' +
+      '<p class="hint">Virker også etter 7 dager. Alle som har lenka kan se og endre dataene. Å fjerne en enhet gjør ikke lenka ugyldig.</p></div>' +
+      '<ul class="hs-group"><li><button type="button" class="hs-row" data-action="hs-slett-lenker" data-testid="hs-slett-lenker"><span class="t"><b>Slett Oda-lenker</b><span>Lenker fra «Del lista til Oda» slutter å virke.</span></span><span class="go" aria-hidden="true">›</span></button></li>' +
+      '<li><button type="button" class="hs-row k17-danger" data-action="hs-slett" data-testid="hs-slett"><span class="t"><b>Slett husstanden</b><span>For alle enheter. Kan ikke angres.</span></span></button></li></ul>';
+    h += '<div style="height:16px"></div><span id="deling"></span>' + sec('del', 'Avansert', 'Varig lenke, ny kode, Oda-lenker, slett', b6, 'avansert');
+    if (ui.justCreated) h += '<div class="form-actions plain"><a class="btn" href="#uke">Ferdig</a></div>';
+    h += '</section>';
+    main.innerHTML = h;
+  }
+
   /* --- Husstand: Deling (11) og Denne telefonen --- */
   function delingHtml() {
     var h = '';
@@ -5460,6 +5870,7 @@
     if (unsubscribe) { unsubscribe(); unsubscribe = null; }
     hh = null; syncReady = null; swapOverlays = []; lastDays = []; weeklyExtras = []; sharedExtras = []; migratingHid = null;
     ui.members = null; ui.invite = null; ui.justCreated = false; ui.busy = false;
+    K17.name = ''; K17.devices = null; K17.memberDocs = null; K17.selfSeen = false; K17.creating = false; K17.kitchen = null; K17.kitchenSeen = false; k17Close(); lsDel(K17_REG_KEY);
     clearTimeout(connectTimer); syncStatus.connecting = false;
     lsDel(HH_KEY);
     if (hid) { lsDel(MIRROR_PREFIX + hid); lsDel(SWAPQ_PREFIX + hid); }
@@ -5496,6 +5907,7 @@
   }
   function checkGone() {
     if (!hh || checkGone.busy) return;
+    if (lsGet(K17_REG_KEY) === hh.hid) { checkRemoved(); return; }
     var cur = hh;
     checkGone.busy = true;
     Sync.joinHousehold(cur.hid, cur.secret).then(function () {
@@ -6072,6 +6484,18 @@
       startCreate();
     } else if (a === 'hs-slett-lenker') {
       deleteShareLinks();
+    } else if (a === 'k17-enhet') {
+      openDeviceSheet(btn.getAttribute('data-uid'));
+    } else if (a === 'k17-legg-til') {
+      openAddSheet();
+    } else if (a === 'k17-navn') {
+      openNameSheet();
+    } else if (a === 'k17-banner-lagre') {
+      var bi = document.getElementById('k17-banner-in'); saveName(bi ? bi.value : 'Hjemme');
+    } else if (a === 'k17-banner-senere') {
+      if (hh) lsSet(NAME_LATER_KEY, hh.hid); renderHousehold();
+    } else if (a === 'k17-hva') {
+      answerKind(btn.getAttribute('data-v'));
     } else if (a === 'hs-forlat') {
       openLeave();
     } else if (a === 'hs-slett') {
@@ -6291,8 +6715,9 @@
   /* ---------- v0.16: versjonsnummeret ved logoen og «Nytt i Knaggen» ----------
    * Trykk på «0.16» åpner arket. Etter en oppdatering åpnes det av seg selv én gang (ikke ved aller første åpning,
    * ikke på kjøkkenskjermen og ikke i automatiserte tester uten testkroken KNAGGEN_TEST_NYTT). */
-  var APP_VERSION = '0.16.2', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.17.0', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.17.0', ['Husstanden kan få et navn, og under Husstand ser du nå hver enhet med navn, hvem den tilhører og når den sist ble brukt. Du kan gi enheter nytt navn og fjerne dem du ikke bruker.', 'Holdeplassene på kjøkkenskjermen er felles for husstanden, så et nytt nettbrett får dem med en gang. ⚙ ligger nå øverst til høyre.', 'Ny rett i biblioteket: Flygande Jacob – svensk ovnsrett med kylling, fløte, chilisaus, banan, bacon og peanøtter, servert med ris.']],
     ['0.16.2', ['Innstillingene på kjøkkenskjermen følger nå samme lyse eller mørke tema som resten av appen (etter innstillingen på enheten), og er lette å lese i begge.']],
     ['0.16.1', ['Nettbrettet kan starte rett på kjøkkenskjermen: slå på «Start som kjøkkenskjerm på denne enheten» under Husstand → Kjøkkenskjerm. «Til appen» nederst tar deg til lista.',
       '⚙ Innstillinger er tilbake nederst på kjøkkenskjermen.',

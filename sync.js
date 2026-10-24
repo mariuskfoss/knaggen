@@ -276,6 +276,8 @@ function subscribe(hid, oldest, handlers) {
   // v0.9: antall tilkoblinger («2 koblet til») og aktiv invitasjonskode (uten secret)
   listen('members', fs.collection(...hh(hid, 'members')), true);
   listen('invite', fs.collection(...hh(hid, 'invite')), true);
+  // v0.17: enhetslista (tillegg – med eldre regler gir den bare en feil som ignoreres)
+  listen('devices', fs.collection(...hh(hid, 'devices')), true);
   return () => unsubs.forEach(u => u());
 }
 
@@ -330,6 +332,18 @@ const W = {
   setHouseholdSettings: (hid, h) => ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'settings', 'household')), householdSettingsDoc(h)),
   setDayPeople: (hid, date, delta) => ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'daypeople', date)), dayPeopleDoc(date, delta)),
   deleteDayPeople: (hid, date) => ctx.fs.deleteDoc(ctx.fs.doc(...hh(hid, 'daypeople', date))),
+  // v0.17: husstandens navn, egen enhet, andres navn/type/tilhører og felles kjøkkenoppsett
+  setProfile: (hid, name) => ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'settings', 'profil')), { name, updated_at: Date.now() }),
+  createDevice: (hid, d) => ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'devices', ctx.uid)), d),
+  updateDevice: (hid, uid, fields) => ctx.fs.updateDoc(ctx.fs.doc(...hh(hid, 'devices', uid)), fields),
+  setKitchenShared: (hid, k) => ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'settings', 'kjokken')), { stops: k.stops || [], lat: k.lat == null ? null : k.lat, lon: k.lon == null ? null : k.lon, updated_at: Date.now() }),
+  // v0.17: fjern en annen enhet – medlemskapet og enhetsdokumentet i samme batch
+  removeDevice: (hid, uid) => {
+    const b = ctx.fs.writeBatch(ctx.db);
+    b.delete(ctx.fs.doc(...hh(hid, 'members', uid)));
+    b.delete(ctx.fs.doc(...hh(hid, 'devices', uid)));
+    return b.commit();
+  },
   // v0.4.4: venter til telefonens egne ventende skrivinger er bekreftet (før en bytte-transaksjon).
   settled: () => ctx.fs.waitForPendingWrites(ctx.db)
 };
@@ -337,6 +351,8 @@ const W = {
 /* ---------- v0.10: Forlat og Slett husstanden ---------- */
 // Forlat: sletter bare eget medlemskap (tillatt også med v0.9-reglene). Køes frakoblet.
 function leaveHousehold(hid) {
+  // v0.17: eget enhetsdokument først (egen uid er alltid lov); feiler det (eldre regler), går Forlat videre
+  ctx.fs.deleteDoc(ctx.fs.doc(...hh(hid, 'devices', ctx.uid))).catch(() => {});
   return ctx.fs.deleteDoc(ctx.fs.doc(...hh(hid, 'members', ctx.uid)));
 }
 // Slett: alt innhold i biter, så til slutt kjernen i én batch: invitasjonskodene, invite/current, de andre medlemmene,
@@ -357,6 +373,8 @@ async function deleteHousehold(hid) {
   for (const col of ['recipes', 'staples', 'days', 'lists', 'extras', 'settings', 'daypeople']) {
     (await fromServer(fs.collection(...hh(hid, col)))).forEach(d => refs.push(d.ref));
   }
+  // v0.17: enhetslista (eldre regler nekter lesing – da finnes den heller ikke)
+  try { (await fromServer(fs.collection(...hh(hid, 'devices')))).forEach(d => refs.push(d.ref)); } catch (e) { if (!(e && e.code === 'permission-denied')) throw e; }
   const inv = await fromServer(fs.collection(...hh(hid, 'invite')));
   const codes = new Set();
   let listed = false;

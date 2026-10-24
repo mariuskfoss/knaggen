@@ -226,14 +226,31 @@
   var MODE_TXT = { bus: 'Buss', tram: 'Trikk', metro: 'T-bane', rail: 'Tog', water: 'Båt', coach: 'Buss', air: 'Fly', cableway: 'Bane', funicular: 'Bane', lift: 'Heis' };
   // Testkrok: window.KNAGGEN_KJOKKEN_SCALE (f.eks. 0.01) gjør 30 s / 1–2–5 min til 0,3 s / 0,6–1,2–3 s.
   function sc(ms) { return ms * (window.KNAGGEN_KJOKKEN_SCALE || 1); }
+  // v0.17: holdeplassene er felles for husstanden (settings/kjokken). own = denne skjermen har egen innstilling.
+  function sharedK() { var A = api(); return A && A.sharedKitchen ? A.sharedKitchen() : null; }
+  function inHousehold() { var A = api(); return !!(A && A.hid && A.hid()); }
   function avg() {
-    var a = lsGet(AVG_KEY) || {};
+    var loc = lsGet(AVG_KEY) || {}, sh = sharedK(), a;
+    if (!loc.own && sh) a = { lat: sh.lat, lon: sh.lon, stops: JSON.parse(JSON.stringify(sh.stops || [])), shared: true };
+    else a = loc;
     if (!Array.isArray(a.stops)) a.stops = [];
     a.stops = a.stops.filter(function (x) { return x && typeof x.id === 'string'; }).slice(0, MAX_STOPS);
     a.stops.forEach(function (x) { if (!Array.isArray(x.sel)) x.sel = []; x.all = x.all !== false; x.walk = Math.max(0, Math.min(30, Math.round(+x.walk || 0))); });
     return a;
   }
-  function saveAvg(a) { lsSet(AVG_KEY, a); }
+  function saveAvg(a) {
+    var own = !!(lsGet(AVG_KEY) || {}).own, o = { lat: a.lat, lon: a.lon, stops: a.stops };
+    if (own) o.own = true;
+    lsSet(AVG_KEY, o);
+    if (!own && inHousehold() && api().setSharedKitchen) sharedKey = JSON.stringify(a.stops || []), api().setSharedKitchen({ stops: a.stops, lat: a.lat == null ? null : a.lat, lon: a.lon == null ? null : a.lon });
+  }
+  var sharedKey = null;
+  function sharedChanged() {
+    if (!open) return;
+    var k = JSON.stringify(avg().stops || []);
+    if (k === sharedKey) return;   // eget ekko eller ingen endring: ikke hent avgangene på nytt
+    sharedKey = k; dep.data = null; refreshSheet(); if (view === 'idle') render();
+  }
   function avgPos(a) { var s = settings(); return a.lat != null && a.lon != null ? { lat: +a.lat, lon: +a.lon } : { lat: s.lat, lon: s.lon }; }
   function enturCall(query, vars) {
     var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null, to = setTimeout(function () { if (ctl) ctl.abort(); }, 10000);
@@ -423,13 +440,12 @@
       }
       next = '<div class="k-fadeable k-o5"><p class="k-lbl">De neste dagene</p><ul class="k-next" data-testid="k-neste">' + li.join('') + '</ul></div>';
     }
-    return '<div class="k-stage"><div class="k-grid"><div class="k-left">' +
+    return '<div class="k-stage"><a class="k-gear k-gear-top k-fadeable" href="#kjokken/innstillinger" data-k="settings" data-testid="k-innstillinger" aria-label="Innstillinger for kjøkkenskjermen"><span aria-hidden="true">⚙</span></a><div class="k-grid"><div class="k-left">' +
       '<div class="k-timeblock k-o1"><p class="k-clock" data-testid="k-klokke" aria-label="Klokka er ' + clock + '">' + clock + '</p><p class="k-date k-fadeable" data-testid="k-dato">' + esc(date) + '</p></div>' +
       '<div class="k-fadeable k-o2">' + dinner + '</div>' + (cal || '') +
       '</div><div class="k-right"><div class="k-o3">' + weatherHtml(s) + '</div>' + dep + next +
       '</div></div>' +
       '<div class="k-foot k-fadeable"><a class="k-mark k-til-appen" href="#liste" data-k="toapp" data-testid="k-til-appen">' + MARK + 'Knaggen<span class="k-ta">Til appen ›</span></a>' +
-        '<a class="k-gear" href="#kjokken/innstillinger" data-k="settings" data-testid="k-innstillinger" aria-label="Innstillinger for kjøkkenskjermen"><span aria-hidden="true">⚙</span> Innstillinger</a>' +
       '<span class="k-credit" data-testid="k-kreditering">Værdata fra MET Norway · Avganger fra Entur</span></div></div>';
   }
   function cookHtml() {
@@ -597,7 +613,11 @@
       return h + '</div>';
     }).join('');
     var full = a.stops.length >= MAX_STOPS;
-    return '<p class="lead">Velg holdeplassene dere bruker (opptil ' + MAX_STOPS + '). Vises på kjøkkenskjermen, ikke om natta. Lagres bare på denne enheten.</p>' +
+    var own = !!(lsGet(AVG_KEY) || {}).own, hhOn = inHousehold();
+    var scope = !hhOn ? '<p class="lead">Velg holdeplassene dere bruker (opptil ' + MAX_STOPS + '). Vises på kjøkkenskjermen, ikke om natta. Lagres bare på denne enheten.</p>'
+      : own ? '<p class="lead" data-testid="k-avg-egen">Velg holdeplassene (opptil ' + MAX_STOPS + '). <b>Egen innstilling</b> på denne skjermen. <button type="button" class="kb" data-k="avgfelles" data-testid="k-avg-bruk-felles">Bruk felles</button></p>'
+      : '<p class="lead" data-testid="k-avg-felles">Velg holdeplassene dere bruker (opptil ' + MAX_STOPS + '). Vises på kjøkkenskjermen, ikke om natta. <b>Felles for alle skjermer i husstanden.</b> <button type="button" class="kb" data-k="avgegen" data-testid="k-avg-bruk-egen">Bruk egen på denne skjermen</button></p>';
+    return scope +
       '<p class="lab">Nærmest ' + esc(a.lat != null ? 'posisjonen din' : s.place || 'stedet') + '</p>' +
       (sheet.nearBusy && !list.length ? '<p class="meta">Henter holdeplasser …</p>' : '') + (sheet.nearErr ? '<p class="meta" data-testid="k-avg-feil">' + esc(sheet.nearErr) + '</p>' : '') +
       (full ? '<p class="meta">Fjern en holdeplass for å velge en annen.</p>' : '') +
@@ -690,6 +710,8 @@
       }, function () { sheetErr('Fikk ikke posisjonen. Skriv inn breddegrad og lengdegrad selv.'); }, { maximumAge: 3600e3, timeout: 15000, enableHighAccuracy: false });
       return;
     }
+    if (k === 'avgegen') { var cur = avg(); lsSet(AVG_KEY, { lat: cur.lat, lon: cur.lon, stops: cur.stops, own: true }); dep.data = null; refreshSheet(); return; }
+    if (k === 'avgfelles') { var l0 = lsGet(AVG_KEY) || {}; delete l0.own; lsSet(AVG_KEY, l0); dep.data = null; dep.fails = 0; refreshSheet(); if (!sharedK()) saveAvg(avg()); return; }
     if (k === 'avggeo') {
       navigator.geolocation.getCurrentPosition(function (p) {
         var a = avg(); a.lat = Math.round(p.coords.latitude * 1e4) / 1e4; a.lon = Math.round(p.coords.longitude * 1e4) / 1e4; saveAvg(a); loadNear(true); refreshSheet();
@@ -803,10 +825,11 @@
     homeBtn(false);
     if (!was) { view = cook ? 'cook' : 'idle'; startTimers(); root.classList.add('k-in'); setTimeout(function () { root && root.classList.remove('k-in'); }, 650); }
     loadWeather(false); loadCal(false);
+    var subTab = /^innstillinger\/(tid|avg|kal)$/.exec(sub || ''); if (subTab) sub = 'innstillinger';   // v0.17: #kjokken/innstillinger/avg fra Husstand
     if (sub !== 'innstillinger' && root.querySelector('.k-sheet')) root.querySelector('.k-sheet').remove();
     render();
     if (!was) pollDep();
-    if (sub === 'innstillinger' && view === 'idle') openSheet('tid');
+    if (sub === 'innstillinger' && view === 'idle') openSheet(subTab ? subTab[1] : 'tid');
     if (view === 'cook' && !wakeLock) takeLock();
   }
   function hide() {
@@ -849,6 +872,6 @@
   document.addEventListener('submit', function () { if (!open) dirty = false; }, true);
   window.addEventListener('hashchange', function () { dirty = false; });
 
-  window.KnaggenKjokken = { show: show, hide: hide, isOpen: function () { return open; },
+  window.KnaggenKjokken = { show: show, hide: hide, sharedChanged: sharedChanged, isOpen: function () { return open; },
     _test: { refresh: function () { render(); }, poll: function () { dep.fails = 0; dep.until = 0; pollDep(); }, loadCal: function () { loadCal(true); }, fit: function () { return fit.lvl; }, bedMs: bedMs, phaseAt: phaseAt, schedule: schedule, sunTimes: sunTimes, settings: settings, mixHex: mixHex, wxIcon: wxIcon, wxText: wxText } };
 })();
