@@ -2123,18 +2123,49 @@
     if (imp.auto && imp.url) { imp.auto = false; openHentSheet(); }
     else if (!imp.url) document.getElementById('h-url').focus();
   }
+  // v0.18.6: dagene i arket starter på i dag (aldri passerte dager): i dag + 6 dager som chips, og «Velg annen dato …» uten øvre grense.
+  function hentChipDates() {
+    var n = new Date(), out = [];
+    for (var i = 0; i < 7; i++) out.push(isoDate(new Date(n.getFullYear(), n.getMonth(), n.getDate() + i)));
+    return out;
+  }
+  function hentDayLabel(d, i) {
+    return i === 0 ? 'I dag' : i === 1 ? 'I morgen' : cap(DAY_SHORT[(parseIso(d).getDay() + 6) % 7]) + ' ' + shortDate(d).replace(/\.$/, '');
+  }
+  function hentDateLabel(d) {
+    var t = hentChipDates(), i = t.indexOf(d);
+    if (i >= 0) return hentDayLabel(d, i);
+    var x = parseIso(d);
+    return cap(DAY_SHORT[(x.getDay() + 6) % 7]) + ' ' + x.getDate() + '.' + (x.getMonth() + 1) + '.' + (x.getFullYear() !== new Date().getFullYear() ? x.getFullYear() : '');
+  }
+  // Velg dag: har dagen allerede en middag, spør først (Erstatt/Avbryt). Avbryt beholder forrige valg.
+  function hentPickDate(d) {
+    var today = isoDate(new Date());
+    if (!d) { imp.date = null; imp.conflict = null; imp.replace = null; return; }
+    if (!/^\d{4}-\d\d-\d\d$/.test(d) || d < today) return;
+    if (dinnerName(d) && imp.replace !== d) { imp.conflict = d; return; }
+    imp.conflict = null; imp.date = d;
+  }
   function hentSheetHtml() {
-    var dates = weekDates(ui.weekOffset);
+    var dates = hentChipDates(), today = dates[0];
+    if (imp.date && imp.date < today) imp.date = null;
     var chip = function (on, act, val, label, tid) { return '<button type="button" class="fv-chip' + (on ? ' on' : '') + '" aria-pressed="' + on + '" data-hent="' + act + '" data-val="' + esc(val) + '" data-testid="' + tid + '">' + esc(label) + '</button>'; };
     var h = '<div class="sheet-head"><h3 id="hent-ark-h">Legg til oppskrift</h3><button type="button" class="icon-btn" data-hent="lukk" aria-label="Lukk">✕</button></div>';
     h += '<p class="sub" data-testid="hent-vert">' + esc(hostOf(imp.url)) + '</p>';
+    var other = imp.date && dates.indexOf(imp.date) < 0;
     h += '<p class="m v12-lab" id="hent-dag-l">Hvilken dag?</p><div class="fv-chips" role="group" aria-labelledby="hent-dag-l">' +
       chip(!imp.date, 'dag', '', 'Ingen dag', 'hent-dag-ingen') +
-      dates.map(function (d, i) { return chip(imp.date === d, 'dag', d, cap(DAY_SHORT[i]) + ' ' + shortDate(d), 'hent-dag-' + i); }).join('') + '</div>';
+      dates.map(function (d, i) { return chip(imp.date === d, 'dag', d, hentDayLabel(d, i), 'hent-dag-' + i); }).join('') +
+      (other ? chip(true, 'dag', imp.date, hentDateLabel(imp.date), 'hent-dag-annen-valgt') : '') +
+      chip(false, 'annen', '', 'Velg annen dato …', 'hent-dag-annen') + '</div>';
+    if (imp.picker) h += '<label class="field hent-dato"><span>Dato</span><input type="date" id="hent-dato" min="' + today + '" value="' + esc(imp.date || '') + '" data-testid="hent-dato"></label>';
+    if (imp.conflict) h += '<div class="hent-konflikt" role="alert" data-testid="hent-konflikt"><p class="m">' + esc(hentDateLabel(imp.conflict)) + ': Har allerede <b>' + esc(dinnerName(imp.conflict)) + '</b></p>' +
+      '<div class="ask-acts"><button type="button" class="btn" data-hent="konflikt-avbryt" data-testid="hent-konflikt-avbryt">Avbryt</button>' +
+      '<button type="button" class="btn primary" data-hent="konflikt-erstatt" data-testid="hent-konflikt-erstatt">Erstatt</button></div></div>';
     h += '<p class="m v12-lab" id="hent-retter-l">Legg i Retter?</p><div class="fv-chips" role="group" aria-labelledby="hent-retter-l">' +
       chip(imp.retter, 'retter', '1', 'Ja', 'hent-retter-ja') + chip(!imp.retter, 'retter', '0', 'Nei, bare denne gangen', 'hent-retter-nei') + '</div>';
-    var none = !imp.date && !imp.retter;
-    if (none) h += '<p class="m" data-testid="hent-velg">Velg en dag, eller legg den i Retter.</p>';
+    var none = (!imp.date && !imp.retter) || !!imp.conflict;
+    if (none && !imp.conflict) h += '<p class="m" data-testid="hent-velg">Velg en dag, eller legg den i Retter.</p>';
     else if (!imp.retter) h += '<p class="m">Blir en engangsmiddag ' + esc(dayName(imp.date).toLowerCase()) + ' – lagres ikke under Retter.</p>';
     if (imp.error) h += '<p class="form-error" role="alert" data-testid="hent-feil">' + esc(imp.error) + '</p>';
     h += '<div class="ask-acts"><button type="button" class="btn" data-hent="' + (imp.error ? 'bare-lenke' : 'lukk') + '" data-testid="' + (imp.error ? 'hent-bare-lenke' : 'hent-avbryt') + '"' + (imp.busy ? ' disabled' : '') + '>' +
@@ -2153,7 +2184,7 @@
     if (f) try { f.focus({ preventScroll: true }); } catch (e) { f.focus(); }
   }
   function openHentSheet() {
-    imp.busy = false; imp.error = '';
+    imp.busy = false; imp.error = ''; imp.conflict = null; imp.picker = false;
     var ov = openV9Sheet('hent-ark', hentSheetHtml());
     ov.querySelector('.sheet').setAttribute('data-testid', 'hent-ark');
     ov.addEventListener('click', function (e) {
@@ -2161,10 +2192,16 @@
       if (!b || b.disabled) return;
       var a = b.getAttribute('data-hent');
       if (a === 'lukk') { closeV9Sheet(true); return; }
-      if (a === 'dag') { imp.date = b.getAttribute('data-val') || null; updateHentSheet(); return; }
+      if (a === 'dag') { hentPickDate(b.getAttribute('data-val') || null); updateHentSheet(); return; }
+      if (a === 'annen') { imp.picker = true; updateHentSheet(); var di = document.getElementById('hent-dato'); if (di) { di.focus(); try { di.showPicker && di.showPicker(); } catch (e2) {} } return; }
+      if (a === 'konflikt-avbryt') { imp.conflict = null; updateHentSheet(); return; }
+      if (a === 'konflikt-erstatt') { imp.replace = imp.conflict; imp.date = imp.conflict; imp.conflict = null; updateHentSheet(); return; }
       if (a === 'retter') { imp.retter = b.getAttribute('data-val') === '1'; updateHentSheet(); return; }
       if (a === 'bare-lenke') { imp.result = { found: false, reason: imp.failReason || 'net', name: '', url: imp.url }; closeV9Sheet(false); location.hash = '#retter/hent/sjekk'; return; }
       if (a === 'hent') runHent();
+    });
+    ov.addEventListener('change', function (e) {
+      if (e.target && e.target.id === 'hent-dato' && e.target.value) { hentPickDate(e.target.value); updateHentSheet(); }
     });
     ov.addEventListener('keydown', function (e) { if (e.key === 'Tab') trapTab(ov, e); });
   }
@@ -2288,15 +2325,16 @@
       if (imp.people) nr.servings = imp.people;   // v0.12.1: mengdene gjelder for så mange (egen rett: skaleres ikke videre med husstanden, som før)
       ops.saveRecipe(nr, true);
       if (date) ops.setDays([{ date: date, recipe_id: nr.id, oneoff: null }]);
-      msg = '«' + name + '» er lagt til i våre retter' + (date ? ' og på ' + dayName(date).toLowerCase() : '');
+      msg = '«' + name + '» er lagt til i våre retter' + (date ? ' og på ' + dayName(date).toLowerCase() + ' ' + shortDate(date) : '');
     } else {
       var o = { id: uid('o'), name: name, ingredients: ingredients };
       if (src) o.source = src;
       ops.setDays([{ date: date, recipe_id: null, oneoff: o }]);
-      msg = 'Engangsmiddag lagret på ' + dayName(date).toLowerCase();
+      msg = 'Engangsmiddag lagret på ' + dayName(date).toLowerCase() + ' ' + shortDate(date);
     }
     imp = { url: '', date: null, retter: true, busy: false, error: '', result: null, auto: false };
     toast(msg);
+    if (date) { ui.weekOffset = Math.round((mondayOf(parseIso(date)) - mondayOf(new Date())) / (7 * 864e5)); ui.weekTouched = true; }   // v0.18.6: vis uka retten havnet i
     location.hash = date ? '#uke' : '#retter';
   }
   function submitHentLink() {
@@ -5494,7 +5532,17 @@
     if (n < 60) return 'for ' + Math.round(n / 7) + ' uker siden';
     var m = Math.round(n / 30); return 'for ' + m + (m === 1 ? ' måned' : ' måneder') + ' siden';
   }
-  function hhName() { return K17.name || ''; }
+  // v0.18.6: lokal kopi av husstandsnavnet (per husstand-id), så navneknappen viser navnet før første synk og uten nett.
+  var HH_NAME_KEY = 'knaggen:hh-navn:';
+  function hhNameCache(v) {
+    if (!hh || !hh.hid) return '';
+    try {
+      if (v === undefined) return localStorage.getItem(HH_NAME_KEY + hh.hid) || '';
+      if (v) localStorage.setItem(HH_NAME_KEY + hh.hid, String(v).slice(0, 40)); else localStorage.removeItem(HH_NAME_KEY + hh.hid);
+    } catch (e) { }
+    return '';
+  }
+  function hhName() { return K17.name || hhNameCache() || ''; }
   function myUid() { return Sync && Sync.uid ? Sync.uid() : null; }
   // v0.18.1: tema per enhet (System / Lys / Mørk). index.html setter html[data-tema] før CSS-en tegnes.
   var TEMA_KEY = 'knaggen:tema';
@@ -5671,7 +5719,7 @@
   }
   function settingsK17(docs, meta) {
     var p = docs.filter(function (d) { return d.id === 'profil'; })[0];
-    K17.name = p && typeof p.name === 'string' ? p.name : ''; renderSyncStatus();
+    K17.name = p && typeof p.name === 'string' ? p.name : ''; if (p || !(meta && meta.fromCache)) hhNameCache(K17.name); renderSyncStatus();
     var k = docs.filter(function (d) { return d.id === 'kjokken'; })[0];
     K17.kitchen = k && Array.isArray(k.stops) ? { stops: k.stops, lat: k.lat, lon: k.lon } : null;
     var hj = docs.filter(function (d) { return d.id === 'hjem'; })[0];   // v0.18.1: hjemmeadresse
@@ -5723,7 +5771,7 @@
   function saveName(v) {
     v = String(v || '').trim().slice(0, 40);
     if (!v || !hh) return;
-    K17.name = v; renderSyncStatus();
+    K17.name = v; hhNameCache(v); renderSyncStatus();
     Sync.write.setProfile(hh.hid, v).catch(function () { toast('Fikk ikke lagret navnet. Prøv igjen.'); });
     renderHousehold();
   }
@@ -5875,7 +5923,7 @@
     h += kindBannerHtml();
     if (ui.justCreated) h += '<p class="notice" data-testid="opprettet">Husstanden er opprettet' + (ui.movedOwn ? ', og rettene, uka og lista fra denne telefonen er flyttet inn.' : '.') + ' Legg til de andre under Enheter.</p>';
     // 1. Enheter
-    h += lbl('Enheter') + devSummaryHtml();   // v0.18.5: én rad; full liste på #husstand/enheter
+    h += devSummaryHtml();   // v0.18.5: én rad; full liste på #husstand/enheter
     // 2. Middag
     var scalePref = hsState().scale !== false, lim = weekdayLimit();
     var b1 = peopleCountersHtml('hsh', hasP ? hsPeople() : hp, { testid: 'hs-innstillinger' }) +
@@ -6001,6 +6049,7 @@
   }
   // Stopper husstanden på denne telefonen (lytter, lokal husstand, speil og byttekø).
   function dropHousehold() {
+    hhNameCache(null);   // v0.18.6
     var hid = hh && hh.hid;
     if (unsubscribe) { unsubscribe(); unsubscribe = null; }
     hh = null; syncReady = null; swapOverlays = []; lastDays = []; weeklyExtras = []; sharedExtras = []; migratingHid = null;
@@ -6877,8 +6926,9 @@
   /* ---------- v0.16: versjonsnummeret ved logoen og «Nytt i Knaggen» ----------
    * Trykk på «0.16» åpner arket. Etter en oppdatering åpnes det av seg selv én gang (ikke ved aller første åpning,
    * ikke på kjøkkenskjermen og ikke i automatiserte tester uten testkroken KNAGGEN_TEST_NYTT). */
-  var APP_VERSION = '0.18.5', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.18.6', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.18.6', ['Når du legger til en oppskrift fra nettet, starter dagene på i dag: velg «I dag», «I morgen», en dag den neste uka eller en hvilken som helst dato fram i tid. Har dagen allerede en middag, spør Knaggen før den byttes ut.']],
     ['0.18.5', ['Knappen øverst viser nå navnet på husstanden og tar deg rett til Husstand, og enhetene har fått sin egen side.']],
     ['0.18.4', ['«Delt» står nå alltid øverst, også på kjøkkenskjermen og over «Nå» på telefonen, og en PC eller telefon som kobles til husstanden får straks navn i enhetslista.']],
     ['0.18.3', ['Oppskriften steg for steg passer bedre på telefonen: mindre tittel, ingrediensene kan legges sammen, og Forrige/Neste ligger alltid synlig under teksten. Nettbrett og PC er som før.', '«Neste avganger» på «Nå» blir ikke lenger stående på «Henter avganger …»: svarer ikke Entur innen 8 sekunder får du beskjed og en «Prøv igjen»-knapp, de sist hentede avgangene vises mens nye hentes, og uten valgt holdeplass får du en lenke til innstillingen.']],

@@ -1376,3 +1376,10 @@ body.k-phone .tabs .tab-na { display: flex; }
 .sync-link .sync-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sync-link.none .sync-name { color: var(--brand); }
 .topbar h1 { flex: none; }
+
+/* v0.18.6: «Legg til oppskrift» – datovelger og konflikt */
+.hent-dato { margin: .5rem 0 0; }
+.hent-dato input { min-height: 44px; }
+.hent-konflikt { margin: .6rem 0 0; padding: .6rem .75rem; border-radius: 12px; border: 1px solid var(--line, rgba(127,127,127,.35)); }
+.hent-konflikt .m { margin: 0 0 .4rem; }
+.hent-konflikt .ask-acts { margin-top: .25rem; }
