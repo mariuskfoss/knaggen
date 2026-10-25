@@ -220,7 +220,7 @@
    * ikke er i Natt. Ved feil: 1, 2 og så 5 minutter. Ved 429 respekteres Rate-Limit-Expiry-Time. */
   var ENTUR = 'https://api.entur.io/journey-planner/v3/graphql', ET_CLIENT = 'mariuskfoss-knaggen';
   var AVG_KEY = 'knaggen:kjokken-avganger';     // { lat, lon, stops: [{ id, name, modes, dist, walk, all, sel: [nøkkel] }] }
-  var POLL = 30000, BACKOFF = [60000, 120000, 300000], MAX_STOPS = 3, DEP_WINDOW = 3600e3;
+  var ENTUR_TIMEOUT = 8000, POLL = 30000, BACKOFF = [60000, 120000, 300000], MAX_STOPS = 3, DEP_WINDOW = 3600e3;
   var Q_NEAR = 'query($lat:Float!,$lon:Float!){nearest(latitude:$lat,longitude:$lon,maximumDistance:1200,maximumResults:8,filterByPlaceTypes:[stopPlace],multiModalMode:parent){edges{node{distance place{... on StopPlace{id name transportMode quays{id publicCode lines{id publicCode transportMode name}}}}}}}}';
   var Q_DEP = 'query($ids:[String]!,$n:Int!,$range:Int!){stopPlaces(ids:$ids){id name estimatedCalls(numberOfDepartures:$n,timeRange:$range,arrivalDeparture:departures){aimedDepartureTime expectedDepartureTime realtime cancellation destinationDisplay{frontText} quay{id publicCode} serviceJourney{line{id publicCode transportMode}}}}}';
   var MODE_TXT = { bus: 'Buss', tram: 'Trikk', metro: 'T-bane', rail: 'Tog', water: 'Båt', coach: 'Buss', air: 'Fly', cableway: 'Bane', funicular: 'Bane', lift: 'Heis' };
@@ -249,19 +249,19 @@
     if (!open) return;
     var k = JSON.stringify(avg().stops || []);
     if (k === sharedKey) return;   // eget ekko eller ingen endring: ikke hent avgangene på nytt
-    sharedKey = k; dep.data = null; refreshSheet(); if (view === 'idle') render();
+    sharedKey = k; refreshSheet();   // v0.18.3: sist hentede beholdes i minnet (radene filtreres på holdeplass-id) if (view === 'idle') render();
     if (open && naOn()) { dep.at = 0; pollDep(); }   // v0.18: «Nå» henter med en gang når de felles holdeplassene kommer
   }
   function avgPos(a) { var s = settings(); return a.lat != null && a.lon != null ? { lat: +a.lat, lon: +a.lon } : { lat: s.lat, lon: s.lon }; }
   function enturCall(query, vars) {
-    var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null, to = setTimeout(function () { if (ctl) ctl.abort(); }, 10000);
+    var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null, to = setTimeout(function () { if (ctl) ctl.abort(); }, ENTUR_TIMEOUT);   // v0.18.3: 8 s, dekker også lesing av svaret
     return fetch(ENTUR, { method: 'POST', headers: { 'Content-Type': 'application/json', 'ET-Client-Name': ET_CLIENT }, body: JSON.stringify({ query: query, variables: vars }), signal: ctl && ctl.signal })
       .then(function (r) {
-        clearTimeout(to);
         if (r.status === 429) { var e = new Error('rate'); e.code = 'rate'; e.until = Date.parse(r.headers.get('Rate-Limit-Expiry-Time') || '') || 0; throw e; }
         if (!r.ok) { var e2 = new Error('http'); e2.code = 'http-' + r.status; throw e2; }
         return r.json();
-      }, function (e) { clearTimeout(to); throw e; })
+      })
+      .then(function (j) { clearTimeout(to); return j; }, function (e) { clearTimeout(to); if (e && e.name === 'AbortError') { var ea = new Error('timeout'); ea.code = 'timeout'; throw ea; } throw e; })
       .then(function (j) { if (!j || !j.data) { var e = new Error('gql'); e.code = 'gql'; throw e; } return j.data; });
   }
   function walkDefault(dist) { return Math.max(1, Math.round((+dist || 0) / 80)); }   // 80 m i minuttet
@@ -284,7 +284,7 @@
   }
   function depWanted() {
     if (!open || view !== 'idle' || document.visibilityState === 'hidden') return false;
-    if (navigator.onLine === false || isNight()) return false;
+    if (navigator.onLine === false || (isNight() && !naOn())) return false;   // v0.18.3: «Nå» på telefon har ingen natt – før ble avgangene aldri hentet etter leggetid
     return avg().stops.length > 0;
   }
   function schedDep(ms) { clearTimeout(dep.timer); dep.timer = setTimeout(pollDep, ms); }
@@ -293,7 +293,8 @@
     if (!depWanted()) return schedDep(sc(POLL));   // sjekker igjen om litt (ingen nettkall)
     if (dep.until && Date.now() < dep.until) return schedDep(dep.until - Date.now() + 500);
     if (dep.busy) return;
-    var a = avg(); dep.busy = true;
+    var a = avg(); dep.busy = true; dep.err = '';
+    if (open && naOn()) render();
     enturCall(Q_DEP, { ids: a.stops.map(function (x) { return x.id; }), n: 60, range: 3600 }).then(function (d) {
       dep.data = d.stopPlaces || []; dep.at = now(); dep.err = ''; dep.fails = 0; dep.until = 0;
     }, function (e) {
@@ -494,7 +495,7 @@
     var b = borteStops();
     if (b.src !== 'posisjon' || !b.stops.length || pos.depBusy || (pos.depAt && Date.now() - pos.depAt < sc(POLL))) { if (open && naOn()) render(); return; }
     pos.depBusy = true;
-    enturCall(Q_DEP, { ids: b.stops.map(function (x) { return x.id; }), n: 40, range: 3600 }).then(function (d) { pos.dep = d.stopPlaces || []; pos.depAt = Date.now(); }, function () { }).then(function () { pos.depBusy = false; if (open && naOn()) render(); });
+    enturCall(Q_DEP, { ids: b.stops.map(function (x) { return x.id; }), n: 40, range: 3600 }).then(function (d) { pos.dep = d.stopPlaces || []; pos.depAt = Date.now(); pos.depErr = ''; }, function (e) { pos.depErr = (e && e.code) || 'nett'; pos.depAt = Date.now(); }).then(function () { pos.depBusy = false; if (open && naOn()) render(); });
   }
   function naRows(stops, data, t, max, walkCut) {
     var rows = [];
@@ -513,6 +514,17 @@
     });
     rows.sort(function (a, b) { return a.ms - b.ms; });
     return rows.slice(0, max);
+  }
+  // v0.18.3: feil/tidsavbrudd med «Prøv igjen», «oppdaterer» mens sist hentede (bare i minnet) vises, og tom-tilstand
+  function naErrTxt(e) { return e === 'timeout' ? 'Entur svarte ikke innen 8 sekunder.' : e === 'rate' ? 'Entur ber oss vente litt før neste henting.' : navigator.onLine === false ? 'Telefonen er uten nett.' : 'Fikk ikke hentet avgangene nå.'; }
+  function naDepState(data, busy, err, at) {
+    if (err) return '<div class="na-dep-err" data-testid="na-avg-feil" role="alert"><p>' + esc(naErrTxt(err)) + (data && at ? ' Viser sist hentede.' : '') + '</p>' +
+      '<button type="button" class="btn small" data-k="na-avg-igjen" data-testid="na-avg-igjen">Prøv igjen</button></div>';
+    if (busy && data) return '<p class="na-src" data-testid="na-avg-oppdaterer">Oppdaterer … viser sist hentede</p>';
+    return '';
+  }
+  function naNoStop() {
+    return '<p class="na-note" data-testid="na-avg-tom">Ingen holdeplass valgt. <a href="#kjokken/innstillinger/avg" data-k="na-endre" data-testid="na-avg-velg">Velg holdeplass</a></p>';
   }
   function minTxt(ms, t) { var m = Math.floor((ms - t) / 60000); return m < 1 ? 'nå' : m + ' min'; }
   function naEvents(t) {
@@ -545,15 +557,18 @@
       var ev = naEvents(t);
       if (ev.length) h += '<p class="na-lbl">I kveld</p><ul class="na-card" data-testid="na-ikveld">' + ev.slice(0, 3).map(function (e) { return '<li><b>' + esc(e.tm + ' ' + e.t) + '</b>' + (e.who ? '<span>' + esc(e.who) + '</span>' : '') + '</li>'; }).join('') + '</ul>';
       var a = avg();
+      h += '<p class="na-lbl">Neste avganger</p>';
       if (a.stops.length) {
         var r = naRows(a.stops, dep.data, t, 3, true);
-        h += '<p class="na-lbl">Neste avganger</p><ul class="na-card na-dep" data-testid="na-avganger">' + (r.length ? r.map(function (x) { return '<li><span class="no">' + esc(x.no) + '</span><b>' + esc(x.front) + '</b><span class="mn">' + minTxt(x.ms, t) + '</span></li>'; }).join('') : '<li class="note">' + (dep.data ? 'Ingen avganger den neste timen' : 'Henter avganger …') + '</li>') + '</ul>';
-      }
+        if (r.length || !dep.err) h += '<ul class="na-card na-dep" data-testid="na-avganger">' + (r.length ? r.map(function (x) { return '<li><span class="no">' + esc(x.no) + '</span><b>' + esc(x.front) + '</b><span class="mn">' + minTxt(x.ms, t) + '</span></li>'; }).join('') : '<li class="note">' + (dep.data && !dep.busy ? 'Ingen avganger den neste timen' : 'Henter avganger …') + '</li>') + '</ul>';
+        h += naDepState(dep.data, dep.busy, dep.err, dep.at);
+      } else h += naNoStop();
     } else {
       var bs = borteStops(), data = bs.src === 'posisjon' ? pos.dep : dep.data, rr = naRows(bs.stops, data, t, 4, false);
       h += '<p class="na-lbl">Avganger herfra</p>';
       if (bs.stops.length) h += '<ul class="na-card na-dep" data-testid="na-avg-her">' + (rr.length ? rr.map(function (x) { return '<li><span class="no">' + esc(x.no) + '</span><b>' + esc(x.stop) + '<span>mot ' + esc(x.front) + '</span></b><span class="mn">' + minTxt(x.ms, t) + '</span></li>'; }).join('') : '<li class="note">' + (data ? 'Ingen avganger den neste timen' : 'Henter avganger …') + '</li>') + '</ul>';
-      else h += '<p class="na-note">Ingen holdeplass valgt.</p>';
+      else h += naNoStop();
+      if (bs.stops.length) h += bs.src === 'posisjon' ? naDepState(pos.dep, pos.depBusy, pos.depErr, pos.depAt) : naDepState(dep.data, dep.busy, dep.err, dep.at);
       h += '<p class="na-src" data-testid="na-holdeplass-kilde">' + (bs.src === 'posisjon' ? 'Holdeplasser nær deg' : bs.src === 'felles' ? 'Husstandens holdeplasser' : 'Holdeplass valgt manuelt') + ' · <a href="#kjokken/innstillinger/avg" data-k="na-endre" data-testid="na-endre">Endre</a></p>';
       var buy = A.naBuy ? A.naBuy() : { items: [], open: 0 };
       h += '<p class="na-lbl">Kjøp på vei hjem</p><div class="na-card" data-testid="na-kjop">' +
@@ -592,6 +607,7 @@
   function naClear() { for (var k in TOK.dag) root.style.removeProperty('--k-' + k); ['--k-fade', '--k-shift-x', '--k-shift-y', 'top', 'bottom'].forEach(function (p) { root.style.removeProperty(p); }); root.classList.remove('k-natt'); root.removeAttribute('data-fase'); }
   function naTap(k, t, e) {
     if (k === 'na-hjemme' || k === 'na-borte') { setNaMode(k === 'na-hjemme' ? 'hjemme' : 'borte'); return true; }
+    if (k === 'na-avg-igjen') { dep.fails = 0; pos.depAt = 0; pos.depErr = ''; if (!dep.busy) pollDep(); naPoll(); render(); return true; }
     if (k === 'na-endre') { e.preventDefault(); location.hash = '#kjokken/innstillinger/avg'; return true; }
     if (k === 'na-go' || k === 'na-lista') { return true; }   // vanlige lenker (fanelinja-sidene)
     if (t && t.hasAttribute && t.hasAttribute('data-na-key')) return true;
@@ -640,7 +656,10 @@
     return '<div class="k-stage"><div class="k-ctop"><div><h1 data-testid="k-kok-tittel">' + esc(m.name) + '</h1>' + (meta ? '<span class="m" data-testid="k-kok-meta">' + esc(meta) + '</span>' : '') + '</div>' +
       '<span class="k-awake" data-testid="k-vaaken"' + (wakeLock ? '' : ' hidden') + '>☀ Skjermen holdes våken</span>' +
       '<button type="button" class="k-x" data-k="close" aria-label="Lukk oppskriften" data-testid="k-lukk">×</button></div>' +
-      '<div class="k-cgrid"><ul class="k-ing" aria-label="Ingredienser" data-testid="k-ingredienser">' +
+      '<div class="k-cgrid">' +
+      // v0.18.3: på telefon er ingredienslista sammenleggbar (knappen vises bare på telefon, se kjokken.css)
+      '<button type="button" class="k-ingtog" data-k="ingtog" data-testid="k-ing-vis" aria-expanded="' + (cook.ingOpen ? 'true' : 'false') + '">Ingredienser (' + m.ingredients.length + ') <span aria-hidden="true">' + (cook.ingOpen ? '▴' : '▾') + '</span></button>' +
+      '<ul class="k-ing' + (cook.ingOpen ? '' : ' k-ing-lukket') + '" aria-label="Ingredienser" data-testid="k-ingredienser">' +
       m.ingredients.map(function (x, i) {
         return '<li><button type="button" data-k="ing" data-i="' + i + '" aria-pressed="' + (cook.done[i] ? 'true' : 'false') + '"' + (cook.done[i] ? ' class="done"' : '') + '>' +
           (x.amount ? '<b>' + esc(x.amount) + '</b> ' : '') + esc(x.name) + '</button></li>';
@@ -670,7 +689,7 @@
     var m = api().meal(dayIso(now()));
     if (!m) return;
     var same = cook && cook.meal.date === m.date && cook.meal.name === m.name;
-    cook = { meal: m, step: same ? cook.step : 0, done: same ? cook.done : {} };
+    cook = { meal: m, step: same ? cook.step : 0, done: same ? cook.done : {}, ingOpen: same ? !!cook.ingOpen : false };
     view = 'cook'; lastTap = Date.now(); render(); takeLock();
   }
   function closeCook() { view = 'idle'; cook = null; dropLock(); render(); }   // strykingene nullstilles ved lukking
@@ -693,6 +712,7 @@
       if (k === 'close') closeCook();
       else if (k === 'next') { cook.step++; render(); }
       else if (k === 'prev') { cook.step--; render(); }
+      else if (k === 'ingtog') { cook.ingOpen = !cook.ingOpen; render(); }
       else if (k === 'ing') { var i = +t.getAttribute('data-i'); cook.done[i] = !cook.done[i]; render(); }
       if (wakeLock == null) takeLock();
       return;

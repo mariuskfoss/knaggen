@@ -90,6 +90,28 @@ html.k-html, html.k-html body { overflow: hidden; }
   .kj .k-ctop .k-x { position: absolute; top: 0; right: 0; }
 }
 
+/* v0.18.3: oppskrift på telefon (body.k-phone = berøring + korteste side < 600): mindre tittel, sammenleggbare
+   ingredienser, steg-teksten scroller inni kortet og knappene i fast rad under. Nettbrett/PC uendret. */
+.kj .k-ingtog { display: none; }
+body.k-phone .kj.k-cook .k-stage { padding: 14px 14px 12px; height: 100%; box-sizing: border-box; }
+body.k-phone .kj .k-ctop { margin: 0 0 10px; padding-right: 56px; position: relative; flex-wrap: wrap; gap: 6px; }
+body.k-phone .kj .k-ctop > div { flex-direction: column; gap: 2px; flex-basis: 100%; }
+body.k-phone .kj .k-ctop h1 { font-size: 22px; line-height: 1.2; }
+body.k-phone .kj .k-ctop .m { font-size: 15px; }
+body.k-phone .kj .k-awake { font-size: 13px; }
+body.k-phone .kj .k-x { position: absolute; top: 0; right: 0; min-width: 48px; min-height: 48px; font-size: 24px; border-radius: 12px; }
+body.k-phone .kj .k-cgrid { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
+body.k-phone .kj .k-ingtog { display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 44px; padding: 0 14px; border-radius: 12px;
+  background: var(--k-surface); color: var(--k-ink); font-size: 17px; font-weight: 650; flex: none; }
+body.k-phone .kj .k-ing { grid-template-columns: 1fr 1fr; gap: 0 14px; font-size: 16px; max-height: 30vh; flex: none; }
+body.k-phone .kj .k-ing.k-ing-lukket { display: none; }
+body.k-phone .kj .k-ing button { min-height: 36px; padding: 4px 0; }
+body.k-phone .kj .k-step { flex: 1; min-height: 0; padding: 16px; gap: 12px; border-radius: 16px; grid-template-rows: auto minmax(0, 1fr) auto; }
+body.k-phone .kj .k-step .n { font-size: 15px; }
+body.k-phone .kj .k-step .t { font-size: clamp(18px, 5.6vw, 24px); line-height: 1.35; align-self: start; min-height: 0; max-height: 100%; overflow-y: auto; overscroll-behavior: contain; }
+body.k-phone .kj .k-steps { gap: 10px; }
+body.k-phone .kj .k-btn { min-height: 56px; font-size: 19px; border-radius: 12px; }
+
 /* Innstillinger (per enhet) */
 .kj .k-sheet { position: absolute; inset: 0; background: color-mix(in srgb, var(--k-bg) 70%, transparent); display: grid; place-items: center; padding: 24px; z-index: 2; }
 .kj .k-form { background: var(--k-surface); border-radius: 20px; padding: 28px 32px; width: min(620px, 100%); max-height: 100%; overflow: auto; display: grid; gap: 14px; user-select: text; }
@@ -296,3 +318,5 @@ html[data-tema="lys"] .kj .k-sheet { --k-cal-1: #3f6e5a; --k-cal-2: #44617a; --k
 .na-short a { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius, 12px); color: var(--ink); text-decoration: none; }
 .na-short a span { font-size: .82rem; color: var(--muted); }
 .na-note { color: var(--muted); margin: 0; }
+.na-dep-err { display: flex; align-items: center; gap: 12px; justify-content: space-between; margin: 6px 0 0; color: var(--ink); }
+.na-dep-err p { margin: 0; flex: 1; } .na-dep-err .btn { flex: none; min-height: 40px; padding: 6px 14px; border-radius: 10px; border: 1px solid var(--brand); color: var(--brand); background: transparent; font-weight: 600; }

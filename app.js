@@ -6826,8 +6826,9 @@
   /* ---------- v0.16: versjonsnummeret ved logoen og «Nytt i Knaggen» ----------
    * Trykk på «0.16» åpner arket. Etter en oppdatering åpnes det av seg selv én gang (ikke ved aller første åpning,
    * ikke på kjøkkenskjermen og ikke i automatiserte tester uten testkroken KNAGGEN_TEST_NYTT). */
-  var APP_VERSION = '0.18.2', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.18.3', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.18.3', ['Oppskriften steg for steg passer bedre på telefonen: mindre tittel, ingrediensene kan legges sammen, og Forrige/Neste ligger alltid synlig under teksten. Nettbrett og PC er som før.', '«Neste avganger» på «Nå» blir ikke lenger stående på «Henter avganger …»: svarer ikke Entur innen 8 sekunder får du beskjed og en «Prøv igjen»-knapp, de sist hentede avgangene vises mens nye hentes, og uten valgt holdeplass får du en lenke til innstillingen.']],
     ['0.18.2', ['På telefonen har «Nå» fått egen fane, og appen åpner der. Telefonen kjennes igjen også når den holdes på tvers. Nettbrett og PC er som før.']],
     ['0.18.1', ['Husstanden kan legge inn en hjemmeadresse under Husstand → Hjem. «Nå» bruker den til å se om du er hjemme, og du kan fjerne den når som helst.', 'Velg tema på hver enhet: System, Lys eller Mørk (Husstand → Denne enheten). Kjøkkenskjermen på nettbrettet følger fortsatt tiden på døgnet.']],
     ['0.18.0', ['Ny «Nå»-side på telefonen (Kjøkken-lenken på smale skjermer): Hjemme viser klokke, vær, dagens middag, kvelden og neste avganger. Borte viser avganger, det du må kjøpe til middagen i dag og familiens ettermiddag. Du kan la telefonen bytte selv med posisjon (Husstand → Denne enheten). Posisjonen lagres aldri.']],
