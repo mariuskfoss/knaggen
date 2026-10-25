@@ -6926,8 +6926,9 @@
   /* ---------- v0.16: versjonsnummeret ved logoen og «Nytt i Knaggen» ----------
    * Trykk på «0.16» åpner arket. Etter en oppdatering åpnes det av seg selv én gang (ikke ved aller første åpning,
    * ikke på kjøkkenskjermen og ikke i automatiserte tester uten testkroken KNAGGEN_TEST_NYTT). */
-  var APP_VERSION = '0.18.6', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.18.7', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.18.7', ['«Nå» viser avganger fra husstandens holdeplasser – eller de nærmeste til hjemmeadressen hvis ingen er valgt. Med posisjon på står det bare «⌂ Hjemme» eller omtrent hvor du er øverst, med «Endre» hvis du vil velge selv.']],
     ['0.18.6', ['Når du legger til en oppskrift fra nettet, starter dagene på i dag: velg «I dag», «I morgen», en dag den neste uka eller en hvilken som helst dato fram i tid. Har dagen allerede en middag, spør Knaggen før den byttes ut.']],
     ['0.18.5', ['Knappen øverst viser nå navnet på husstanden og tar deg rett til Husstand, og enhetene har fått sin egen side.']],
     ['0.18.4', ['«Delt» står nå alltid øverst, også på kjøkkenskjermen og over «Nå» på telefonen, og en PC eller telefon som kobles til husstanden får straks navn i enhetslista.']],

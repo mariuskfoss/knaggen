@@ -252,7 +252,16 @@
     sharedKey = k; refreshSheet(); if (view === 'idle') render();   // v0.18.3: sist hentede beholdes i minnet (radene filtreres på holdeplass-id); v0.18.4: render-kallet lå ved en feil inni kommentaren
     if (open && naOn()) { dep.at = 0; pollDep(); }   // v0.18: «Nå» henter med en gang når de felles holdeplassene kommer
   }
-  function avgPos(a) { var s = settings(); return a.lat != null && a.lon != null ? { lat: +a.lat, lon: +a.lon } : { lat: s.lat, lon: s.lon }; }
+  // v0.18.7: søkepunktet for holdeplasser: husstandens hjemmeadresse, ellers sist brukte søkepunkt, ellers stedet brukeren selv har lagret.
+  // Aldri standardstedet (59.91, 10.75 = Oslo sentrum) – det var slik husstander fikk Oslo S-holdeplasser «hjemme».
+  function homeAddr() { var A = api(), h = A && A.home ? A.home() : null; return h && h.lat != null && h.lon != null ? { lat: +h.lat, lon: +h.lon } : null; }
+  function avgPos(a) {
+    var h = homeAddr(); if (h) return h;
+    if (a.lat != null && a.lon != null && !isDefaultPt(a)) return { lat: +a.lat, lon: +a.lon };
+    var l = lsGet(LS_KEY); if (l && l.lat != null && l.lon != null && !isDefaultPt(l)) return { lat: +l.lat, lon: +l.lon };
+    return null;
+  }
+  function isDefaultPt(x) { return Math.abs(+x.lat - DEFAULTS.lat) < 1e-6 && Math.abs(+x.lon - DEFAULTS.lon) < 1e-6; }
   function enturCall(query, vars) {
     var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null, to = setTimeout(function () { if (ctl) ctl.abort(); }, ENTUR_TIMEOUT);   // v0.18.3: 8 s, dekker også lesing av svaret
     return fetch(ENTUR, { method: 'POST', headers: { 'Content-Type': 'application/json', 'ET-Client-Name': ET_CLIENT }, body: JSON.stringify({ query: query, variables: vars }), signal: ctl && ctl.signal })
@@ -285,7 +294,38 @@
   function depWanted() {
     if (!open || view !== 'idle' || document.visibilityState === 'hidden') return false;
     if (navigator.onLine === false || (isNight() && !naOn())) return false;   // v0.18.3: «Nå» på telefon har ingen natt – før ble avgangene aldri hentet etter leggetid
-    return avg().stops.length > 0;
+    return homeStops().stops.length > 0;
+  }
+  // v0.18.7: Hjemme = husstandens valgte holdeplasser; er ingen valgt (bare på «Nå»), de nærmeste til hjemmeadressen (settings/hjem) via Entur.
+  // Søkepunktet rundes til 3 desimaler og finnes bare i minnet. Ingen hjemmeadresse → ingen holdeplasser (aldri et standardsted).
+  var homeNear = { key: '', stops: null, busy: false, err: '' };
+  function homeStops() {
+    var a = avg();
+    if (a.stops.length) return { stops: a.stops, src: a.shared ? 'felles' : 'egen' };
+    var h = homeAddr();
+    if (!h || !naOn()) return { stops: [], src: 'ingen' };
+    var key = round3(h.lat) + ',' + round3(h.lon);
+    if (homeNear.key === key && homeNear.stops) return { stops: homeNear.stops, src: 'hjemnaer' };
+    if (!homeNear.busy && navigator.onLine !== false) {
+      homeNear.busy = true; homeNear.err = '';
+      enturCall(Q_NEAR, { lat: round3(h.lat), lon: round3(h.lon) }).then(function (d) {
+        var seen = {}, l = [];
+        ((d.nearest && d.nearest.edges) || []).forEach(function (e) {
+          var n = e && e.node, p = n && n.place; if (!p || !p.id || seen[p.id]) return; seen[p.id] = 1;
+          l.push({ id: p.id, name: p.name, dist: n.distance, walk: walkDefault(n.distance), all: true, sel: [] });
+        });
+        homeNear.stops = l.slice(0, 2); homeNear.key = key;
+      }, function (e) { homeNear.err = (e && e.code) || 'nett'; }).then(function () {
+        homeNear.busy = false;
+        if (open && naOn()) { dep.at = 0; render(); if (homeNear.stops && homeNear.stops.length) pollDep(); }
+      });
+    }
+    return { stops: [], src: 'hjemnaer', loading: true };
+  }
+  function stopsFarFromHome() {   // valgte holdeplasser søkt fram langt (> 2 km) fra hjemmeadressen
+    var a = avg(), h = homeAddr();
+    if (!a.stops.length || !h || a.lat == null || a.lon == null) return false;
+    return distM({ lat: +a.lat, lon: +a.lon }, h) > 2000;
   }
   function schedDep(ms) { clearTimeout(dep.timer); dep.timer = setTimeout(pollDep, ms); }
   function pollDep() {
@@ -293,7 +333,7 @@
     if (!depWanted()) return schedDep(sc(POLL));   // sjekker igjen om litt (ingen nettkall)
     if (dep.until && Date.now() < dep.until) return schedDep(dep.until - Date.now() + 500);
     if (dep.busy) return;
-    var a = avg(); dep.busy = true; dep.err = '';
+    var a = homeStops(); dep.busy = true; dep.err = '';
     if (open && naOn()) render();
     enturCall(Q_DEP, { ids: a.stops.map(function (x) { return x.id; }), n: 60, range: 3600 }).then(function (d) {
       dep.data = d.stopPlaces || []; dep.at = now(); dep.err = ''; dep.fails = 0; dep.until = 0;
@@ -435,8 +475,8 @@
   function homeAt() {
     var A = api(), hm = A && A.home ? A.home() : null;   // v0.18.1: husstandens hjemmeadresse først
     if (hm && hm.lat != null && hm.lon != null) return { lat: +hm.lat, lon: +hm.lon };
-    var sh = sharedK(); if (sh && sh.lat != null && sh.lon != null) return { lat: +sh.lat, lon: +sh.lon };
-    var l = lsGet(LS_KEY); if (l && l.lat != null && l.lon != null) return { lat: +l.lat, lon: +l.lon };
+    var sh = sharedK(); if (sh && sh.lat != null && sh.lon != null && !isDefaultPt(sh)) return { lat: +sh.lat, lon: +sh.lon };   // v0.18.7: aldri standardstedet
+    var l = lsGet(LS_KEY); if (l && l.lat != null && l.lon != null && !isDefaultPt(l)) return { lat: +l.lat, lon: +l.lon };
     return null;
   }
   function distM(a, b) {
@@ -455,7 +495,8 @@
     if (auto) return { mode: auto, why: 'posisjon' };
     return { mode: 'hjemme', why: 'standard' };
   }
-  function setNaMode(mode) { lsSet(NA_MODE_KEY, { mode: mode, day: dayIso(now()), auto: posMode() }); render(); if (mode === 'borte') naPoll(); }
+  var naEdit = false;   // v0.18.7: «Endre» i statuslinja viser knappene (bare i minnet)
+  function setNaMode(mode) { naEdit = false; lsSet(NA_MODE_KEY, { mode: mode, day: dayIso(now()), auto: posMode() }); render(); if (mode === 'borte') naPoll(); }
   function readPos() {
     if (!posWanted() || pos.busy) return;
     if (pos.at && Date.now() - pos.at < NA_POS_EVERY) return;
@@ -467,7 +508,31 @@
     }, function (e) {
       pos.busy = false; pos.at = Date.now(); pos.err = e && e.code === 1 ? 'nektet' : 'ukjent';
       if (open && naOn()) render();
-    }, { enableHighAccuracy: false, maximumAge: 120000, timeout: 15000 });
+    }, { enableHighAccuracy: false, maximumAge: pos.fresh ? 0 : 120000, timeout: 15000 });
+    pos.fresh = false;
+  }
+  /* v0.18.7: omtrentlig sted for statuslinja – Entur geocoder reverse med posisjonen avrundet til 3 desimaler.
+   * Bare strøk/bydel (borough) eller sted (locality), aldri gate/adresse. Svar caches i minnet per avrundet posisjon.
+   * Ikke lagret, ikke logget. Retry-After / 429 respekteres. */
+  var GEO_REV = 'https://api.entur.io/geocoder/v1/reverse';
+  var place = { cache: {}, busy: false, until: 0 };
+  function placeName() { if (pos.lat == null) return undefined; var c = place.cache[pos.lat + ',' + pos.lon]; return c === undefined ? undefined : c; }
+  function loadPlace() {
+    if (pos.lat == null || place.busy || Date.now() < place.until || navigator.onLine === false) return;
+    var key = pos.lat + ',' + pos.lon; if (place.cache[key] !== undefined) return;
+    place.busy = true;
+    var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null, to = setTimeout(function () { if (ctl) ctl.abort(); }, ENTUR_TIMEOUT);
+    fetch(GEO_REV + '?point.lat=' + pos.lat + '&point.lon=' + pos.lon + '&boundary.circle.radius=1&size=1&layers=address,locality', { headers: { 'ET-Client-Name': ET_CLIENT }, signal: ctl && ctl.signal })
+      .then(function (r) {
+        if (r.status === 429 || r.status === 503) { var ra = +r.headers.get('Retry-After'); place.until = Date.now() + (ra > 0 ? ra * 1000 : 60000); throw new Error('rate'); }
+        if (!r.ok) throw new Error('http'); return r.json();
+      })
+      .then(function (j) {
+        var f = j && j.features && j.features[0], pr = (f && f.properties) || {};
+        var nm = typeof pr.borough === 'string' && pr.borough ? pr.borough : typeof pr.locality === 'string' && pr.locality ? pr.locality : '';
+        place.cache[key] = nm.slice(0, 40);
+      }, function (e) { if (!(e && e.message === 'rate')) place.cache[key] = ''; })
+      .then(function () { clearTimeout(to); place.busy = false; if (open && naOn()) render(); });
   }
   function forgetPos() { pos.lat = pos.lon = null; pos.at = 0; pos.near = null; pos.nearKey = ''; pos.dep = null; pos.err = ''; }
   function borteStops() {   // holdeplassene for Borte: nær posisjonen, ellers de valgte (felles eller egne på denne enheten)
@@ -538,14 +603,26 @@
   }
   function naHtml() {
     var t = now(), d = new Date(t), A = api(), mm = naMode(), home = mm.mode === 'hjemme';
-    var pw = posWanted();
-    var why = mm.why === 'posisjon' ? 'Satt av posisjon (lagres bare på telefonen)'
-      : (mm.why === 'manuell' ? 'Valgt av deg' : 'Hjemme til du velger noe annet') + ' · ' + (pw ? (pos.err === 'nektet' ? 'posisjon er ikke tillatt' : homeAt() ? 'posisjon er på' : 'posisjon er på, men hjemmestedet mangler') : 'posisjon er av');
-    var h = '<div class="na" data-testid="na" data-modus="' + mm.mode + '">' +
-      '<div class="na-seg" role="group" aria-label="Hjemme eller borte">' +
+    var pw = posWanted(), auto = posMode();
+    var seg = '<div class="na-seg" role="group" aria-label="Hjemme eller borte">' +
       '<button type="button" data-k="na-hjemme" data-testid="na-hjemme" aria-pressed="' + home + '"' + (home ? ' class="on"' : '') + '>Hjemme</button>' +
-      '<button type="button" data-k="na-borte" data-testid="na-borte" aria-pressed="' + !home + '"' + (!home ? ' class="on"' : '') + '>Borte</button></div>' +
-      '<p class="na-why" data-testid="na-hvorfor">' + esc(why) + '</p>';
+      '<button type="button" data-k="na-borte" data-testid="na-borte" aria-pressed="' + !home + '"' + (!home ? ' class="on"' : '') + '>Borte</button></div>';
+    var h = '<div class="na" data-testid="na" data-modus="' + mm.mode + '">';
+    if (auto && !naEdit) {
+      // v0.18.7: posisjon er på og vi vet hvor hjemme er → rolig statuslinje i stedet for knapper
+      var nm = placeName(), lbl;
+      if (mm.mode === 'hjemme') lbl = '⌂ Hjemme';
+      else if (auto === 'hjemme') lbl = 'Borte';
+      else lbl = nm ? '📍 ' + nm : 'Borte';
+      if (mm.mode === 'borte' && auto === 'borte' && nm === undefined) loadPlace();
+      h += '<p class="na-status" data-testid="na-status"><span data-testid="na-status-tekst">' + esc(lbl) + '</span>' +
+        (mm.why === 'manuell' ? '<small data-testid="na-status-manuell">valgt av deg til midnatt</small>' : '') +
+        '<button type="button" class="na-status-endre" data-k="na-modus-endre" data-testid="na-modus-endre">Endre</button></p>';
+    } else {
+      var why = mm.why === 'posisjon' ? 'Satt av posisjon (lagres bare på telefonen)'
+        : (mm.why === 'manuell' ? 'Valgt av deg' : 'Hjemme til du velger noe annet') + ' · ' + (pw ? (pos.err === 'nektet' ? 'posisjon er ikke tillatt' : homeAt() ? 'posisjon er på' : 'posisjon er på, men hjemmestedet mangler') : 'posisjon er av');
+      h += seg + '<p class="na-why" data-testid="na-hvorfor">' + esc(why) + (auto ? ' · <a href="#" data-k="na-modus-ferdig" data-testid="na-modus-ferdig">Ferdig</a>' : '') + '</p>';
+    }
     var m = A.meal(dayIso(t));
     if (home) {
       var clock = two(d.getHours()) + ':' + two(d.getMinutes()), s = settings();
@@ -556,12 +633,16 @@
         : '<p class="na-din none" data-testid="na-middag-tom">Ingen middag valgt</p>');
       var ev = naEvents(t);
       if (ev.length) h += '<p class="na-lbl">I kveld</p><ul class="na-card" data-testid="na-ikveld">' + ev.slice(0, 3).map(function (e) { return '<li><b>' + esc(e.tm + ' ' + e.t) + '</b>' + (e.who ? '<span>' + esc(e.who) + '</span>' : '') + '</li>'; }).join('') + '</ul>';
-      var a = avg();
+      var a = homeStops();
       h += '<p class="na-lbl">Neste avganger</p>';
-      if (a.stops.length) {
+      if (a.loading) h += '<ul class="na-card na-dep" data-testid="na-avganger"><li class="note">' + (homeNear.err ? 'Fant ikke holdeplasser nær hjemmeadressen nå.' : 'Finner holdeplasser nær hjemme …') + '</li></ul>';
+      else if (a.stops.length) {
         var r = naRows(a.stops, dep.data, t, 3, true);
         if (r.length || !dep.err) h += '<ul class="na-card na-dep" data-testid="na-avganger">' + (r.length ? r.map(function (x) { return '<li><span class="no">' + esc(x.no) + '</span><b>' + esc(x.front) + '</b><span class="mn">' + minTxt(x.ms, t) + '</span></li>'; }).join('') : '<li class="note">' + (dep.data && !dep.busy ? 'Ingen avganger den neste timen' : 'Henter avganger …') + '</li>') + '</ul>';
         h += naDepState(dep.data, dep.busy, dep.err, dep.at);
+        h += '<p class="na-src" data-testid="na-hjem-kilde">' + (a.src === 'hjemnaer' ? 'Nærmest hjemmeadressen: ' + esc(a.stops.map(function (x) { return x.name; }).join(', ')) : esc(a.stops.map(function (x) { return x.name; }).join(', '))) +
+          ' · <a href="#kjokken/innstillinger/avg" data-k="na-endre" data-testid="na-hjem-endre">' + (a.src === 'hjemnaer' ? 'Velg' : 'Endre') + '</a></p>';
+        if (a.src !== 'hjemnaer' && stopsFarFromHome()) h += '<p class="na-note" data-testid="na-avg-langt">Holdeplassene ble valgt langt fra hjemmeadressen. <a href="#kjokken/innstillinger/avg" data-k="na-endre">Velg på nytt</a></p>';
       } else h += naNoStop();
     } else {
       var bs = borteStops(), data = bs.src === 'posisjon' ? pos.dep : dep.data, rr = naRows(bs.stops, data, t, 4, false);
@@ -606,6 +687,8 @@
   }
   function naClear() { for (var k in TOK.dag) root.style.removeProperty('--k-' + k); ['--k-fade', '--k-shift-x', '--k-shift-y', 'top', 'bottom'].forEach(function (p) { root.style.removeProperty(p); }); root.classList.remove('k-natt'); root.removeAttribute('data-fase'); }
   function naTap(k, t, e) {
+    if (k === 'na-modus-endre') { naEdit = true; render(); return true; }
+    if (k === 'na-modus-ferdig') { e.preventDefault(); naEdit = false; render(); return true; }
     if (k === 'na-hjemme' || k === 'na-borte') { setNaMode(k === 'na-hjemme' ? 'hjemme' : 'borte'); return true; }
     if (k === 'na-avg-igjen') { dep.fails = 0; pos.depAt = 0; pos.depErr = ''; if (!dep.busy) pollDep(); naPoll(); render(); return true; }
     if (k === 'na-endre') { e.preventDefault(); location.hash = '#kjokken/innstillinger/avg'; return true; }
@@ -613,7 +696,7 @@
     if (t && t.hasAttribute && t.hasAttribute('data-na-key')) return true;
     return false;
   }
-  window.addEventListener('knaggen-na-pos', function () { if (!posWanted()) forgetPos(); else pos.at = 0; if (open && naOn()) { render(); naPoll(); } });
+  window.addEventListener('knaggen-na-pos', function () { if (!posWanted()) forgetPos(); else { pos.at = 0; pos.fresh = true; } if (open && naOn()) { render(); naPoll(); } });
 
   /* ---------- Tegning ---------- */
   var DAYS = ['Søndag', 'Mandag', 'Tirsdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lørdag'];
@@ -775,6 +858,7 @@
   function loadNear(force) {
     var a = avg(), pos = avgPos(a);
     if (sheet.nearBusy) return;
+    if (!pos) { sheet.near = null; sheet.nearErr = 'Legg inn hjemmeadressen under Husstand, eller bruk posisjonen, så finner vi holdeplassene i nærheten.'; return; }
     if (!force && sheet.near && sheet.near.lat === pos.lat && sheet.near.lon === pos.lon) return;
     sheet.nearBusy = true; sheet.nearErr = '';
     enturCall(Q_NEAR, { lat: pos.lat, lon: pos.lon }).then(function (d) {
