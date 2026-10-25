@@ -5528,7 +5528,7 @@
     ids.forEach(function (id) {
       var d = devs[id];
       var last = d ? d.last_seen : (joined[id] ? dayNum(joined[id]) : null);
-      out.push({ id: id, known: !!d, me: id === me, name: d ? d.name : 'Ukjent enhet', type: d ? d.type : 'person', owner: d ? d.owner_label || '' : '',
+      out.push({ id: id, known: !!d, me: id === me, name: d ? d.name : id === me ? devSuggestion(devPlatform()) : 'Eldre enhet', type: d ? d.type : 'person', owner: d ? d.owner_label || '' : '',
         platform: d ? d.platform : '', last: last, joined: joined[id] || (d && d.created_at) || 0, nameSet: !!(d && d.name_set), old: last != null && dayNum() - last > 90 });
     });
     out.sort(function (a, b) { return (b.me - a.me) || (b.known - a.known) || ((b.last || 0) - (a.last || 0)); });
@@ -5547,7 +5547,8 @@
     return '<span class="k17-ic">' + DEV_IC[k] + '</span>';
   }
   function devSub(d) {
-    if (!d.known) return 'koblet til ' + (d.joined ? dm(d.joined) : 'tidligere') + (d.last != null ? ' · ' + agoText(d.last) : '');
+    if (!d.known && d.me) return 'koblet til ' + (d.joined ? dm(d.joined) : 'nå');   // v0.18.4: egen enhet registreres straks
+    if (!d.known) return 'ikke åpnet siden ' + (d.joined ? dm(d.joined) : 'før 0.17');
     return [d.owner, d.last != null ? agoText(d.last) : ''].filter(Boolean).join(' · ');
   }
   function devRow(d) {
@@ -5568,21 +5569,32 @@
     return n ? n + (n === 1 ? ' enhet' : ' enheter') : 'Delt husstand';
   }
   // Egen enhet: opprettes første gang v0.17 åpnes, last_seen høyst én gang i timen (og bare når dagen er ny).
-  function devicesSnapshot(docs, meta) {
-    if (!docs) return;   // eldre regler: ingen enhetsliste
+  // v0.18.4: egen enhetsinfo skrives ved kobling OG ved oppstart når den mangler. Før ble den bare skrevet når et
+  // øyeblikksbilde fra serveren kom med endrede dokumenter – kom serversvaret uten endringer (lista var lik hurtigbufferen),
+  // eller var egen enhet slettet mens denne var med, ble den aldri laget («Ukjent enhet · denne»). Nå sjekkes serveren direkte.
+  function selfDeviceDoc() {
+    var p = devPlatform(), pend = null;
+    try { pend = JSON.parse(localStorage.getItem(KIND_ASK_KEY + ':valg') || 'null'); } catch (e) { pend = null; }
+    var kitchen = pend ? pend.type === 'kjokken' : startKitchenOn();
+    return { name: kitchen ? 'Kjøkkenskjerm' : devSuggestion(p), type: kitchen ? 'kjokken' : 'person', owner_label: kitchen ? 'Kjøkkenet' : null, platform: p, last_seen: dayNum(), created_at: Date.now(), name_set: false };
+  }
+  function ensureSelfDevice(extra) {
+    if (!hh || K17.creating || !Sync.myDeviceExists) return;
+    var cur = hh; K17.creating = true;
+    Sync.myDeviceExists(cur.hid).then(function (ex) {
+      if (hh !== cur || ex !== false) { K17.creating = false; return; }
+      var d = selfDeviceDoc(); if (extra) for (var k in extra) d[k] = extra[k];
+      return Sync.write.createDevice(cur.hid, d).then(function () { K17.creating = false; lsDel(KIND_ASK_KEY + ':valg'); lsSet(DEV_TOUCH_KEY, JSON.stringify({ hid: cur.hid, at: Date.now() })); });
+    }).catch(function () { K17.creating = false; });
+  }
+  function devicesSnapshot(docs, meta, err) {
+    if (!docs) { if (err && hh) setTimeout(function () { ensureSelfDevice(); }, 3000); return; }   // eldre regler: ingen enhetsliste; v0.18.4: lytteren feilet (f.eks. rett etter kobling) – skriv likevel egen enhet
     K17.devices = docs;
     var me = myUid(), mine = docs.filter(function (d) { return d.id === me; })[0];
+    if (hh && me && !mine && !ui.deleting) ensureSelfDevice();
     if (meta && !meta.fromCache && hh && me) {
       if (mine) { K17.selfSeen = true; if (lsGet(K17_REG_KEY) !== hh.hid) lsSet(K17_REG_KEY, hh.hid); }
       else if (K17.selfSeen && !ui.deleting) { checkRemoved(); return; }
-      else if (!K17.creating) {
-        K17.creating = true;
-        var p = devPlatform(), pend = null;
-        try { pend = JSON.parse(localStorage.getItem(KIND_ASK_KEY + ':valg') || 'null'); } catch (e) { pend = null; }
-        var kitchen = pend ? pend.type === 'kjokken' : startKitchenOn();
-        var d = { name: kitchen ? 'Kjøkkenskjerm' : devSuggestion(p), type: kitchen ? 'kjokken' : 'person', owner_label: kitchen ? 'Kjøkkenet' : null, platform: p, last_seen: dayNum(), created_at: Date.now(), name_set: false };
-        Sync.write.createDevice(hh.hid, d).then(function () { lsDel(KIND_ASK_KEY + ':valg'); lsSet(DEV_TOUCH_KEY, JSON.stringify({ hid: hh && hh.hid, at: Date.now() })); }, function () { K17.creating = false; });
-      }
       if (mine && mine.last_seen < dayNum()) {
         var t = null; try { t = JSON.parse(lsGet(DEV_TOUCH_KEY) || 'null'); } catch (e) { t = null; }
         if (!t || t.hid !== hh.hid || Date.now() - t.at > 3600e3) {
@@ -5686,7 +5698,7 @@
     var type = d.type;
     var sug = d.known && !d.nameSet && d.platform ? devSuggestion(d.platform) : '';
     var h = k17Head('k17-enhet-ark', d.me ? 'Denne enheten' : d.name) +
-      (d.known ? '<form data-k17="enhet">' +
+      (d.known || d.me ? '<form data-k17="enhet">' +
         '<div class="k17-field"><label for="k17-en-navn">Navn</label><input class="k17-in" id="k17-en-navn" name="name" maxlength="40" required value="' + esc(d.name) + '" data-testid="k17-enhet-navn">' +
         '<p class="hint">' + (sug ? 'Forslag fra enheten var «' + esc(sug) + '». ' : '') + 'Alle i husstanden ser navnet.</p></div>' +
         '<div class="k17-field"><label>Type</label><div class="k17-seg" role="radiogroup">' +
@@ -5694,7 +5706,7 @@
         '<div class="k17-field"><label for="k17-en-eier">Tilhører</label><input class="k17-in" id="k17-en-eier" name="owner" maxlength="40" value="' + esc(d.owner) + '" placeholder="F.eks. Lena, Alle eller Kjøkkenet" data-testid="k17-enhet-eier"></div>' +
         '<p class="k17-note">' + (d.last != null ? 'Sist aktiv ' + esc(agoText(d.last)) : '') + (d.joined ? ' · koblet til ' + dm(d.joined) : '') + '</p>' +
         '<div class="k17-acts"><button type="submit" class="k17-btn pri" data-testid="k17-enhet-lagre">Lagre</button></div></form>'
-        : '<p class="k17-note">Denne enheten har ikke åpnet Knaggen 0.17 ennå, så vi vet ikke hva den er. Koblet til ' + (d.joined ? dm(d.joined) : 'tidligere') + '.</p>') +
+        : '<p class="k17-note" data-testid="k17-eldre">Eldre enhet, ikke åpnet siden ' + (d.joined ? dm(d.joined).replace(/\.$/, '') : 'før Knaggen 0.17') + '. Den får navn når den åpner Knaggen igjen. Fjern den hvis den er borte.</p>') +
       '<div class="k17-acts">' + (d.me ? '<button type="button" class="k17-btn txt full" data-k17="forlat" data-testid="k17-forlat">Forlat ' + esc(hhName() || 'husstanden') + '</button>'
         : '<button type="button" class="k17-btn txt full" data-k17="fjern" data-testid="k17-fjern">Fjern fra husstanden</button>') + '</div>';
     var ov = k17Open('k17-enhet-ark', h);
@@ -5713,7 +5725,8 @@
       var name = f.name.value.trim().slice(0, 40), owner = f.owner.value.trim().slice(0, 40);
       if (!name || !hh) return;
       var fields = { name: name, type: type, owner_label: owner || null, name_set: true };
-      Sync.write.updateDevice(hh.hid, d.id, fields).catch(function () { toast('Fikk ikke lagret. Prøv igjen.'); });
+      if (d.me && !d.known) { var nd = selfDeviceDoc(); for (var k in fields) nd[k] = fields[k]; Sync.write.createDevice(hh.hid, nd).catch(function () { toast('Fikk ikke lagret. Prøv igjen.'); }); }   // v0.18.4
+      else Sync.write.updateDevice(hh.hid, d.id, fields).catch(function () { toast('Fikk ikke lagret. Prøv igjen.'); });
       if (d.me) { if (type === 'kjokken') lsSet('knaggen:start-kjokken', 'true'); }
       k17Close();
     });
@@ -6826,8 +6839,9 @@
   /* ---------- v0.16: versjonsnummeret ved logoen og «Nytt i Knaggen» ----------
    * Trykk på «0.16» åpner arket. Etter en oppdatering åpnes det av seg selv én gang (ikke ved aller første åpning,
    * ikke på kjøkkenskjermen og ikke i automatiserte tester uten testkroken KNAGGEN_TEST_NYTT). */
-  var APP_VERSION = '0.18.3', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.18.4', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.18.4', ['«Delt» står nå alltid øverst, også på kjøkkenskjermen og over «Nå» på telefonen, og en PC eller telefon som kobles til husstanden får straks navn i enhetslista.']],
     ['0.18.3', ['Oppskriften steg for steg passer bedre på telefonen: mindre tittel, ingrediensene kan legges sammen, og Forrige/Neste ligger alltid synlig under teksten. Nettbrett og PC er som før.', '«Neste avganger» på «Nå» blir ikke lenger stående på «Henter avganger …»: svarer ikke Entur innen 8 sekunder får du beskjed og en «Prøv igjen»-knapp, de sist hentede avgangene vises mens nye hentes, og uten valgt holdeplass får du en lenke til innstillingen.']],
     ['0.18.2', ['På telefonen har «Nå» fått egen fane, og appen åpner der. Telefonen kjennes igjen også når den holdes på tvers. Nettbrett og PC er som før.']],
     ['0.18.1', ['Husstanden kan legge inn en hjemmeadresse under Husstand → Hjem. «Nå» bruker den til å se om du er hjemme, og du kan fjerne den når som helst.', 'Velg tema på hver enhet: System, Lys eller Mørk (Husstand → Denne enheten). Kjøkkenskjermen på nettbrettet følger fortsatt tiden på døgnet.']],

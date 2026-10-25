@@ -249,7 +249,7 @@
     if (!open) return;
     var k = JSON.stringify(avg().stops || []);
     if (k === sharedKey) return;   // eget ekko eller ingen endring: ikke hent avgangene på nytt
-    sharedKey = k; refreshSheet();   // v0.18.3: sist hentede beholdes i minnet (radene filtreres på holdeplass-id) if (view === 'idle') render();
+    sharedKey = k; refreshSheet(); if (view === 'idle') render();   // v0.18.3: sist hentede beholdes i minnet (radene filtreres på holdeplass-id); v0.18.4: render-kallet lå ved en feil inni kommentaren
     if (open && naOn()) { dep.at = 0; pollDep(); }   // v0.18: «Nå» henter med en gang når de felles holdeplassene kommer
   }
   function avgPos(a) { var s = settings(); return a.lat != null && a.lon != null ? { lat: +a.lat, lon: +a.lon } : { lat: s.lat, lon: s.lon }; }
@@ -641,7 +641,7 @@
       }
       next = '<div class="k-fadeable k-o5"><p class="k-lbl">De neste dagene</p><ul class="k-next" data-testid="k-neste">' + li.join('') + '</ul></div>';
     }
-    return '<div class="k-stage"><a class="k-gear k-gear-top k-fadeable" href="#kjokken/innstillinger" data-k="settings" data-testid="k-innstillinger" aria-label="Innstillinger for kjøkkenskjermen"><span aria-hidden="true">⚙</span></a><div class="k-grid"><div class="k-left">' +
+    return '<div class="k-stage">' + deltBtn() + '<a class="k-gear k-gear-top k-fadeable" href="#kjokken/innstillinger" data-k="settings" data-testid="k-innstillinger" aria-label="Innstillinger for kjøkkenskjermen"><span aria-hidden="true">⚙</span></a><div class="k-grid"><div class="k-left">' +
       '<div class="k-timeblock k-o1"><p class="k-clock" data-testid="k-klokke" aria-label="Klokka er ' + clock + '">' + clock + '</p><p class="k-date k-fadeable" data-testid="k-dato">' + esc(date) + '</p></div>' +
       '<div class="k-fadeable k-o2">' + dinner + '</div>' + (cal || '') +
       '</div><div class="k-right"><div class="k-o3">' + weatherHtml(s) + '</div>' + dep + next +
@@ -703,6 +703,14 @@
     setTimeout(function () { el.classList.remove('k-fading'); cb(); }, window.KNAGGEN_KJOKKEN_FADE_MS != null ? window.KNAGGEN_KJOKKEN_FADE_MS : 600);
   }
   function isNight() { var p = effPhase(); return p.a === 'natt' && p.b === 'natt'; }
+  // v0.18.4: «Delt»/husstand-knappen er alltid med på kjøkkenskjermen (før dekket skjermen hele appens topplinje,
+  // så man kom ikke til Husstand). Vises når enheten er med i en husstand (samme vilkår som «Delt» i topplinja).
+  function deltBtn() {
+    var l = document.getElementById('sync-link');
+    if (!l || l.hidden) return '';
+    return '<a class="k-delt-top" href="#husstand" data-k="delt" data-testid="k-delt" aria-label="Delt – åpne husstand og innstillinger"><span class="k-dot" aria-hidden="true"></span>Delt</a>';
+  }
+  try { var slEl = document.getElementById('sync-link'); if (slEl) new MutationObserver(function () { if (open && view === 'idle' && root && !root.querySelector('.k-sheet')) render(); }).observe(slEl, { attributes: true, attributeFilter: ['hidden'] }); } catch (e) { }
   function onTap(e) {
     lastTap = Date.now();
     var t = e.target.closest ? e.target.closest('[data-k]') : null, k = t && t.getAttribute('data-k');
@@ -721,6 +729,7 @@
     if (root.classList.contains('k-na') && !k) return;   // trykk på tomt område i «Nå» gjør ingenting
     if (k === 'cook') return openCook();
     if (k === 'toapp') { e.preventDefault(); return toApp('#liste'); }
+    if (k === 'delt') { e.preventDefault(); try { sessionStorage.setItem(SS_FROM, '1'); } catch (x) { } location.hash = '#husstand'; return; }   // v0.18.4
     if (k === 'settings') { e.preventDefault(); location.hash = '#kjokken/innstillinger'; return; }   // v0.16.1: ⚙ tilbake på hvileskjermen   // v0.16.1: «Til appen» → lista
     toApp();
   }
@@ -1065,7 +1074,9 @@
       btn = document.createElement('a');
       btn.href = '#kjokken'; btn.className = 'k-home'; btn.setAttribute('data-testid', 'kjokken-knapp');
       btn.innerHTML = '<span aria-hidden="true">⌂</span> Kjøkkenskjerm';
-      document.body.appendChild(btn);
+      // v0.18.4: i topplinja ved siden av «Delt» (før fast oppe til høyre over «Delt», så Husstand ikke kunne nås)
+      var bar = document.querySelector('.topbar'), sl = document.getElementById('sync-link');
+      if (bar && sl) bar.insertBefore(btn, sl); else if (bar) bar.appendChild(btn); else document.body.appendChild(btn);
     }
     if (btn) btn.hidden = !on;
     if (on) armBack(); else { clearTimeout(backTimer); backTimer = null; }

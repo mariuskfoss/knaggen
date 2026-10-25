@@ -129,6 +129,17 @@ body.k-phone .kj .k-btn { min-height: 56px; font-size: 19px; border-radius: 12px
 .k-home { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 8px); right: 12px; z-index: 900; display: inline-flex; align-items: center; gap: 6px;
   padding: 8px 14px; border-radius: 999px; background: var(--card-2, #ebe8e1); color: var(--ink, #252a28); font-size: 15px; font-weight: 600; text-decoration: none; }
 .k-home[hidden] { display: none; }
+/* v0.18.4: «⌂ Kjøkkenskjerm» er en liten etikett i topplinja ved siden av «Delt», ikke lenger over den */
+.topbar .k-home { position: static; margin-left: auto; padding: 5px 10px; font-size: 13px; z-index: auto; }
+.topbar .k-home + .sync-link { margin-left: 0; }
+/* v0.18.4: «Delt» på kjøkkenskjermen, til venstre for ⚙ – åpner Husstand */
+.kj .k-delt-top { position: absolute; top: 6px; right: 62px; z-index: 3; min-height: 44px; display: inline-flex; align-items: center; gap: 8px; padding: 0 16px; border-radius: 22px;
+  background: var(--k-surface); color: var(--k-ink); font-size: 17px; font-weight: 600; text-decoration: none; border: 1px solid var(--k-line); }
+.kj .k-delt-top .k-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--k-brand, #3f6e5a); }
+.kj .k-delt-top:focus-visible { outline: 2px solid var(--k-muted); outline-offset: 2px; }
+.kj.k-na .k-delt-top { display: none; }   /* telefon: «Delt» står i topplinja over «Nå» */
+/* v0.18.4: topplinja over «Nå» på telefon ligger fast øverst og over «Nå»-panelet, kompakt */
+body.k-phone.k-na-open .topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 60; padding-top: calc(6px + env(safe-area-inset-top, 0px)); padding-bottom: 6px; }
 
 /* ---------- v0.16 «Avganger og kalender» (fra merkevare/v016-avganger-kalender/_bygg/v016.css, avgrenset til .kj).
  * Fargetokenene --k-cal-1..4 og --k-late settes av kjokken.js (blandes i OKLab som resten). */

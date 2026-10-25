@@ -205,6 +205,14 @@ async function createHousehold(local, existing) {
 }
 
 // v0.10: fortsatt medlem ifølge serveren? (false også når husstanden er slettet og lesingen nektes)
+// v0.18.4: finnes egen enhet på serveren? true/false, null = vet ikke (frakoblet)
+async function myDeviceExists(hid) {
+  const c = await init();
+  try {
+    const s = await withTimeout(c.fs.getDocFromServer(c.fs.doc(...hh(hid, 'devices', c.uid))), 10000, 'no-server');
+    return s.exists();
+  } catch (e) { return null; }
+}
 async function stillMember(hid) {
   const c = await init();
   try {
@@ -501,5 +509,5 @@ function fetchWeather(hid, lat, lon) { return callFn('hentVaer', { hid, lat, lon
 function calendar(hid, op, data) { return callFn('kalender', Object.assign({}, data || {}, { op, hid }), op === 'legg' || op === 'hendelser' ? 40000 : 15000); }
 
 window.UkeshandelSync = { fetchRecipe, makeShareList, deleteShareLists, fetchWeather, calendar, mode, init, randomCode, createHousehold, joinHousehold, isMember, subscribe, write: W, uid: () => ctx && ctx.uid,
-  inviteCode, createInvite, getInvite, leaveHousehold, deleteHousehold, stillMember };
+  inviteCode, createInvite, getInvite, leaveHousehold, deleteHousehold, stillMember, myDeviceExists };
 window.dispatchEvent(new Event('ukeshandel-sync-ready'));
