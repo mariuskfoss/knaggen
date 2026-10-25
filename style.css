@@ -1383,3 +1383,16 @@ body.k-phone .tabs .tab-na { display: flex; }
 .hent-konflikt { margin: .6rem 0 0; padding: .6rem .75rem; border-radius: 12px; border: 1px solid var(--line, rgba(127,127,127,.35)); }
 .hent-konflikt .m { margin: 0 0 .4rem; }
 .hent-konflikt .ask-acts { margin-top: .25rem; }
+
+/* v0.18.8: trykkflater minst 44 px */
+.fv-chip, .v11-chips .fv-chip { min-height: 44px; }
+.cb-hit { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+#hjem-sok { min-height: 44px; }
+.hv-opt input { width: 24px; height: 24px; }
+/* v0.18.8: «Hvem sin enhet er dette?» – ikke-modalt panel nederst, over fanene */
+.k188-panel { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(76px + env(safe-area-inset-bottom, 0px)); z-index: 25; width: min(560px, calc(100vw - 20px)); max-height: 60vh; overflow: auto;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line-strong); border-radius: 16px; box-shadow: 0 8px 28px rgba(0,0,0,.25); }
+.k188-panel .k17-banner { margin: 0; border: 0; background: transparent; }
+.k188-panel .row { flex-wrap: wrap; gap: 8px; }
+.k188-panel .k17-btn { min-height: 44px; }
+.k188-panel .k17-field { margin: 8px 0; }

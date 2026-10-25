@@ -346,6 +346,21 @@
       schedDep(dep.fails ? sc(BACKOFF[Math.min(dep.fails, BACKOFF.length) - 1]) : sc(POLL));
     });
   }
+  // v0.18.8: felles for kjøkkenskjermen og «Nå» (samme antall avganger): per linje opptil `per` tider, opptil 4 linjer per holdeplass
+  function lineGroups(st, data, t, until, per) {
+    var sp = null; (data || []).forEach(function (x) { if (x && x.id === st.id) sp = x; });
+    if (!sp) return null;
+    var groups = {}, order = [];
+    (sp.estimatedCalls || []).forEach(function (c) {
+      if (!c || !c.quay || !c.serviceJourney || !c.serviceJourney.line) return;
+      var k = depKey(c); if (!st.all && st.sel.indexOf(k) < 0) return;
+      var ms = Date.parse(c.expectedDepartureTime || c.aimedDepartureTime);
+      if (!(ms > t - 30000) || ms > until) return;
+      if (!groups[k]) { groups[k] = []; order.push(k); }
+      if (groups[k].length < per) groups[k].push(c);
+    });
+    return { groups: groups, order: order.slice(0, 4) };
+  }
   function depKey(c) { return c.serviceJourney.line.id + '@' + c.quay.id; }
   function rel(ms, t) { var min = Math.floor((ms - t) / 60000); return min < 1 ? 'nå' : 'om ' + min + ' min'; }
   function depHtml(t, s) {
@@ -357,17 +372,9 @@
     }
     var per = fit.lvl >= 1 ? 2 : 3, until = Math.min(t + DEP_WINDOW, bedMs(t)), many = a.stops.length > 1, html = [];
     a.stops.forEach(function (st) {
-      var sp = null; dep.data.forEach(function (x) { if (x && x.id === st.id) sp = x; });
-      if (!sp) return;
-      var groups = {}, order = [];
-      (sp.estimatedCalls || []).forEach(function (c) {
-        if (!c || !c.quay || !c.serviceJourney || !c.serviceJourney.line) return;
-        var k = depKey(c); if (!st.all && st.sel.indexOf(k) < 0) return;
-        var ms = Date.parse(c.expectedDepartureTime || c.aimedDepartureTime);
-        if (!(ms > t - 30000) || ms > until) return;
-        if (!groups[k]) { groups[k] = []; order.push(k); }
-        if (groups[k].length < per) groups[k].push(c);
-      });
+      var lg = lineGroups(st, dep.data, t, until, per);
+      if (!lg) return;
+      var groups = lg.groups, order = lg.order;
       var rows = order.slice(0, 4).map(function (k) {
         var g = groups[k], l = g[0].serviceJourney.line, front = (g[0].destinationDisplay && g[0].destinationDisplay.frontText) || '';
         var first = true;
@@ -562,6 +569,23 @@
     pos.depBusy = true;
     enturCall(Q_DEP, { ids: b.stops.map(function (x) { return x.id; }), n: 40, range: 3600 }).then(function (d) { pos.dep = d.stopPlaces || []; pos.depAt = Date.now(); pos.depErr = ''; }, function (e) { pos.depErr = (e && e.code) || 'nett'; pos.depAt = Date.now(); }).then(function () { pos.depBusy = false; if (open && naOn()) render(); });
   }
+  // v0.18.8: «Nå» hjemme viser like mange avganger som kjøkkenskjermen: én rad per linje med opptil 3 tider (de du ikke rekker er dempet)
+  function naLineRows(stops, data, t) {
+    var out = [], many = stops.length > 1;
+    stops.forEach(function (st) {
+      var lg = lineGroups(st, data, t, t + DEP_WINDOW, 3);
+      if (!lg) return;
+      lg.order.forEach(function (k) {
+        var g = lg.groups[k], l = g[0].serviceJourney.line, front = (g[0].destinationDisplay && g[0].destinationDisplay.frontText) || '';
+        var tms = g.map(function (c) {
+          var ms = Date.parse(c.expectedDepartureTime || c.aimedDepartureTime), gone = ms - t < (st.walk || 0) * 60000;
+          return '<i class="' + (c.cancellation ? 'cx' : '') + (gone ? ' gone' : '') + '" data-testid="na-avg-tid">' + minTxt(ms, t) + (c.cancellation ? ' innstilt' : '') + '</i>';
+        }).join('');
+        out.push('<li data-testid="na-avg-linje"><span class="no">' + esc(l.publicCode || '') + '</span><b>' + esc(front) + (many ? '<span>' + esc(st.name) + '</span>' : '') + '</b><span class="mn">' + tms + '</span></li>');
+      });
+    });
+    return out;
+  }
   function naRows(stops, data, t, max, walkCut) {
     var rows = [];
     (stops || []).forEach(function (st) {
@@ -637,8 +661,8 @@
       h += '<p class="na-lbl">Neste avganger</p>';
       if (a.loading) h += '<ul class="na-card na-dep" data-testid="na-avganger"><li class="note">' + (homeNear.err ? 'Fant ikke holdeplasser nær hjemmeadressen nå.' : 'Finner holdeplasser nær hjemme …') + '</li></ul>';
       else if (a.stops.length) {
-        var r = naRows(a.stops, dep.data, t, 3, true);
-        if (r.length || !dep.err) h += '<ul class="na-card na-dep" data-testid="na-avganger">' + (r.length ? r.map(function (x) { return '<li><span class="no">' + esc(x.no) + '</span><b>' + esc(x.front) + '</b><span class="mn">' + minTxt(x.ms, t) + '</span></li>'; }).join('') : '<li class="note">' + (dep.data && !dep.busy ? 'Ingen avganger den neste timen' : 'Henter avganger …') + '</li>') + '</ul>';
+        var r = naLineRows(a.stops, dep.data, t);
+        if (r.length || !dep.err) h += '<ul class="na-card na-dep" data-testid="na-avganger">' + (r.length ? r.join('') : '<li class="note">' + (dep.data && !dep.busy ? 'Ingen avganger den neste timen' : 'Henter avganger …') + '</li>') + '</ul>';
         h += naDepState(dep.data, dep.busy, dep.err, dep.at);
         h += '<p class="na-src" data-testid="na-hjem-kilde">' + (a.src === 'hjemnaer' ? 'Nærmest hjemmeadressen: ' + esc(a.stops.map(function (x) { return x.name; }).join(', ')) : esc(a.stops.map(function (x) { return x.name; }).join(', '))) +
           ' · <a href="#kjokken/innstillinger/avg" data-k="na-endre" data-testid="na-hjem-endre">' + (a.src === 'hjemnaer' ? 'Velg' : 'Endre') + '</a></p>';
@@ -646,11 +670,15 @@
       } else h += naNoStop();
     } else {
       var bs = borteStops(), data = bs.src === 'posisjon' ? pos.dep : dep.data, rr = naRows(bs.stops, data, t, 4, false);
-      h += '<p class="na-lbl">Avganger herfra</p>';
-      if (bs.stops.length) h += '<ul class="na-card na-dep" data-testid="na-avg-her">' + (rr.length ? rr.map(function (x) { return '<li><span class="no">' + esc(x.no) + '</span><b>' + esc(x.stop) + '<span>mot ' + esc(x.front) + '</span></b><span class="mn">' + minTxt(x.ms, t) + '</span></li>'; }).join('') : '<li class="note">' + (data ? 'Ingen avganger den neste timen' : 'Henter avganger …') + '</li>') + '</ul>';
-      else h += naNoStop();
-      if (bs.stops.length) h += bs.src === 'posisjon' ? naDepState(pos.dep, pos.depBusy, pos.depErr, pos.depAt) : naDepState(dep.data, dep.busy, dep.err, dep.at);
-      h += '<p class="na-src" data-testid="na-holdeplass-kilde">' + (bs.src === 'posisjon' ? 'Holdeplasser nær deg' : bs.src === 'felles' ? 'Husstandens holdeplasser' : 'Holdeplass valgt manuelt') + ' · <a href="#kjokken/innstillinger/avg" data-k="na-endre" data-testid="na-endre">Endre</a></p>';
+      // v0.18.8: uten holdeplass nær deg vises hjemmeholdeplassene – merket tydelig «Fra hjemme (X)», så de ikke ser lokale ut
+      var local = bs.src === 'posisjon', bErr = local ? pos.depErr : dep.err;
+      var stopNames = bs.stops.map(function (x) { return x.name; }).join(', ');
+      h += local || !bs.stops.length ? '<p class="na-lbl">Avganger herfra</p>' : '<p class="na-lbl na-fra-hjemme" data-testid="na-fra-hjemme">Fra hjemme (' + esc(stopNames) + ')</p>' +
+        (posWanted() && pos.lat != null && pos.near && !pos.near.length ? '<p class="na-note" data-testid="na-ingen-naer">Ingen holdeplass i nærheten av deg. Dette er avgangene hjemmefra.</p>' : '');
+      if (bs.stops.length && (rr.length || !bErr)) h += '<ul class="na-card na-dep' + (local ? '' : ' na-hjemmefra') + '" data-testid="na-avg-her">' + (rr.length ? rr.map(function (x) { return '<li><span class="no">' + esc(x.no) + '</span><b>' + esc(x.stop) + '<span>mot ' + esc(x.front) + '</span></b><span class="mn">' + minTxt(x.ms, t) + '</span></li>'; }).join('') : '<li class="note">' + (data ? 'Ingen avganger den neste timen' : 'Henter avganger …') + '</li>') + '</ul>';
+      else if (!bs.stops.length) h += naNoStop();
+      if (bs.stops.length) h += local ? naDepState(pos.dep, pos.depBusy, pos.depErr, pos.depAt) : naDepState(dep.data, dep.busy, dep.err, dep.at);
+      h += '<p class="na-src" data-testid="na-holdeplass-kilde">' + (local ? 'Holdeplasser nær deg' : bs.src === 'felles' ? 'Husstandens holdeplasser hjemme' : 'Holdeplass valgt manuelt') + ' · <a href="#kjokken/innstillinger/avg" data-k="na-endre" data-testid="na-endre">Endre</a></p>';
       var buy = A.naBuy ? A.naBuy() : { items: [], open: 0 };
       h += '<p class="na-lbl">Kjøp på vei hjem</p><div class="na-card" data-testid="na-kjop">' +
         (!m ? '<p class="note">Ingen middag valgt i dag.</p>' : !buy.items.length ? '<p class="note">Alt til ' + esc(m.name) + ' er handlet.</p>' :
@@ -663,7 +691,7 @@
     var c = A.naCounts ? A.naCounts() : { list: 0, week: A.isoWeek(d), recipes: 0 };
     h += '<div class="na-short" data-testid="na-snarveier">' +
       '<a href="#liste" data-k="na-go" data-testid="na-snarvei-liste"><b>Handleliste</b><span>' + c.list + (c.list === 1 ? ' vare' : ' varer') + '</span></a>' +
-      '<a href="#uke" data-k="na-go" data-testid="na-snarvei-uke"><b>Uke</b><span>uke ' + c.week + '</span></a>' +
+      '<a href="#uke" data-k="na-go" data-testid="na-snarvei-uke"><b>Uke</b><span>uke\u00a0' + c.week + '</span></a>' +
       '<a href="#retter" data-k="na-go" data-testid="na-snarvei-retter"><b>Retter</b><span>' + c.recipes + '</span></a></div></div>';
     return h;
   }
@@ -707,7 +735,7 @@
   function idleHtml() {
     var t = now(), d = new Date(t), s = settings(), A = api();
     var clock = two(d.getHours()) + ':' + two(d.getMinutes());
-    var date = DAYS[d.getDay()] + ' ' + d.getDate() + '. ' + MONTHS[d.getMonth()] + ' · uke ' + A.isoWeek(d);
+    var date = DAYS[d.getDay()] + ' ' + d.getDate() + '. ' + MONTHS[d.getMonth()] + ' · uke\u00a0' + A.isoWeek(d);
     var m = A.meal(dayIso(t));
     var mname = m ? (m.mark === 'rester' ? 'Rester – ' + m.name : m.name) : '';
     var dinner = m
@@ -724,7 +752,7 @@
       }
       next = '<div class="k-fadeable k-o5"><p class="k-lbl">De neste dagene</p><ul class="k-next" data-testid="k-neste">' + li.join('') + '</ul></div>';
     }
-    return '<div class="k-stage">' + deltBtn() + '<a class="k-gear k-gear-top k-fadeable" href="#kjokken/innstillinger" data-k="settings" data-testid="k-innstillinger" aria-label="Innstillinger for kjøkkenskjermen"><span aria-hidden="true">⚙</span></a><div class="k-grid"><div class="k-left">' +
+    return '<div class="k-stage">' + deltBtn() + '<a class="k-gear k-gear-top" href="#kjokken/innstillinger" data-k="settings" data-testid="k-innstillinger" aria-label="Innstillinger for kjøkkenskjermen"><span aria-hidden="true">⚙</span></a><div class="k-grid"><div class="k-left">' +
       '<div class="k-timeblock k-o1"><p class="k-clock" data-testid="k-klokke" aria-label="Klokka er ' + clock + '">' + clock + '</p><p class="k-date k-fadeable" data-testid="k-dato">' + esc(date) + '</p></div>' +
       '<div class="k-fadeable k-o2">' + dinner + '</div>' + (cal || '') +
       '</div><div class="k-right"><div class="k-o3">' + weatherHtml(s) + '</div>' + dep + next +
@@ -801,7 +829,7 @@
     lastTap = Date.now();
     var t = e.target.closest ? e.target.closest('[data-k]') : null, k = t && t.getAttribute('data-k');
     if (root.querySelector('.k-sheet')) return sheetTap(k, e);
-    if (view === 'idle' && isNight() && !root.classList.contains('k-na')) { if (e.preventDefault) e.preventDefault(); woke = now(); render(); return; }   // natt: første trykk bare vekker (lenker følges ikke)
+    if (view === 'idle' && isNight() && !root.classList.contains('k-na') && k !== 'settings' && k !== 'delt') { if (e.preventDefault) e.preventDefault(); woke = now(); render(); return; }   // v0.18.8: ⚙ og husstandsknappen virker også om natta   // natt: første trykk bare vekker (lenker følges ikke)
     if (view === 'cook') {
       if (k === 'close') closeCook();
       else if (k === 'next') { cook.step++; render(); }

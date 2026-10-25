@@ -343,3 +343,18 @@ html[data-tema="lys"] .kj .k-sheet { --k-cal-1: #3f6e5a; --k-cal-2: #44617a; --k
 .na-status > span { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .na-status small { font-weight: 400; font-size: .8rem; color: var(--muted); white-space: nowrap; }
 .kj.k-na .na-status .na-status-endre { margin-left: auto; background: transparent; border: 0; box-shadow: none; color: var(--muted); font: inherit; font-size: .85rem; font-weight: 500; text-decoration: underline; padding: 6px 4px; min-height: 32px; cursor: pointer; }
+
+/* v0.18.8: trykkflater minst 44 px på «Nå» */
+.kj.k-na .na-src a, .kj.k-na .na-note a, .kj.k-na .na-status .na-status-endre, .kj.k-na .na-why a { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; padding: 0 6px; }
+.kj.k-na .na-dep-err .btn { min-height: 44px; }
+/* v0.18.8: «Nå» hjemme – én rad per linje med opptil tre tider, som kjøkkenskjermen */
+.na-dep .mn i { font-style: normal; margin-left: .55em; } .na-dep .mn i:first-child { margin-left: 0; }
+.na-dep .mn i.gone { opacity: .45; } .na-dep .mn i.cx { text-decoration: line-through; }
+/* v0.18.8: Borte uten holdeplass i nærheten – hjemmeholdeplassene er tydelig merket */
+.kj.k-na .na-lbl.na-fra-hjemme, .na-lbl.na-fra-hjemme { color: var(--ink); opacity: 1; font-weight: 700; }
+.kj.k-na .na-hjemmefra { border-style: dashed !important; }
+/* v0.18.8: ⚙ og husstandsknappen synes og virker også om natta, med lesbar kontrast (≥ 4,5:1 mot svart) */
+.kj.k-natt .k-gear-top { display: grid !important; color: #a9804c; opacity: 1; }
+.kj.k-natt .k-delt-top { color: #a9804c; background: #000; border-color: #2a1d0f; }
+.kj.k-natt .k-delt-top .k-dot { background: #6b4a26; }
+.kj .k-date { overflow-wrap: normal; }
