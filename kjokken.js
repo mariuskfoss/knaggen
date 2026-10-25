@@ -262,12 +262,41 @@
     return null;
   }
   function isDefaultPt(x) { return Math.abs(+x.lat - DEFAULTS.lat) < 1e-6 && Math.abs(+x.lon - DEFAULTS.lon) < 1e-6; }
+  /* v0.18.9 (K1): vern mot kallstorm. Per type (nearest / dep / reverse): én forespørsel om gangen per nøkkel (dedupe),
+   * kort hurtigbuffer for svar, og eksponentiell ventetid etter feil (30 s, 60 s, 2 min … maks 10 min, ±15 % jitter).
+   * Retry-After / Rate-Limit-Expiry-Time forlenger ventetiden. Mens typen venter, går det ingen kall ut. */
+  var GATE = {}, GATE_TTL = { nearest: 600000, dep: 0 };   // avganger caches ikke (dedupe + ventetid holder)
+  function gate(t) { return GATE[t] || (GATE[t] = { fails: 0, until: 0, code: '', inflight: {}, cache: {} }); }
+  function gateBlocked(t) { return Date.now() < gate(t).until; }
+  function gateFail(t, code, waitMs) {
+    var g = gate(t); g.fails++; g.code = code || 'nett';
+    var base = Math.min(600000, 30000 * Math.pow(2, g.fails - 1)) * (0.85 + Math.random() * 0.3);
+    g.until = Date.now() + Math.max(base, Math.min(waitMs || 0, 3600000));
+    return g.until;
+  }
+  function gateOk(t) { var g = gate(t); g.fails = 0; g.until = 0; g.code = ''; }
+  function retryMs(r) {
+    var ra = r.headers.get('Retry-After'), ms = 0;
+    if (ra) ms = /^\d+$/.test(ra.trim()) ? +ra * 1000 : Math.max(0, (Date.parse(ra) || 0) - Date.now());
+    var ex = Date.parse(r.headers.get('Rate-Limit-Expiry-Time') || '') || 0; if (ex) ms = Math.max(ms, ex - Date.now());
+    return ms;
+  }
   function enturCall(query, vars) {
+    var t = /nearest/.test(query) ? 'nearest' : 'dep', g = gate(t), key = JSON.stringify(vars), c = g.cache[key];
+    if (c && Date.now() - c.at < GATE_TTL[t]) return Promise.resolve(c.data);
+    if (g.inflight[key]) return g.inflight[key];
+    if (Date.now() < g.until) { var eb = new Error('backoff'); eb.code = g.code || 'backoff'; eb.until = g.until; return Promise.reject(eb); }
+    var p = enturFetch(query, vars).then(function (d) { gateOk(t); g.cache[key] = { at: Date.now(), data: d }; delete g.inflight[key]; return d; },
+      function (e) { delete g.inflight[key]; e = e || new Error('nett'); e.until = gateFail(t, e.code, e.wait); throw e; });
+    g.inflight[key] = p;
+    return p;
+  }
+  function enturFetch(query, vars) {
     var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null, to = setTimeout(function () { if (ctl) ctl.abort(); }, ENTUR_TIMEOUT);   // v0.18.3: 8 s, dekker også lesing av svaret
     return fetch(ENTUR, { method: 'POST', headers: { 'Content-Type': 'application/json', 'ET-Client-Name': ET_CLIENT }, body: JSON.stringify({ query: query, variables: vars }), signal: ctl && ctl.signal })
       .then(function (r) {
-        if (r.status === 429) { var e = new Error('rate'); e.code = 'rate'; e.until = Date.parse(r.headers.get('Rate-Limit-Expiry-Time') || '') || 0; throw e; }
-        if (!r.ok) { var e2 = new Error('http'); e2.code = 'http-' + r.status; throw e2; }
+        if (r.status === 429) { var e = new Error('rate'); e.code = 'rate'; e.wait = retryMs(r); throw e; }
+        if (!r.ok) { var e2 = new Error('http'); e2.code = 'http-' + r.status; e2.wait = retryMs(r); throw e2; }
         return r.json();
       })
       .then(function (j) { clearTimeout(to); return j; }, function (e) { clearTimeout(to); if (e && e.name === 'AbortError') { var ea = new Error('timeout'); ea.code = 'timeout'; throw ea; } throw e; })
@@ -306,7 +335,7 @@
     if (!h || !naOn()) return { stops: [], src: 'ingen' };
     var key = round3(h.lat) + ',' + round3(h.lon);
     if (homeNear.key === key && homeNear.stops) return { stops: homeNear.stops, src: 'hjemnaer' };
-    if (!homeNear.busy && navigator.onLine !== false) {
+    if (!homeNear.busy && navigator.onLine !== false && !gateBlocked('nearest')) {
       homeNear.busy = true; homeNear.err = '';
       enturCall(Q_NEAR, { lat: round3(h.lat), lon: round3(h.lon) }).then(function (d) {
         var seen = {}, l = [];
@@ -339,7 +368,7 @@
       dep.data = d.stopPlaces || []; dep.at = now(); dep.err = ''; dep.fails = 0; dep.until = 0;
     }, function (e) {
       dep.err = (e && e.code) || 'nett'; dep.fails++;
-      if (e && e.code === 'rate' && e.until) dep.until = e.until;
+      if (e && e.until) dep.until = e.until;   // v0.18.9: all feil gir ventetid (ikke bare 429)
     }).then(function () {
       dep.busy = false;
       if (open && view === 'idle' && !root.querySelector('.k-sheet')) render();
@@ -525,20 +554,20 @@
   var place = { cache: {}, busy: false, until: 0 };
   function placeName() { if (pos.lat == null) return undefined; var c = place.cache[pos.lat + ',' + pos.lon]; return c === undefined ? undefined : c; }
   function loadPlace() {
-    if (pos.lat == null || place.busy || Date.now() < place.until || navigator.onLine === false) return;
+    if (pos.lat == null || place.busy || gateBlocked('reverse') || navigator.onLine === false) return;
     var key = pos.lat + ',' + pos.lon; if (place.cache[key] !== undefined) return;
     place.busy = true;
     var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null, to = setTimeout(function () { if (ctl) ctl.abort(); }, ENTUR_TIMEOUT);
     fetch(GEO_REV + '?point.lat=' + pos.lat + '&point.lon=' + pos.lon + '&boundary.circle.radius=1&size=1&layers=address,locality', { headers: { 'ET-Client-Name': ET_CLIENT }, signal: ctl && ctl.signal })
       .then(function (r) {
-        if (r.status === 429 || r.status === 503) { var ra = +r.headers.get('Retry-After'); place.until = Date.now() + (ra > 0 ? ra * 1000 : 60000); throw new Error('rate'); }
-        if (!r.ok) throw new Error('http'); return r.json();
+        if (!r.ok) { gateFail('reverse', 'http-' + r.status, retryMs(r)); throw new Error('rate'); }
+        return r.json();
       })
       .then(function (j) {
         var f = j && j.features && j.features[0], pr = (f && f.properties) || {};
         var nm = typeof pr.borough === 'string' && pr.borough ? pr.borough : typeof pr.locality === 'string' && pr.locality ? pr.locality : '';
-        place.cache[key] = nm.slice(0, 40);
-      }, function (e) { if (!(e && e.message === 'rate')) place.cache[key] = ''; })
+        place.cache[key] = nm.slice(0, 40); gateOk('reverse');
+      }, function (e) { if (!(e && e.message === 'rate')) { gateFail('reverse', 'nett', 0); place.cache[key] = ''; } })
       .then(function () { clearTimeout(to); place.busy = false; if (open && naOn()) render(); });
   }
   function forgetPos() { pos.lat = pos.lon = null; pos.at = 0; pos.near = null; pos.nearKey = ''; pos.dep = null; pos.err = ''; }
@@ -632,6 +661,8 @@
       '<button type="button" data-k="na-hjemme" data-testid="na-hjemme" aria-pressed="' + home + '"' + (home ? ' class="on"' : '') + '>Hjemme</button>' +
       '<button type="button" data-k="na-borte" data-testid="na-borte" aria-pressed="' + !home + '"' + (!home ? ' class="on"' : '') + '>Borte</button></div>';
     var h = '<div class="na" data-testid="na" data-modus="' + mm.mode + '">';
+    var sp = A.startProgress ? A.startProgress() : null;   // v0.18.9: oppsettet er ikke ferdig – vei tilbake til Kom i gang
+    if (sp) h += '<a class="na-fortsett" href="#uke" data-k="na-go" data-testid="na-fortsett">Fortsett oppsettet (steg ' + sp.step + ' av ' + sp.of + ') <i aria-hidden="true">›</i></a>';
     if (auto && !naEdit) {
       // v0.18.7: posisjon er på og vi vet hvor hjemme er → rolig statuslinje i stedet for knapper
       var nm = placeName(), lbl;
@@ -644,6 +675,7 @@
         '<button type="button" class="na-status-endre" data-k="na-modus-endre" data-testid="na-modus-endre">Endre</button></p>';
     } else {
       var why = mm.why === 'posisjon' ? 'Satt av posisjon (lagres bare på telefonen)'
+        : !pw && mm.why !== 'manuell' ? 'Viser avganger hjemmefra. Trykk Borte når du er ute.'   // v0.18.9: klart språk
         : (mm.why === 'manuell' ? 'Valgt av deg' : 'Hjemme til du velger noe annet') + ' · ' + (pw ? (pos.err === 'nektet' ? 'posisjon er ikke tillatt' : homeAt() ? 'posisjon er på' : 'posisjon er på, men hjemmestedet mangler') : 'posisjon er av');
       h += seg + '<p class="na-why" data-testid="na-hvorfor">' + esc(why) + (auto ? ' · <a href="#" data-k="na-modus-ferdig" data-testid="na-modus-ferdig">Ferdig</a>' : '') + '</p>';
     }
@@ -690,9 +722,9 @@
     }
     var c = A.naCounts ? A.naCounts() : { list: 0, week: A.isoWeek(d), recipes: 0 };
     h += '<div class="na-short" data-testid="na-snarveier">' +
-      '<a href="#liste" data-k="na-go" data-testid="na-snarvei-liste"><b>Handleliste</b><span>' + c.list + (c.list === 1 ? ' vare' : ' varer') + '</span></a>' +
-      '<a href="#uke" data-k="na-go" data-testid="na-snarvei-uke"><b>Uke</b><span>uke\u00a0' + c.week + '</span></a>' +
-      '<a href="#retter" data-k="na-go" data-testid="na-snarvei-retter"><b>Retter</b><span>' + c.recipes + '</span></a></div></div>';
+      '<a href="#liste" data-k="na-go" data-testid="na-snarvei-liste"><b>Handleliste</b><span>' + (c.list ? c.list + ' igjen å handle' : 'Alt er handlet') + '</span></a>' +
+      '<a href="#uke" data-k="na-go" data-testid="na-snarvei-uke"><b>Uke\u00a0' + c.week + '</b><span>' + (c.planned == null ? '' : c.planned + ' av 7 kvelder planlagt') + '</span></a>' +
+      '<a href="#retter" data-k="na-go" data-testid="na-snarvei-retter"><b>Retter</b><span>' + c.recipes + (c.recipes === 1 ? ' rett' : ' retter') + '</span></a></div></div>';
     return h;
   }
   function naPlace() {
@@ -718,7 +750,7 @@
     if (k === 'na-modus-endre') { naEdit = true; render(); return true; }
     if (k === 'na-modus-ferdig') { e.preventDefault(); naEdit = false; render(); return true; }
     if (k === 'na-hjemme' || k === 'na-borte') { setNaMode(k === 'na-hjemme' ? 'hjemme' : 'borte'); return true; }
-    if (k === 'na-avg-igjen') { dep.fails = 0; pos.depAt = 0; pos.depErr = ''; if (!dep.busy) pollDep(); naPoll(); render(); return true; }
+    if (k === 'na-avg-igjen') { gate('dep').until = 0; gate('nearest').until = 0; dep.until = 0; dep.fails = 0; /* v0.18.9: brukerens «Prøv igjen» får ett nytt forsøk */ pos.depAt = 0; pos.depErr = ''; if (!dep.busy) pollDep(); naPoll(); render(); return true; }
     if (k === 'na-endre') { e.preventDefault(); location.hash = '#kjokken/innstillinger/avg'; return true; }
     if (k === 'na-go' || k === 'na-lista') { return true; }   // vanlige lenker (fanelinja-sidene)
     if (t && t.hasAttribute && t.hasAttribute('data-na-key')) return true;
@@ -752,7 +784,7 @@
       }
       next = '<div class="k-fadeable k-o5"><p class="k-lbl">De neste dagene</p><ul class="k-next" data-testid="k-neste">' + li.join('') + '</ul></div>';
     }
-    return '<div class="k-stage">' + deltBtn() + '<a class="k-gear k-gear-top" href="#kjokken/innstillinger" data-k="settings" data-testid="k-innstillinger" aria-label="Innstillinger for kjøkkenskjermen"><span aria-hidden="true">⚙</span></a><div class="k-grid"><div class="k-left">' +
+    return '<div class="k-stage">' + deltBtn() + '<a class="k-gear k-gear-top" href="#kjokken/innstillinger" data-k="settings" data-testid="k-innstillinger" aria-label="Husstand – innstillinger for kjøkkenskjermen" title="Husstand"><span aria-hidden="true">⚙</span></a><div class="k-grid"><div class="k-left">' +
       '<div class="k-timeblock k-o1"><p class="k-clock" data-testid="k-klokke" aria-label="Klokka er ' + clock + '">' + clock + '</p><p class="k-date k-fadeable" data-testid="k-dato">' + esc(date) + '</p></div>' +
       '<div class="k-fadeable k-o2">' + dinner + '</div>' + (cal || '') +
       '</div><div class="k-right"><div class="k-o3">' + weatherHtml(s) + '</div>' + dep + next +
@@ -766,7 +798,7 @@
     var meta = [m.time, m.portions].filter(Boolean).join(' · ');
     return '<div class="k-stage"><div class="k-ctop"><div><h1 data-testid="k-kok-tittel">' + esc(m.name) + '</h1>' + (meta ? '<span class="m" data-testid="k-kok-meta">' + esc(meta) + '</span>' : '') + '</div>' +
       '<span class="k-awake" data-testid="k-vaaken"' + (wakeLock ? '' : ' hidden') + '>☀ Skjermen holdes våken</span>' +
-      '<button type="button" class="k-x" data-k="close" aria-label="Lukk oppskriften" data-testid="k-lukk">×</button></div>' +
+      '<button type="button" class="k-x" data-k="close" aria-label="Lukk oppskriften" data-testid="k-lukk">✕</button></div>' +
       '<div class="k-cgrid">' +
       // v0.18.3: på telefon er ingredienslista sammenleggbar (knappen vises bare på telefon, se kjokken.css)
       '<button type="button" class="k-ingtog" data-k="ingtog" data-testid="k-ing-vis" aria-expanded="' + (cook.ingOpen ? 'true' : 'false') + '">Ingredienser (' + m.ingredients.length + ') <span aria-hidden="true">' + (cook.ingOpen ? '▴' : '▾') + '</span></button>' +
@@ -849,13 +881,13 @@
   }
   /* ---------- ⚙ Innstillinger (v0.16: ark til høyre med tre faner) ---------- */
   var sheet = { tab: 'tid', near: null, nearErr: '', nearBusy: false, dirs: {}, adding: false, color: 1, calErr: '', calBusy: false, rmBusy: '' };
-  var KAL_ERR = { 'bad-scheme': 'Adressen må begynne med https:// eller webcal://.', blocked: 'Den adressen kan ikke brukes.', 'bad-url': 'Det ser ikke ut som en nettadresse.',
-    'not-ics': 'Fant ingen kalender på adressen. Bruk «Hemmelig adresse i iCal-format».', gone: 'Adressen virker ikke (finnes ikke, eller er tilbakestilt).',
+  var KAL_ERR = { 'bad-scheme': 'Kalenderlenken må begynne med https:// eller webcal://.', blocked: 'Den lenken kan ikke brukes.', 'bad-url': 'Det ser ikke ut som en nettadresse.',
+    'not-ics': 'Fant ingen kalender på lenken. Bruk «Hemmelig adresse i iCal-format».', gone: 'Kalenderlenken virker ikke (finnes ikke, eller er tilbakestilt).',
     'too-large': 'Kalenderen er for stor (over 8 MB).', timeout: 'Kalenderen svarte ikke i tide. Prøv igjen.', max: 'Dere har allerede 4 kalendere.', rate: 'For mange forsøk. Vent litt og prøv igjen.',
     name: 'Gi kalenderen et navn (opptil 30 tegn).', 'no-key': 'Kalender er ikke slått på ennå.', 'no-server': 'Fikk ikke kontakt. Er enheten på nett?',
     // v0.16.1: mer presise meldinger i stedet for «Prøv igjen»
-    dns: 'Fant ikke nettstedet i adressen. Sjekk at hele adressen er limt inn.', net: 'Kalendertjenesten svarte ikke. Prøv igjen om litt.',
-    http: 'Adressen ble ikke godtatt av kalendertjenesten.', redirects: 'Adressen sendte oss videre for mange ganger.',
+    dns: 'Fant ikke nettstedet i lenken. Sjekk at hele lenken er limt inn.', net: 'Kalendertjenesten svarte ikke. Prøv igjen om litt.',
+    http: 'Kalenderlenken ble ikke godtatt av kalendertjenesten.', redirects: 'Kalenderlenken sendte oss videre for mange ganger.',
     'google-429': 'Google slapp oss ikke inn til kalenderen akkurat nå (for mange forespørsler). Prøv igjen om noen minutter.',
     google: 'Kalendertjenesten svarte ikke (feil hos dem). Prøv igjen om litt.', slow: 'Kalenderen er for stor til å lese i tide.',
     'functions/deadline-exceeded': 'Kalenderen er for stor eller svarte for sent.', 'functions/unavailable': 'Fikk ikke kontakt med Knaggen. Prøv igjen.',
@@ -961,17 +993,17 @@
     if (!A.hid()) return '<p class="lead" data-testid="k-kal-uten">Kalendere kan legges til når denne enheten er med i en husstand.</p>';
     if (sheet.adding) {
       return '<form class="k-calform" data-k="calform" data-testid="k-kal-ny">' +
-        '<div class="guide"><b>Slik finner du adressen i Google Kalender</b><ol><li>Åpne Google Kalender i en nettleser på PC eller Mac (ikke i mobilappen).</li>' +
+        '<div class="guide"><b>Slik finner du kalenderlenken i Google Kalender</b><ol><li>Åpne Google Kalender i en nettleser på PC eller Mac (ikke i mobilappen).</li>' +
         '<li>Tannhjulet øverst til høyre → Innstillinger.</li><li>Til venstre, under «Innstillinger for kalenderne mine»: velg kalenderen.</li>' +
         '<li>Velg «Integrer kalenderen» og kopier «Hemmelig adresse i iCal-format».</li></ol></div>' +
-        '<p class="k-warn"><b>Adressen er hemmelig, som en nøkkel.</b> Den som har den, kan lese kalenderen. Del den ikke. Lekker den: trykk «Tilbakestill» i Google og lim inn den nye.</p>' +
+        '<p class="k-warn"><b>Kalenderlenken er hemmelig, som en nøkkel.</b> Den som har den, kan lese kalenderen. Del den ikke. Lekker den: trykk «Tilbakestill» i Google og lim inn den nye.</p>' +
         '<label class="fld"><span class="lab">Navn</span><input name="name" maxlength="30" required autocomplete="off" data-testid="k-kal-navn"></label>' +
-        '<label class="fld"><span class="lab">Hemmelig adresse (iCal)</span><input name="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" required data-testid="k-kal-url"></label>' +
+        '<label class="fld"><span class="lab">Kalenderlenke (hemmelig adresse i iCal-format)</span><input name="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" required data-testid="k-kal-url"></label>' +
         '<div class="fld"><span class="lab">Farge</span><div class="k-sw" role="radiogroup">' + [1, 2, 3, 4].map(function (c) {
           return '<button type="button" role="radio" aria-checked="' + (sheet.color === c) + '" aria-label="Farge ' + c + '" data-k="color" data-c="' + c + '" data-testid="k-kal-farge-' + c + '" class="' + (sheet.color === c ? 'on' : '') + '" style="background:var(--k-cal-' + c + ')">' + (sheet.color === c ? '✓' : '') + '</button>';
         }).join('') + '</div></div>' +
         '<p class="k-help k-err" data-testid="k-kal-feil"' + (sheet.calErr ? '' : ' hidden') + '>' + esc(sheet.calErr) + '</p>' +
-        '<div class="acts"><button type="submit" class="kb pri" data-testid="k-kal-legg"' + (sheet.calBusy ? ' disabled' : '') + '>' + (sheet.calBusy ? 'Sjekker adressen …' : 'Legg til') + '</button>' +
+        '<div class="acts"><button type="submit" class="kb pri" data-testid="k-kal-legg"' + (sheet.calBusy ? ' disabled' : '') + '>' + (sheet.calBusy ? 'Sjekker kalenderlenken …' : 'Legg til') + '</button>' +
         '<button type="button" class="kb" data-k="caladdx">Avbryt</button></div></form>';
     }
     if (!kal.list && !kal.busy) loadCal(true);
@@ -980,7 +1012,7 @@
       var bad = c.status === 'gone';
       return '<div class="row cal" data-testid="k-kal-rad"><span class="dot" style="background:var(--k-cal-' + (c.color || 1) + ')"></span>' +
         '<span><b>' + esc(c.name) + '</b>' + (c.mine && c.mask ? '<br><span class="meta" data-testid="k-kal-maske">' + esc(c.mask) + '</span>' : '') +
-        (bad ? '<br><span class="warnline" data-testid="k-kal-borte">Adressen virker ikke lenger – lim inn en ny</span>' : c.status === 'feil' ? '<br><span class="meta">Fikk ikke hentet sist</span>' : '') + '</span>' +
+        (bad ? '<br><span class="warnline" data-testid="k-kal-borte">Kalenderlenken virker ikke lenger – lim inn en ny</span>' : c.status === 'feil' ? '<br><span class="meta">Fikk ikke hentet sist</span>' : '') + '</span>' +
         '<span class="meta">' + (kal.at && c.status !== 'gone' ? 'hentet ' + two(new Date(kal.at).getHours()) + ':' + two(new Date(kal.at).getMinutes()) : '') + '</span>' +
         '<button type="button" class="kb del" data-k="calrm" data-id="' + esc(c.id) + '" data-testid="k-kal-fjern"' + (sheet.rmBusy === c.id ? ' disabled' : '') + '>Fjern</button></div>';
     }).join('');
@@ -1003,7 +1035,7 @@
     var panel = el.querySelector('.k-set'), sc = panel ? panel.querySelector('.k-setbody') : null, top = sc ? sc.scrollTop : 0;
     if (el.querySelector('.k-calform') && sheet.adding) {   // ikke tegn over skjemaet (ville tømt adressefeltet)
       var b = el.querySelector('[data-testid="k-kal-legg"]'), er = el.querySelector('[data-testid="k-kal-feil"]');
-      if (b) { b.disabled = sheet.calBusy; b.textContent = sheet.calBusy ? 'Sjekker adressen …' : 'Legg til'; }
+      if (b) { b.disabled = sheet.calBusy; b.textContent = sheet.calBusy ? 'Sjekker kalenderlenken …' : 'Legg til'; }
       if (er) { er.textContent = sheet.calErr; er.hidden = !sheet.calErr; }
       el.querySelectorAll('[data-k="color"]').forEach(function (x) { var on = +x.getAttribute('data-c') === sheet.color; x.className = on ? 'on' : ''; x.setAttribute('aria-checked', on); x.textContent = on ? '✓' : ''; });
       return;
@@ -1080,7 +1112,7 @@
     if (sheet.calBusy) return;
     var name = String(f.name.value || '').trim(), url = String(f.url.value || '').trim();
     if (!name || name.length > 30) { sheet.calErr = KAL_ERR.name; return refreshSheet(); }
-    if (!url) { sheet.calErr = 'Lim inn den hemmelige adressen.'; return refreshSheet(); }
+    if (!url) { sheet.calErr = 'Lim inn kalenderlenken.'; return refreshSheet(); }
     sheet.calBusy = true; sheet.calErr = ''; refreshSheet();
     api().calendar('legg', { name: name, color: sheet.color, url: url, from: dayIso(now()) }).then(function () {
       f.url.value = ''; sheet.calBusy = false; sheet.adding = false; kal.at = 0; refreshSheet(); loadCal(true);

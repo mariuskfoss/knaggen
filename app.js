@@ -66,6 +66,8 @@
 
   /* ---------- Hjelpere ---------- */
 
+  // v0.18.9: ✕ betyr bare «lukk»; å fjerne noe fra en liste er en søppelbøtte eller teksten «Fjern»
+  var ICON_TRASH = '<svg class="ic-trash" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>';
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -77,7 +79,8 @@
   // «15 min (+30 min i ovnen)»; passiv tid på 0 vises ikke. parts = { a, p } for egen typografi.
   function timeText(r, parts) {
     if (!r || !r.minutes) return '';
-    var a = r.minutes + ' min', p = passiveOf(r) ? '(+' + passiveOf(r) + ' min ' + PASSIVE_LABEL[r.passiveKind] + ')' : '';
+    // v0.18.9: ett format overalt – «45 min (20 aktivt)»; uten passiv tid bare «20 min»
+    var pm = passiveOf(r), a = (r.minutes + pm) + ' min', p = pm ? '(' + r.minutes + ' aktivt)' : '';
     if (parts) return { a: a, p: p };
     return a + (p ? ' ' + p : '');
   }
@@ -85,8 +88,7 @@
   function isDevHost() { var h = location.hostname; return h === 'localhost' || h === '127.0.0.1'; }
   function timeShort(r) {
     if (!r || !r.minutes) return '';
-    var p = passiveOf(r);
-    return p ? r.minutes + ' min aktiv · ' + (r.minutes + p) + ' min totalt' : r.minutes + ' min';
+    return timeText(r);   // v0.18.9: samme format som overalt
   }
   function timeHtml(r) { var t = timeText(r, true); return t ? '<b>' + esc(t.a) + '</b>' + (t.p ? ' <span class="tp">' + esc(t.p) + '</span>' : '') : ''; }
   function uid(prefix) {
@@ -190,7 +192,7 @@
     return h;
   }
   function aisleOptions(selected) { return optionList(AISLES, selected, null, AISLE_LABELS); }
-  function unitOptions(selected) { return optionList(UNITS, selected, '–'); }
+  function unitOptions(selected) { return optionList(UNITS, selected, 'enhet'); }
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }
 
@@ -1088,8 +1090,8 @@
         '<summary><span class="t"><b>' + title + '</b><span class="hs-sum-line" data-testid="hs-sum-' + testid + '">' + esc(sum) + '</span></span><span class="go" aria-hidden="true">›</span></summary>' +
         '<div class="hs-sec-body">' + body + '</div></details>';
     }
-    var h = '<section class="page" data-page="husstand">';
-    h += '<div class="page-head"><h2>Husstand</h2><a class="btn" href="#uke" data-testid="husstand-tilbake">Tilbake</a></div>';
+    var h = '<section class="page" data-page="husstand">', hb = backTo('#uke');
+    h += '<div class="page-head"><a class="back" href="' + hb[0] + '" data-testid="husstand-tilbake">‹ ' + hb[1] + '</a><h2>Husstand</h2></div>';
     // 1. Husstanden
     var scalePref = hsState().scale !== false;
     var b1 = '<p class="hs-h">Hvem spiser middag</p>' + peopleCountersHtml('hsh', hasP ? hsPeople() : hp, { testid: 'hs-innstillinger' }) +
@@ -1100,7 +1102,7 @@
       '<div class="form-actions plain"><button type="button" class="btn primary" data-action="hs-lagre-innstillinger" data-testid="hs-lagre">Lagre</button></div>' +
       (hh ? '<div class="hs-danger"><button type="button" class="btn danger" data-action="hs-slett" data-testid="hs-slett">Slett husstanden</button></div>' : '');
     var sum1 = hasP ? SC.peopleText(hsPeople(), true) + ' · ' + fmtPor(SC.porsjoner(hsPeople())) + ' porsjoner' : 'Ikke satt – regnes som 4';
-    h += sec('husstanden', 'Husstanden', sum1, b1, 'husstanden');
+    h += sec('husstanden', 'Hvem spiser', sum1, b1, 'husstanden');
     // 2. Middag i hverdagen
     var lim = weekdayLimit();
     var b2 = '<fieldset class="hv-limit"><legend class="sr-only">Middag i hverdagen</legend>' + [[0, 'Ingen grense'], [20, 'Helst under 20 min'], [30, 'Helst under 30 min'], [45, 'Helst under 45 min']].map(function (x) {
@@ -1133,7 +1135,7 @@
     if (ui.error && !hh) HS_OPEN.del = true;
     h += '<span id="deling"></span>' + sec('del', 'Del', sum4, b4, 'del');
     // 5. Denne telefonen
-    if (syncMode()) h += sec('telefon', 'Denne telefonen', hh ? 'Koblet til husstanden' : 'Ikke koblet', phoneRowsHtml(), 'telefon');
+    if (syncMode()) h += sec('telefon', 'Denne telefonen', hh ? 'Koblet til husstanden' : 'Bli med via lenke eller kode', phoneRowsHtml(), 'telefon');   // v0.18.9: «Ikke koblet» bare ett sted (Del)
     h += '</section>';
     main.innerHTML = h;
   }
@@ -1324,7 +1326,8 @@
       if (!m.hasOwnProperty(key)) m[key] = on;
       ops.setChecks(week, m);
     },
-    naCounts: function () { var b = buildList(true); return { list: b.items.filter(isOpen).length, week: isoWeek(new Date()), recipes: state.recipes.length }; },
+    naCounts: function () { var b = buildList(true); return { list: b.items.filter(isOpen).length, week: isoWeek(new Date()), recipes: state.recipes.length, planned: weekCount(weekDates(0)) }; },
+    startProgress: function () { try { return startProgress(); } catch (e) { return null; } },   // v0.18.9
     isoDate: isoDate, isoWeek: isoWeek,
     hid: function () { return hh ? hh.hid : null; },
     // v0.17: felles kjøkkenoppsett (null = ikke lest / finnes ikke / eldre regler)
@@ -1590,7 +1593,7 @@
       else if (parts[1] === 'finn') renderFinn();   // v0.11
       else if (parts[1] === 'hent') { if (parts[2] === 'sjekk' && imp.result) renderHentForm(); else renderHent(); }   // v0.12
       else if (parts[1] === 'tilpass' && parts[2]) renderTilpass(decodeURIComponent(parts[2]), parts[3] || '');
-      else if (parts[1] && recipeById(decodeURIComponent(parts[1]))) renderRecipeForm(decodeURIComponent(parts[1]));
+      else if (parts[1] && recipeById(decodeURIComponent(parts[1]))) { if (parts[2] === 'rediger') renderRecipeForm(decodeURIComponent(parts[1])); else renderRecipeView(decodeURIComponent(parts[1])); }   // v0.18.9: oppskriften først, Rediger inni
       else renderRetter();
     } else if (tab === 'uke') {
       if (parts[1] === 'engang' && /^\d{4}-\d\d-\d\d$/.test(parts[2] || '')) renderOneoffForm(parts[2]);
@@ -1615,7 +1618,7 @@
       '<input class="ing-qty" type="text" inputmode="decimal" placeholder="Mengde" aria-label="Mengde" value="' + esc(formatQty(ing.qty)) + '">' +
       '<select class="ing-unit" aria-label="Enhet">' + unitOptions(ing.unit) + '</select>' +
       '<select class="ing-aisle" aria-label="Avdeling">' + aisleOptions(ing.name ? itemAisle(ing.name, ing.aisle) : ing.aisle) + '</select>' +
-      '<button type="button" class="icon-btn" data-action="remove-ing" aria-label="Fjern ingrediens">✕</button>' +
+      '<button type="button" class="icon-btn ing-fjern" data-action="remove-ing" aria-label="Fjern ingrediens">Fjern</button>' +
       '</div></div>';
   }
   function ingredientsFieldset(ings) {
@@ -1825,6 +1828,7 @@
     var key = r.variant || (r.fromLib && r.fromLib.variant), d = (r.lib || (r.fromLib && r.fromLib.id)) ? dishById(r.lib || r.fromLib.id) : null;
     var v = d && key ? variantOf(d, key) : null;
     if (!v) return '';
+    if (!r.fromLib && / \(/.test(r.name || '')) return '';   // v0.18.9: varianten står allerede i navnet, «Taco (kjøttdeig)»
     return r.fromLib ? 'Tilpasset · ' + v.name : v.name;
   }
   function renderRetter() {
@@ -1866,9 +1870,9 @@
       h += '</ul>';
     }
     h += '<div class="footer-tools">';
-    if (hh) h += '<a class="linkbtn" href="#husstand" data-testid="husstand-lenke">Husstand og delingslenke</a>';
+    if (hh) h += '<a class="linkbtn" href="#husstand" data-testid="husstand-lenke">Husstand og innstillinger</a>';
     else {
-      if (syncMode()) h += '<a class="linkbtn" href="#husstand" data-testid="husstand-lenke">Del med husstanden</a><br>';
+      if (syncMode()) h += '<a class="linkbtn" href="#husstand" data-testid="husstand-lenke">Husstand og innstillinger</a><br>';
       if (isDevHost()) h += '<button type="button" class="linkbtn" data-action="reset-seed" data-testid="reset-seed">Tilbakestill testdata</button>';   // v0.18.8: bare i dev
     }
     if (memoryOnly && !hh) h += '<p class="warn">Nettleseren tillater ikke lagring – endringer forsvinner når du lukker siden.</p>';
@@ -1879,7 +1883,8 @@
   function renderRecipeForm(id) {
     var r = id ? recipeById(id) : null;
     var h = '<section class="page" data-page="rett-skjema">';
-    h += '<div class="page-head"><a class="back" href="#retter">‹ Retter</a><h2>' + (r ? 'Rediger rett' : 'Ny rett') + '</h2></div>';
+    var rb = r ? '#retter/' + encodeURIComponent(r.id) : '#retter';
+    h += '<div class="page-head"><a class="back" href="' + rb + '">‹ ' + (r ? 'Oppskriften' : 'Retter') + '</a><h2>' + (r ? 'Rediger rett' : 'Ny rett') + '</h2></div>';
     h += '<form id="recipe-form" data-id="' + esc(r ? r.id : '') + '" novalidate>';
     h += '<label class="field"><span>Navn</span><input id="f-name" type="text" required value="' + esc(r ? r.name : '') + '" placeholder="F.eks. Fiskesuppe"></label>';
     h += timeFieldsHtml(r);   // v0.11: tid i to deler, hjelpetekst bak (i)
@@ -1889,11 +1894,29 @@
     if (r) h += sourceHtml(r.source);   // v0.12: lenke til kildeoppskriften
     h += '<p class="form-error" id="form-error" hidden></p>';
     h += '<div class="form-actions"><button type="submit" class="btn primary" data-testid="lagre">Lagre</button>' +
-      '<a class="btn" href="#retter">Avbryt</a>' +
+      '<a class="btn" href="' + rb + '">Avbryt</a>' +
       (r ? '<button type="button" class="btn danger" data-action="delete-recipe">Slett</button>' : '') + '</div>';
     h += '</form></section>';
     main.innerHTML = h;
     if (!r) document.getElementById('f-name').focus();
+  }
+
+  // v0.18.9: trykk på en rett viser oppskriften (les), «Rediger» åpner skjemaet
+  function renderRecipeView(id) {
+    var r = recipeById(id); if (!r) { location.hash = '#retter'; return; }
+    var vl = variantLabel(r), meta = [timeText(r), vl, r.note].filter(Boolean);
+    var steps = r.steps && r.steps.length ? r.steps : defaultSteps(r);
+    var h = '<section class="page" data-page="rett">';
+    h += '<div class="page-head"><a class="back" href="#retter">‹ Retter</a><h2 data-testid="rett-navn">' + esc(r.name) + '</h2>' +
+      '<a class="btn" href="#retter/' + encodeURIComponent(r.id) + '/rediger" data-testid="rett-rediger">Rediger</a></div>';
+    if (meta.length) h += '<p class="rv-meta" data-testid="rett-meta">' + esc(meta.join(' · ')) + '</p>';
+    h += '<h3 class="section-title">Ingredienser</h3><ul class="rv-ing" data-testid="rett-ingredienser">' + (r.ingredients || []).filter(function (i) { return i && String(i.name || '').trim(); }).map(function (i) {
+      return '<li>' + (i.qty != null && i.qty !== '' ? '<b>' + esc(formatQty(i.qty) + (i.unit ? ' ' + i.unit : '')) + '</b> ' : '') + esc(i.name) + '</li>';
+    }).join('') + '</ul>';
+    if (steps.length) h += '<h3 class="section-title">Slik gjør du</h3><ol class="rv-steps" data-testid="rett-steg">' + steps.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>';
+    h += sourceHtml(r.source);
+    h += '</section>';
+    main.innerHTML = h;
   }
 
   // v0.11: «Tid (i)» – [min ved benken] og [min av seg selv] med [i ovnen | koketid | heving]
@@ -1901,12 +1924,12 @@
     var pm = passiveOf(r), pk = r && PASSIVE_LABEL[r.passiveKind] ? r.passiveKind : 'ovn';
     return '<div class="field v11-timefield"><div class="v11-lab"><span id="f-time-l">Tid</span>' +
       '<button type="button" class="v11-i" data-action="time-info" aria-expanded="false" aria-controls="f-minutes-hint" aria-label="Om tid" data-testid="tid-info"><span aria-hidden="true">i</span></button></div>' +
-      '<p class="field-hint" id="f-minutes-hint" hidden>Bare tiden ved benken teller. «Fyll man–fre» velger helst retter på ' + fillLimit() + ' min eller mindre ved benken. Tid i ovnen, koketid og heving teller ikke.</p>' +
+      '<p class="field-hint" id="f-minutes-hint" hidden>Tiden skrives «45 min (20 aktivt)». Bare aktiv tid teller: «Fyll man–fre» velger helst retter med ' + fillLimit() + ' min aktiv tid eller mindre. Tid i ovnen, koketid og heving teller ikke.</p>' +
       '<div class="v11-time"><label><input id="f-minutes" type="number" inputmode="numeric" min="0" step="1" value="' + esc(r && r.minutes != null ? r.minutes : '') + '" placeholder="30" aria-label="Minutter ved benken" aria-describedby="f-minutes-hint">' +
-      '<span class="unit">min ved benken</span></label>' +
+      '<span class="unit">min aktivt</span></label>' +
       '<div><div class="pass"><input id="f-passive" type="number" inputmode="numeric" min="0" step="1" value="' + (pm ? pm : '') + '" placeholder="0" aria-label="Minutter av seg selv">' +
       '<select id="f-passive-kind" aria-label="Hva som går av seg selv">' + ['ovn', 'koking', 'heving'].map(function (k) { return '<option value="' + k + '"' + (k === pk ? ' selected' : '') + '>' + PASSIVE_LABEL[k] + '</option>'; }).join('') + '</select></div>' +
-      '<span class="unit">min av seg selv</span></div></div></div>';
+      '<span class="unit">min i tillegg</span></div></div></div>';
   }
   function readTimeFields(r) {
     var pr = (document.getElementById('f-passive') || {}).value || '';
@@ -1942,7 +1965,7 @@
     }
     var fromLib = !r && form.getAttribute('data-from-lib');
     toast(r ? 'Lagret' : fromLib ? '«' + name + '» er lagt til i våre retter' : 'Rett lagt til');
-    location.hash = fromLib ? '#retter/finn' : '#retter';
+    location.hash = fromLib ? '#retter/finn' : r ? '#retter/' + encodeURIComponent(r.id) : '#retter';
   }
 
   function deleteRecipe(id) {
@@ -1993,7 +2016,7 @@
   function dishRecipe(d, v) {
     var id = 'lib-' + d.id + '-' + v.key, n = 2;
     while (recipeById(id)) id = 'lib-' + d.id + '-' + v.key + '-' + (n++);
-    var r = { id: id, name: d.name, minutes: v.minutes, note: '', origin: 'knaggen', servings: v.servings || 4, lib: d.id, variant: v.key,
+    var r = { id: id, name: d.name + (d.variants.length > 1 ? ' (' + v.name.charAt(0).toLowerCase() + v.name.slice(1) + ')' : ''), minutes: v.minutes, note: '', origin: 'knaggen', servings: v.servings || 4, lib: d.id, variant: v.key,
       ingredients: v.ingredients.map(function (i) { return { name: i[0], qty: i[1], unit: i[2], aisle: normAisle(i[3]) }; }),
       steps: (v.steps || []).slice() };
     if (v.passiveMinutes) { r.passiveMinutes = v.passiveMinutes; r.passiveKind = v.passiveKind; }
@@ -2007,7 +2030,7 @@
     var r = dishRecipe(d, v);
     ops.saveRecipe(r, true);
     renderFinnList();
-    toast(d.name + ' · ' + v.name + ' lagt til', UNDO_MS, { label: 'Angre', run: function () {
+    toast(r.name + ' lagt til', UNDO_MS, { label: 'Angre', run: function () {
       if (!recipeById(r.id)) return;
       var used = Object.keys(state.week_plan).filter(function (x) { return state.week_plan[x] === r.id; });
       ops.deleteRecipe(r.id, used);
@@ -2036,10 +2059,32 @@
     var names = Object.keys(cats).sort(function (a, b) { return a.localeCompare(b, 'nb'); });
     if (!list.length) return '<p class="empty" data-testid="finn-tomt">Ingen retter passer. Prøv et annet filter.</p>';
     var T = finnTime(), h = '';
+    // v0.18.9: ved søk står eksakt navn og navn som begynner med søkeordet øverst, før kategoriene
+    var top = [];
+    if (finn.q) {
+      var q0 = normName(finn.q);
+      top = list.filter(function (d) { return normName(d.name).indexOf(q0) === 0; }).sort(function (a, b) {
+        var ea = normName(a.name) === q0 ? 0 : 1, eb = normName(b.name) === q0 ? 0 : 1;
+        return ea - eb || a.name.length - b.name.length || a.name.localeCompare(b.name, 'nb');
+      });
+      if (top.length) {
+        h += '<h3 class="v11-cat"><span>Beste treff · ' + top.length + '</span></h3><ul class="v11-rows" data-testid="finn-gruppe" data-best="1">';
+        top.forEach(function (d) { h += finnRowHtml(d, T); });
+        h += '</ul>';
+      }
+    }
     names.forEach(function (c) {
+      cats[c] = cats[c].filter(function (d) { return top.indexOf(d) < 0; });
+      if (!cats[c].length) return;
       var ds = cats[c].sort(function (a, b) { return a.name.localeCompare(b.name, 'nb'); });
       h += '<h3 class="v11-cat"><span>' + esc(c) + ' · ' + ds.length + '</span></h3><ul class="v11-rows" data-testid="finn-gruppe">';
-      ds.forEach(function (d) {
+      ds.forEach(function (d) { h += finnRowHtml(d, T); });
+      h += '</ul>';
+    });
+    return h;
+  }
+  function finnRowHtml(d, T) {
+        var h = '';
         var own = ownedDish(d), v = variantOf(d, finn.sel[d.id]) || defaultVariant(d, T), open = finn.open === d.id;
         var done = own.any;   // hake når husstanden har retten (en variant, tilpasset eller fra før); ✓ åpner variantene
         h += '<li class="' + (open ? 'v11-open' : '') + '" data-dish="' + esc(d.id) + '" data-testid="finn-rett">' +
@@ -2047,10 +2092,7 @@
           '<b>' + esc(d.name) + '</b></button><span class="tid" data-testid="finn-tid">' + esc(timeShort(v)) + '</span>' +
           '<button type="button" class="v11-add' + (done ? ' on' : '') + '" data-action="finn-add" data-dish="' + esc(d.id) + '" data-testid="finn-pluss" aria-label="' + (done ? 'Lagt til: ' + esc(d.name) + ' – vis varianter' : 'Legg til ' + esc(d.name)) + '">' + (done ? '✓' : '+') + '</button></div>' +
           (open ? finnVariantsHtml(d, own) : '') + '</li>';
-      });
-      h += '</ul>';
-    });
-    return h;
+        return h;
   }
   function renderFinnList() {
     var el = main.querySelector('[data-testid="finn-liste"]');
@@ -2060,23 +2102,25 @@
     if (keep) { var k = el.querySelector(keep); if (k) k.focus({ preventScroll: true }); }
     var c = main.querySelector('[data-testid="finn-antall"]'); if (c) c.textContent = finnCount();
   }
-  function finnCount() { var n = state.recipes.length; return n + (n === 1 ? ' rett' : ' retter') + ' i våre retter'; }
+  function finnCount() { var n = state.recipes.length; return n + ' valgt'; }
+  // v0.18.9: startet fra Kom i gang (#retter/finn/uke) → Ferdig går tilbake til Uke, der neste steg står åpent
+  function finnBack() { return /^#retter\/finn\/uke/.test(location.hash) ? ['#uke', 'Uke'] : ['#retter', 'Retter']; }
   function renderFinn() {
     var lim = weekdayLimit(), T = finnTime();
-    var h = '<section class="page" data-page="finn">';
-    h += '<div class="page-head"><a class="back" href="#retter">‹ Retter</a><h2>Finn retter</h2><a class="btn" href="#retter" data-testid="finn-ferdig">Ferdig</a></div>';
+    var h = '<section class="page" data-page="finn">', fb = finnBack();
+    h += '<div class="page-head"><a class="back" href="' + fb[0] + '" data-testid="finn-tilbake">‹ ' + fb[1] + '</a><h2>Finn retter</h2><a class="btn" href="' + fb[0] + '" data-testid="finn-ferdig">Ferdig</a></div>';
     if (lim) h += '<p class="v11-limit" data-testid="finn-grense">Hverdag: <b>under ' + lim + ' min</b> · <a href="#husstand/hverdag" data-testid="finn-grense-endre">endre</a></p>';
     h += '<label class="v11-search"><span class="sr">Søk etter rett</span><input id="finn-q" type="search" placeholder="Søk etter rett eller ingrediens" value="' + esc(finn.q) + '" autocomplete="off" data-testid="finn-sok"></label>';
     var chip = function (on, act, val, label, extra) { return '<button type="button" class="fv-chip' + (on ? ' on' : '') + '" aria-pressed="' + on + '" data-action="' + act + '" data-val="' + esc(val) + '"' + (extra || '') + '>' + esc(label) + '</button>'; };   // v0.18.8: haken kommer fra CSS (.fv-chip.on::before)
     h += '<div class="v11-chips" role="group" aria-label="Tid og barn">';
     if (lim && lim !== 15 && lim !== 30) h += chip(T === lim, 'finn-time', lim, 'Under ' + lim + ' min', ' data-testid="finn-tid-grense"');
     h += chip(T === 15, 'finn-time', 15, 'Rask', ' data-testid="finn-tid-rask"') + chip(T === 30, 'finn-time', 30, 'Hverdag', ' data-testid="finn-tid-hverdag"') +
-      chip(!T, 'finn-time', 0, 'Alle', ' data-testid="finn-tid-alle"') + '<span class="sep" aria-hidden="true"></span>' +
+      chip(!T, 'finn-time', 0, 'All tid', ' data-testid="finn-tid-alle"') + '<span class="sep" aria-hidden="true"></span>' +
       chip(finn.kids, 'finn-kids', 1, 'Barna spiser', ' data-testid="finn-barn"') + '</div>';
     h += '<div class="v11-chips" role="group" aria-label="Kategori">' + (window.UKESHANDEL_DISH_CATEGORIES || []).map(function (c) {
       return chip(finn.cat === c, 'finn-cat', c, c, ' data-testid="finn-kat"'); }).join('') + '</div>';
     h += '<div data-testid="finn-liste">' + finnListHtml() + '</div>';
-    h += '<div class="v11-foot"><span data-testid="finn-antall">' + finnCount() + '</span><a class="btn primary" href="#retter">Ferdig</a></div>';
+    h += '<div class="v11-foot"><span data-testid="finn-antall">' + finnCount() + '</span><a class="btn primary" href="' + fb[0] + '" data-testid="finn-ferdig-bunn">Ferdig</a></div>';
     h += '</section>';
     main.innerHTML = h;
   }
@@ -2412,7 +2456,7 @@
         peopleCountersHtml('hs0', { voksen: 2, barn: 2, smabarn: 0 }) +
         '<div class="hs-acts">' +
         '<button type="button" class="btn primary" data-action="hs-bruk" data-testid="hs-bruk">Bruk</button>' +
-        '<button type="button" class="btn ghost" data-action="hs-hopp" data-testid="hs-hopp">Hopp over</button></div></section>';
+        '<button type="button" class="btn ghost" data-action="hs-hopp" data-testid="hs-hopp">Hopp over dette steget</button></div></section>';
     } else if (!swapFrom && showInstallCard(dates)) {
       h += installCardHtml();
     }
@@ -2480,7 +2524,7 @@
     } else {
       // v0.11 (spec 2, Uke): «Fyll man–fre» og «Tøm uka» i ⋯-menyen; Fyll som egen knapp bare når uka er tom (og det finnes retter).
       h += '<div class="week-tools v11-head"><p class="summary grow" data-testid="uke-oppsummering">' + count + ' av 7 kvelder har middag</p>' +
-        '<button type="button" class="btn v11-more" data-action="week-menu" data-testid="uke-meny" aria-haspopup="dialog" aria-label="Mer for uka">⋯</button></div>';
+        (count ? '<button type="button" class="btn v11-more" data-action="week-menu" data-testid="uke-meny" aria-haspopup="dialog" aria-label="Mer for uka">⋯</button>' : '') + '</div>';   // v0.18.9: tom uke → bare «Fyll man–fre», ingen ⋯
       if (!count && hasRecipes && startStep !== 1 && !swapFrom) h += '<div class="row-actions v11-fill"><button type="button" class="btn primary" data-action="fill-weekdays" data-testid="fyll">Fyll man–fre</button></div>';
       if (ui.notice) { h += '<p class="notice" role="status" data-testid="uke-notis">' + esc(ui.notice) + '</p>'; ui.notice = ''; }
       h += '<ol class="days v11-rows">';
@@ -2493,7 +2537,7 @@
         // Merke bare ved avvik: hvem som spiser (+2 til middag …), eller tid over det vanlige
         var tag = '';
         if (r && dayDelta(d)) tag = dayTagText(d);
-        else if (r && r.minutes && r.minutes > fillLimit()) tag = r.minutes + ' min';
+        else if (r && r.minutes && r.minutes > fillLimit()) tag = 'over ' + fillLimit() + ' min';   // v0.18.9: merke for avvik, ikke en tid
         h += '<li class="day v11-day' + (d === today ? ' today' : '') + (r || o ? '' : ' is-empty') + (o ? ' has-oneoff' : '') +
           (swapFrom === d ? ' swap-from' : swapFrom ? ' swap-target' : '') + '" data-date="' + d + '">' +
           '<div class="v11-row">' +
@@ -2565,7 +2609,7 @@
         h += '<option value="' + esc(x.id) + '"' + (r && r.id === x.id ? ' selected' : '') + '>' + esc(x.name + (vl ? ' · ' + vl : '')) +
           (takenElsewhere ? (r ? ' (bytt med ' : ' (flytt fra ') + DAY_SHORT[usedIdx] + ')' : '') + '</option>';
       });
-      h += '<option value="__oneoff__">＋ Engangsmiddag …</option></select>' + swapBtn(d, dn) + '</div>';
+      h += '</select>' + swapBtn(d, dn) + '</div>';   // v0.18.9: Engangsmiddag bare som lenke under
       var meta = [];
       if (r) { if (r.minutes) meta.push(timeText(r)); if (r.note) meta.push(r.note); }
       var fTag = '';
@@ -2575,7 +2619,7 @@
           fTag = ' <span class="hs-tag" data-testid="hs-tilpasset">Tilpasset ' + SC.fmt(ff) + '</span>';
       }
       h += '<div class="day-foot"><span class="day-meta">' + esc(meta.join(' · ')) + fTag + '</span>' +
-        (r ? '' : '<a class="linkbtn" href="#uke/engang/' + d + '">+ Engangsmiddag</a>') + '</div>';
+        '<a class="linkbtn" href="#uke/engang/' + d + '" data-testid="dag-engang">+ Engangsmiddag</a></div>';
       if (r) h += markSegHtml(d);
       if (r) h += chipHtml(d, r) || ('<button type="button" class="v11-row v11-who" data-action="hs-day" data-date="' + d + '" data-testid="hs-endre"><span class="t"><b>Hvem spiser: ' +
         esc(hsPeople() ? SC.peopleText(hsPeople(), true) : 'som vanlig') + '</b></span><span class="tid">Endre ›</span></button>');
@@ -2597,11 +2641,11 @@
   function markMenuHtml(d) {
     var cur = markOf(d);
     return '<div class="overlay" id="mark-menu" data-action="mark-menu-close"><div class="sheet menu-sheet" role="dialog" aria-modal="true" aria-labelledby="mm-h" data-testid="merke-meny">' +
-      '<div class="sheet-head"><h3 id="mm-h">' + esc(dayName(d) + ': ' + dinnerName(d)) + '</h3></div><ul class="v11-menu">' +
+      '<div class="sheet-head"><h3 id="mm-h">' + esc(dayName(d) + ': ' + dinnerName(d)) + '</h3><button type="button" class="icon-btn" data-action="mark-menu-close" data-testid="mm-lukk" aria-label="Lukk">✕</button></div><ul class="v11-menu">' +
       '<li><button type="button" data-action="mark-set" data-date="' + d + '" data-mark="' + (cur === 'handlet' ? '' : 'handlet') + '" data-testid="mm-handlet">' + (cur === 'handlet' ? 'Kjøp inn likevel' : 'Allerede handlet') + '</button></li>' +
       '<li><button type="button" data-action="mark-set" data-date="' + d + '" data-mark="' + (cur === 'rester' ? '' : 'rester') + '" data-testid="mm-rester">' + (cur === 'rester' ? 'Ikke rester likevel' : 'Rester') + '</button></li>' +
       '<li><button type="button" class="danger" data-action="mark-clear-day" data-date="' + d + '" data-testid="mm-fjern">Fjern middagen</button></li>' +
-      '</ul><button type="button" class="btn block" data-action="mark-menu-close" data-testid="mm-lukk">Lukk</button></div></div>';
+      '</ul></div></div>';
   }
   function setMark(d, mark, from) {
     var e = dayEntry(d);
@@ -2648,10 +2692,10 @@
     var fillOff = !hasRecipes || !emptyWeekdays;
     var why = !hasRecipes ? 'ingen retter ennå' : 'alle hverdager har middag';
     return '<div class="overlay" id="week-menu" data-action="week-menu-close"><div class="sheet menu-sheet" role="dialog" aria-modal="true" aria-labelledby="wm-h" data-testid="uke-meny-ark">' +
-      '<div class="sheet-head"><h3 id="wm-h">' + esc('Uke ' + isoWeek(parseIso(dates[0]))) + '</h3></div><ul class="v11-menu">' +
+      '<div class="sheet-head"><h3 id="wm-h">' + esc('Uke ' + isoWeek(parseIso(dates[0]))) + '</h3><button type="button" class="icon-btn" data-action="week-menu-close" data-testid="uke-meny-lukk" aria-label="Lukk">✕</button></div><ul class="v11-menu">' +
       '<li><button type="button" data-action="fill-weekdays" data-testid="fyll"' + (fillOff ? ' disabled' : '') + '>Fyll man–fre' + (fillOff ? '<span class="s">· ' + why + '</span>' : '') + '</button></li>' +
       (count ? '<li><button type="button" class="danger" data-action="clear-week" data-testid="tom-uka">Tøm uka…</button></li>' : '') +
-      '</ul><button type="button" class="btn block" data-action="week-menu-close" data-testid="uke-meny-lukk">Lukk</button></div></div>';
+      '</ul></div></div>';
   }
   function setDay(date, recipeId) {
     ui.swap = null;
@@ -3301,12 +3345,7 @@
     remote(function (w, hid) { return w.setHouseholdSettings(hid, state.household_size); });
     if (opts.toast !== false) {
       var p = state.household_size.people;
-      if (p) toast('Retter fra Knaggen er tilpasset ' + SC.peopleText(p, true), 8000, function () {
-        state.household_size = prev;
-        save();
-        remote(function (w, hid) { return w.setHouseholdSettings(hid, state.household_size); });
-        route();
-      });
+      if (p) toast('Retter fra Knaggen er tilpasset ' + SC.peopleText(p, true), 8000, { label: 'Endre', run: function () { location.hash = '#husstand'; } });   // v0.18.9: «Endre» i stedet for et uklart «Angre»
     }
     route();
   }
@@ -3494,12 +3533,12 @@
       '<button type="button" class="icon-btn" data-basis="close" aria-label="Lukk">✕</button></div>' +
       '<p class="hint" id="basis-hint">Brukes i middagene på lista. Kryss av det dere må kjøpe – resten legges ikke på lista.</p>' +
       '<ul class="basis-rows">' + rows + '</ul>' +
-      '<div class="basis-actions"><button type="button" class="btn primary" data-basis="save" data-testid="basis-lagre"></button>' +
-      '<button type="button" class="btn" data-basis="ignore" data-testid="basis-ignorer">Ignorer</button></div></div>';
+      '<div class="basis-actions"><button type="button" class="btn primary" data-basis="save" data-testid="basis-lagre">Ferdig</button></div>' +
+      '<p class="hint" data-testid="basis-igjen">Vi spør igjen neste uke, og når nye basisvarer dukker opp.</p></div>';
     document.body.appendChild(d);
     function label() {
       var n = d.querySelectorAll('.basis-rows input:checked').length;
-      d.querySelector('[data-basis="save"]').textContent = n ? 'Legg ' + n + ' på lista' : 'Lagre – ingen på lista';
+      d.querySelector('[data-basis="save"]').textContent = n ? 'Ferdig – legg ' + n + ' på lista' : 'Ferdig';   // v0.18.9: én knapp
     }
     label();
     d.addEventListener('change', label);
@@ -3574,7 +3613,7 @@
         return normName(s.name).indexOf(qn) >= 0 || stapleKey(s.name).indexOf(qk) >= 0 || stapleKey(s.name) === qk;
       });
       var groups = staplesGrouped(rows);
-      var body = '<div class="uv-head"><h3 id="fast-h">Faste varer på lista</h3>' +
+      var body = '<div class="uv-head"><h3 id="fast-h">Faste varer denne uka</h3>' +
         '<button type="button" class="btn small" data-fast="edit" data-testid="faste-rediger-alle">Rediger</button>' +
         '<button type="button" class="icon-btn" data-fast="close" data-testid="faste-avbryt" aria-label="Lukk">✕</button></div>';
       if (!total) {
@@ -3793,7 +3832,7 @@
       '<div class="ai-row"><input type="text" id="ai-qty" inputmode="decimal" placeholder="1" aria-label="Mengde">' +
       '<select id="ai-unit" aria-label="Enhet">' + unitOptions('') + '</select>' +
       '<select id="ai-aisle" aria-label="Avdeling">' + aisleOptions('Tørrvare') + '</select></div>' +
-      '<label class="check"><input type="checkbox" id="ai-staple"> Legg til i faste husvarer</label>' +
+      '<label class="check"><input type="checkbox" id="ai-staple"> Legg til i faste varer</label>' +
       '<button type="submit" class="btn primary">Legg til</button></form>' + knownNamesDatalist() + '</div>';
   }
   // Merkevares ikoner (＋ og ⋯) i K-knagg-stil, inline så de arver farge.
@@ -3818,15 +3857,14 @@
     var nOda = hh ? delLines(delItems()).length : 0;
     var rows = row('copy-text', 'kopier', 'Kopier som tekst', '') +
       (nOda ? row('del-open', 'del-inngang', 'Del lista til Oda', nOda + (nOda === 1 ? ' vare' : ' varer'), ' aria-haspopup="dialog"') : '') +
-      row('fast-open', 'fra-faste', 'Faste varer på lista', nFast ? nFast + ' på lista' : 'ingen valgt', ' aria-haspopup="dialog"') +
-      row('faste-page', 'alle-faste', 'Alle faste varer', state.staples.length ? state.staples.length + (state.staples.length === 1 ? ' vare' : ' varer') : 'ingen ennå') +
-      (bs.length ? row('basis-open', 'basis-meny', 'Basisvarer', und ? und + ' ikke valgt' : added + ' av ' + bs.length + ' lagt til', ' aria-haspopup="dialog"') : '') +
+      row('fast-open', 'fra-faste', 'Faste varer – velg for denne uka', state.staples.length ? nFast + ' av ' + state.staples.length + ' på lista' : 'ingen ennå', ' aria-haspopup="dialog"') +
+      (bs.length ? row('basis-open', 'basis-meny', 'Basisvarer', (und ? und + ' ikke valgt' : added + ' av ' + bs.length + ' lagt til') + ' · ting dere ofte har hjemme (mel, krydder)', ' aria-haspopup="dialog"') : '') +
       (nChecked ? row('uncheck-all', 'fjern-avkrysning', 'Fjern avkrysning …', nChecked + ' krysset av') : '');
     var d = document.createElement('div');
     d.id = 'list-menu';
     d.className = 'overlay';
     d.innerHTML = '<div class="sheet menu-sheet" role="dialog" aria-modal="true" aria-labelledby="mer-h">' +
-      '<div class="sheet-head"><h3 id="mer-h">Lista</h3><button type="button" class="btn small" data-menu="close" data-testid="mer-lukk">Lukk</button></div>' +
+      '<div class="sheet-head"><h3 id="mer-h">Handleliste</h3><button type="button" class="icon-btn" data-menu="close" data-testid="mer-lukk" aria-label="Lukk">✕</button></div>' +
       '<ul class="menu-rows">' + rows + '</ul></div>';
     document.body.appendChild(d);
     var mer = main.querySelector('[data-action="list-menu"]');
@@ -4056,7 +4094,7 @@
   function butikkLi(i) {
     var pureExtra = i.sources.length === 1 && i.sources[0] === 'extra';
     return itemLi(i, { kind: i.source, row: i.key, name: i.name, qu: i.plan ? i.plan.text : '', src: srcBits(i), info: infoBits(i),
-      ctl: (pureExtra ? '<button type="button" class="qbtn" data-action="remove-extra" aria-label="Fjern ' + esc(i.name) + '">✕</button>' : '') +
+      ctl: (pureExtra ? '<button type="button" class="qbtn" data-action="remove-extra" aria-label="Fjern ' + esc(i.name) + '">' + ICON_TRASH + '</button>' : '') +
         '<button type="button" class="qbtn" data-action="qty-dec" aria-label="Mindre ' + esc(i.name) + '"' + (i.qty ? '' : ' disabled') + '>−</button>' +
         '<button type="button" class="qbtn" data-action="qty-inc" aria-label="Mer ' + esc(i.name) + '">+</button>' });
   }
@@ -4070,7 +4108,7 @@
     if (r.kind === 'dinner' && i.basisvare) src.push('basisvare');
     if (r.kind === 'staple') src.push('fast vare');
     return itemLi(i, { kind: r.kind === 'dinner' ? 'dinner' : r.kind, row: r.row, name: r.name, qu: r.amount, src: src, info: infoBits(i),
-      ctl: r.kind === 'extra' ? '<button type="button" class="qbtn" data-action="remove-extra" data-extras="' + esc(r.extra_ids.join(',')) + '" aria-label="Fjern ' + esc(r.name) + '">✕</button>' : '' });
+      ctl: r.kind === 'extra' ? '<button type="button" class="qbtn" data-action="remove-extra" data-extras="' + esc(r.extra_ids.join(',')) + '" aria-label="Fjern ' + esc(r.name) + '">' + ICON_TRASH + '</button>' : '' });
   }
 
   function renderListSection() { renderListSection0(); }
@@ -4140,7 +4178,7 @@
         return '<button type="button" class="v11-tag dev-tag" data-action="hs-slik" data-testid="hs-avvik" aria-label="' + esc(t) + ' – se husstanden">' + esc(t) + '</button>';
       }).join('') + '</div>';
       if (ui.sortOpen) h += '<div class="overlay v11-sort-bg" data-action="sort-close-bg"><div class="sheet menu-sheet" role="dialog" aria-modal="true" aria-labelledby="sort-h" data-testid="sort-ark">' +
-        '<div class="sheet-head"><h3 id="sort-h">Sortering</h3><button type="button" class="btn small" data-action="sort-close">Lukk</button></div>' +
+        '<div class="sheet-head"><h3 id="sort-h">Sortering</h3><button type="button" class="icon-btn" data-action="sort-close" aria-label="Lukk">✕</button></div>' +
         '<ul class="menu-rows" role="radiogroup" aria-labelledby="sort-h">' + SORTS.map(function (x) {
           var on = ui.sort === x[0];
           return '<li><button type="button" class="menu-row' + (on ? ' on' : '') + '" role="radio" aria-checked="' + on + '" data-action="sort" data-sort="' + x[0] + '" aria-pressed="' + on + '"><span>' + x[1] + '</span><span class="mr-meta">' + x[2] + '</span></button></li>';
@@ -4530,7 +4568,7 @@
       h += '<button type="button" class="fv-chip' + (on ? ' on' : '') + '" data-action="fv-aisle" data-aisle="' + esc(a) + '" aria-pressed="' + (on ? 'true' : 'false') + '">' + esc(aisleLabel(a)) + '</button>';
     });
     h += '</div></div><div class="fv-ed-acts">' +
-      '<button type="button" class="fv-del" data-action="fv-delete" data-testid="faste-slett">Slett vare</button>' +
+      '<button type="button" class="fv-del" data-action="fv-delete" data-testid="faste-slett">Fjern vare</button>' +
       '<button type="button" class="btn primary" data-action="fv-done" data-testid="faste-ferdig">Ferdig</button></div></div>';
     return h;
   }
@@ -4776,14 +4814,14 @@
   }
   function recipesStepBody() {
     var lim = weekdayLimit();
-    return '<p>Scroll gjennom lista og trykk + på det dere spiser. Ett trykk per rett.</p>' +
+    return '<p>Bla gjennom lista og trykk + på det dere spiser. Ett trykk per rett – varianten kan byttes etterpå.</p>' +
       '<p class="m" id="km-lim-q">Hvor lang tid har dere på hverdager? (valgfritt)</p>' +
       '<div class="v11-chips km-lim" role="group" aria-labelledby="km-lim-q">' + [[0, 'Ingen grense'], [20, 'Under 20 min'], [30, 'Under 30 min'], [45, 'Under 45 min']].map(function (x) {
         var on = (lim || 0) === x[0];
         return '<button type="button" class="fv-chip' + (on ? ' on' : '') + '" aria-pressed="' + on + '" data-action="km-limit" data-val="' + x[0] + '" data-testid="km-grense">' + x[1] + '</button>';
       }).join('') + '</div>' +
-      '<div class="km-acts"><a class="btn primary" href="#retter/finn" data-testid="km-finn">Finn retter</a>' +
-      '<button type="button" class="btn ghost" data-action="km-finn-hopp" data-testid="km-finn-hopp">Hopp over</button></div>';
+      '<div class="km-acts"><a class="btn primary" href="#retter/finn/uke" data-testid="km-finn">Finn retter</a>' +
+      '<button type="button" class="btn ghost" data-action="km-finn-hopp" data-testid="km-finn-hopp">Hopp over dette steget</button></div>';
   }
   function listCount() {
     try { return buildList(true).items.length; } catch (e) { return 0; }
@@ -4794,7 +4832,7 @@
     var h = '<section class="km" aria-labelledby="km-t" data-testid="kom-i-gang">' +
       '<p class="km-t" id="km-t">Velg middager for uka, så lager handlelista seg selv.</p>' +
       '<p class="km-tag">Husets felles huskeliste</p>' +
-      '<button type="button" class="km-x" data-action="km-close" data-testid="kom-i-gang-lukk" aria-label="Lukk Kom i gang">×</button>' +
+      '<button type="button" class="km-x" data-action="km-close" data-testid="kom-i-gang-lukk" aria-label="Lukk Kom i gang">✕</button>' +
       '<ol class="km-steps" aria-label="Kom i gang, tre steg">';
     var done = '<span class="n">' + IC.check + '</span>';
     if (!st.s0) h += '<li class="on" data-step="0"><span class="n">0</span><span class="h">Velg 5–10 retter familien liker</span><div class="km-body">' + recipesStepBody() + '</div></li>';
@@ -4822,7 +4860,7 @@
         '<p class="m">Da passer mengdene i rettene fra Knaggen. Egne retter endres ikke.</p>' +
         peopleCountersHtml('hs0', { voksen: 2, barn: 2, smabarn: 0 }) +
         '<div class="km-acts"><button type="button" class="btn primary" data-action="hs-bruk" data-testid="hs-bruk">Bruk</button>' +
-        '<button type="button" class="btn ghost" data-action="hs-hopp" data-testid="hs-hopp">Hopp over</button></div></div></li>';
+        '<button type="button" class="btn ghost" data-action="hs-hopp" data-testid="hs-hopp">Hopp over dette steget</button></div></div></li>';
     } else {
       h += '<li class="todo" data-step="2"><span class="n">2</span><span class="h">Lista lager seg selv</span></li>';
     }
@@ -4841,33 +4879,44 @@
   // v0.9 endring (spec linje ~193): introsiden har allerede vist taglinen og spurt om husstanden, så kortet i Uke
   // viser bare det som gjenstår: «Velg middager» (til en middag er valgt) og «Del med den andre». Nummereres 1, 2 …
   function startCardCompact(st) {
-    var steps = [];
-    if (!st.s0) steps.push(['0', 'on', 'Velg 5–10 retter familien liker', recipesStepBody()]);
-    if (!st.s1) steps.push(['1', st.s0 ? 'on' : 'todo', 'Velg middager', '<p>Trykk på en dag under' + (state.recipes.length ? ', eller fyll hverdagene med raske retter' : '') + '. Du kan bytte etterpå.</p>' +
+    // v0.18.9: stegene beholder nummeret sitt hele veien; ferdige steg får ✓, det aktive er åpent
+    var steps = [], nr = state.recipes.length;
+    steps.push(['0', st.s0, st.s0 ? (nr ? 'Retter: ' + nr + ' valgt' : 'Retter: hoppet over') : 'Velg 5–10 retter familien liker', recipesStepBody()]);
+    steps.push(['1', st.s1, st.s1 ? (st.n === 1 ? '1 middag valgt' : st.n + ' middager valgt') : 'Velg middager', '<p>Trykk på en dag under' + (state.recipes.length ? ', eller fyll hverdagene med raske retter' : '') + '. Du kan bytte etterpå.</p>' +
       (state.recipes.length ? '<div class="km-acts"><button type="button" class="btn primary" data-action="fill-weekdays" data-testid="fyll">Fyll man–fre</button></div>' : '')]);
     if (!st.s2) {
       // reserve: husstanden er ikke besvart (introsiden ble ikke vist) – samme steg som før
       var ni = listCount();
-      steps.push(['2', st.active === 2 ? 'on' : 'todo', 'Lista lager seg selv', '<p>' + ni + (ni === 1 ? ' vare ligger klar.' : ' varer ligger klare.') + ' <b>Hvor mange spiser middag hos dere?</b></p>' +
+      steps.push(['2', false, 'Lista lager seg selv', '<p>' + ni + (ni === 1 ? ' vare ligger klar.' : ' varer ligger klare.') + ' <b>Hvor mange spiser middag hos dere?</b></p>' +
         '<p class="m">Da passer mengdene i rettene fra Knaggen. Egne retter endres ikke.</p>' +
         peopleCountersHtml('hs0', { voksen: 2, barn: 2, smabarn: 0 }) +
         '<div class="km-acts"><button type="button" class="btn primary" data-action="hs-bruk" data-testid="hs-bruk">Bruk</button>' +
-        '<button type="button" class="btn ghost" data-action="hs-hopp" data-testid="hs-hopp">Hopp over</button></div>']);
+        '<button type="button" class="btn ghost" data-action="hs-hopp" data-testid="hs-hopp">Hopp over dette steget</button></div>']);
     }
-    steps.push(['3', st.active === 3 ? 'on' : 'todo', 'Del med den andre', '<p>Handler dere sammen? Send en invitasjon på melding, så ser dere samme uke og liste. Ingen konto.</p>' +
+    steps.push(['3', false, 'Del med den andre', '<p>Handler dere sammen? Send en invitasjon på melding, så ser dere samme uke og handleliste. Ingen konto.</p>' +
       (ui.kmError ? '<p class="form-error" data-testid="km-feil">' + esc(ui.kmError) + '</p>' : '') +
       '<div class="km-acts"><button type="button" class="btn primary" data-action="km-invite" data-testid="km-inviter">' + (ui.kmError ? 'Prøv igjen' : 'Inviter med melding') + '</button>' +
       '<button type="button" class="btn ghost" data-action="km-later" data-testid="km-ikke-na">Ikke nå</button></div>']);
+    var act = -1;
+    steps.forEach(function (s, i) { if (act < 0 && !s[1]) act = i; });
     var words = ['', 'ett steg', 'to steg', 'tre steg', 'fire steg'];
     var h = '<section class="km km-compact" aria-labelledby="km-t" data-testid="kom-i-gang">' +
-      '<p class="km-t" id="km-t">' + (!st.s0 ? 'Først: finn rettene familien liker.' : st.s1 ? 'Neste: del uka og lista.' : 'Velg middager for uka, så lager handlelista seg selv.') + '</p>' +
-      '<button type="button" class="km-x" data-action="km-close" data-testid="kom-i-gang-lukk" aria-label="Lukk Kom i gang">×</button>' +
-      '<ol class="km-steps" aria-label="Kom i gang, ' + words[steps.length] + ' igjen">';
+      '<p class="km-t" id="km-t">' + (!st.s0 ? 'Først: finn rettene familien liker.' : st.s1 ? 'Neste: del uka og handlelista.' : 'Velg middager for uka, så lager handlelista seg selv.') + '</p>' +
+      '<button type="button" class="km-x" data-action="km-close" data-testid="kom-i-gang-lukk" aria-label="Lukk Kom i gang">✕</button>' +
+      '<ol class="km-steps" aria-label="Kom i gang, ' + words[steps.length] + ', steg ' + (act + 1) + ' av ' + steps.length + '">';
     steps.forEach(function (s, i) {
-      h += '<li class="' + s[1] + '" data-step="' + s[0] + '"><span class="n">' + (i + 1) + '</span><span class="h">' + s[2] + '</span>' +
-        (s[1] === 'on' ? '<div class="km-body">' + s[3] + '</div>' : '') + '</li>';
+      var cls = s[1] ? 'done' : i === act ? 'on' : 'todo';
+      h += '<li class="' + cls + '" data-step="' + s[0] + '"' + (i === act ? ' aria-current="step"' : '') + '><span class="n">' + (s[1] ? IC.check : (i + 1)) + '</span><span class="h">' + (s[1] ? '<span class="sr">ferdig: </span>' : '') + s[2] + '</span>' +
+        (cls === 'on' ? '<div class="km-body">' + s[3] + '</div>' : '') + '</li>';
     });
     return h + '</ol></section>';
+  }
+  // v0.18.9: «Fortsett oppsettet (steg X av Y) ›» på «Nå» til Kom i gang er ferdig eller lukket
+  function startProgress() {
+    if (!showStart()) return null;
+    var st = startSteps(weekDates(0)), steps = [st.s0, st.s1].concat(st.s2 ? [] : [false]).concat([false]);
+    var i = steps.indexOf(false);
+    return i < 0 ? null : { step: i + 1, of: steps.length };
   }
 
   /* --- Introsiden (v0.9 endring): én skjerm for nye besøkende før Uke --- */
@@ -4880,7 +4929,7 @@
     setTabsHidden(true);
     document.body.classList.add('v9-intro');
     var h = '<section class="page intro" data-page="intro" aria-labelledby="intro-h">' +
-      '<div class="intro-top"><button type="button" class="linkbtn intro-skip" data-action="intro-hopp" data-testid="intro-hopp">Hopp over</button></div>' +
+      '<div class="intro-top"><button type="button" class="linkbtn intro-skip" data-action="intro-hopp" data-testid="intro-hopp">Hopp over oppsettet</button></div>' +
       '<h1 class="intro-lockup" id="intro-h"><picture><source srcset="icons/knaggen-lockup-lys.svg" media="(prefers-color-scheme: light)">' +
         '<img src="icons/knaggen-lockup-mork.svg" alt="Knaggen" width="176" height="48"></picture></h1>' +
       '<p class="intro-tag">Husets felles huskeliste</p>' +
@@ -5293,13 +5342,40 @@
     return envInfo.ios && isStandalone() && !hh && !hasOwnData() && !instState().connectSkip && !NEW_HOME;
   }
   // fromHusstand: true = fra Retter → Husstand, 'intro' = «Jeg har en invitasjon» på introsiden, false = iPhone Hjem-skjerm
+  // v0.18.9: tilbake-lenken går dit du kom fra («‹ Uke», «‹ Retter» …), ellers til standardsiden
+  var PAGE_NAMES = { uke: 'Uke', retter: 'Retter', liste: 'Handleliste', husstand: 'Husstand', kjokken: 'Nå' };
+  window.addEventListener('hashchange', function (e) { try { var o = new URL(e.oldURL).hash; if (o && o !== location.hash) ui.prevHash = o; } catch (x) { } });
+  function backTo(def) {
+    var p = ui.prevHash || '', t = (p.replace(/^#/, '').split('/')[0]) || '';
+    if (/^#koble/.test(p) || !PAGE_NAMES[t]) { t = def.replace(/^#/, '').split('/')[0]; p = def; }
+    if (t === 'kjokken') p = '#kjokken';
+    return [p, PAGE_NAMES[t] || 'Tilbake'];
+  }
+  // v0.18.9: «Koble til» øverst (uten husstand) gir to valg: Inviter noen / Jeg har en invitasjon
+  function connectChoice() {
+    ask({ id: 'koble-valg', title: 'Koble til', text: 'Del uka og handlelista med noen, eller bli med i en husstand du er invitert til.', cancel: 'Avbryt', choices: [
+      { v: 'inviter', label: 'Inviter noen', sub: 'Send en invitasjon på melding. Ingen konto.' },
+      { v: 'har', label: 'Jeg har en invitasjon', sub: 'Lim inn lenka eller skriv koden' }] }).then(function (v) {
+      if (!v) return;
+      setTimeout(function () {
+        if (v === 'har') location.hash = '#koble';
+        else if (syncMode() && !hh) openInviteSheet();
+        else location.hash = '#husstand/del';
+      }, 60);
+    });
+  }
+  document.addEventListener('click', function (e) {
+    var l = e.target.closest && e.target.closest('#sync-link');
+    if (!l || hh || l.hidden || V010_LAYOUT) return;
+    e.preventDefault(); e.stopImmediatePropagation(); connectChoice();
+  }, true);
   function connectMode() { var h = location.hash || ''; return /^#koble\/intro/.test(h) ? 'intro' : /^#koble/.test(h); }
   function renderConnect(fromHusstand) {
     var fromIntro = fromHusstand === 'intro';
     if (fromIntro) fromHusstand = false;
     setTabsHidden(!fromHusstand);
     var h = '<section class="page" data-page="koble"><div class="connect">' +
-      (fromHusstand ? '<div class="page-head"><a class="back" href="#husstand">‹ Husstand</a></div>' : '') +
+      (fromHusstand ? '<div class="page-head"><a class="back" href="' + backTo('#husstand')[0] + '" data-testid="koble-tilbake">‹ ' + backTo('#husstand')[1] + '</a></div>' : '') +
       (fromIntro ? '<div class="page-head"><a class="back" href="#uke" data-testid="koble-tilbake">‹ Tilbake</a></div>' : '') +
       '<h2>Koble til husstanden</h2>' +
       '<p class="lead">' + (fromHusstand || fromIntro ? 'Lim inn lenka til husstanden, eller skriv koden fra invitasjonen.' + (hh ? ' Husstanden byttes på denne telefonen.' : '')
@@ -5679,8 +5755,9 @@
   }
   function renderDevicesPage() {
     var h = '<section class="page k17" data-page="husstand" data-sub="enheter" data-v17="1">' +
+      '<div class="page-head k17-back"><a class="back" href="#husstand" data-testid="enheter-tilbake">‹ Husstand</a></div>' +
       '<div class="k17-head"><div class="t"><h2 class="k17-name" style="cursor:default">Enheter</h2><div class="k17-sub" data-testid="k17-enheter-sub">' + esc(hhName() || 'Husstand') + ' · ' + devStats().n + ' tilkoblet</div></div>' +
-      '<a class="btn" href="#husstand" data-testid="enheter-tilbake">Tilbake</a></div>' + devicesHtml() + '</section>';
+      '</div>' + devicesHtml() + '</section>';
     main.innerHTML = h;
   }
   function countText() {
@@ -5763,7 +5840,7 @@
     var goKoble = false;
     ask({ id: 'koblet-fra', title: 'Denne enheten er koblet fra' + (r.name ? ' «' + r.name + '»' : ' husstanden'),
       text: 'Denne enheten er ikke lenger med i husstanden – noen har fjernet den, så uka og handlelista deles ikke lenger her. Vil du være med igjen, trenger du en ny kode eller lenke fra en som er med.',
-      cancel: 'Koble til med kode', ok: 'OK' }).then(function () {
+      cancel: 'Koble til med kode', ok: 'Avbryt' }).then(function () {
       lsDel(REMOVED_KEY);
       if (goKoble) location.hash = '#koble/intro';
     });
@@ -5928,7 +6005,7 @@
     var l = e.target.closest && e.target.closest('#sync-link');
     if (!l || V010_LAYOUT) return;
     e.preventDefault();
-    location.hash = hh ? '#husstand' : '#koble';
+    location.hash = hh ? '#husstand' : '#koble';   // uten husstand: valget over (v0.18.9) tar trykket først
   }, true);
 
   // «Hva er denne enheten?» etter tilkobling (ikke modalt, så ingenting blokkeres)
@@ -5993,10 +6070,11 @@
     }
     function lbl(t) { return '<p class="k17-lbl">' + t + '</p>'; }
     var off = !navigator.onLine || syncStatus.fromCache || syncStatus.failed;
-    var h = '<section class="page k17" data-page="husstand" data-v17="1">';
+    var h = '<section class="page k17" data-page="husstand" data-v17="1">', hb = backTo('#uke');
+    h += '<div class="page-head k17-back"><a class="back" href="' + hb[0] + '" data-testid="husstand-tilbake">‹ ' + hb[1] + '</a></div>';
     h += '<div class="k17-head"><div class="t"><button type="button" class="k17-name" data-action="k17-navn" data-testid="k17-hh-navn">' + esc(name || 'Husstand') + (name ? ' <span class="pen">Endre</span>' : '') + '</button>' +
       '<div class="k17-sub" data-testid="k17-hh-sub"><span class="dot">●</span> ' + esc(countText()) + ' · ' + (off ? 'frakoblet' : 'synkronisert') + '</div></div>' +
-      '<a class="btn" href="#uke" data-testid="husstand-tilbake">Tilbake</a></div>';
+      '</div>';
     if (!name && lsGet(NAME_LATER_KEY) !== hh.hid) h += '<div class="k17-banner" data-testid="k17-navn-banner"><b>Gi husstanden et navn</b><p>Så ser alle enhetene hvilken husstand de er med i.</p>' +
       '<div class="row"><input class="k17-in" id="k17-banner-in" maxlength="40" value="Hjemme" aria-label="Navn på husstanden" data-testid="k17-banner-felt"></div><div class="row" style="margin-top:8px"><button type="button" class="k17-btn pri" data-action="k17-banner-lagre" data-testid="k17-banner-lagre">Lagre</button><button type="button" class="k17-btn" data-action="k17-banner-senere" data-testid="k17-banner-senere">Senere</button></div></div>';
     if (!document.getElementById('k188-ny')) h += kindBannerHtml();
@@ -6020,10 +6098,10 @@
     h += lbl('Handleliste') + '<div class="k17-grp"><a class="k17-row" href="#liste/faste" data-testid="hs-sek-faste"><span class="t"><b>Faste varer</b><span>' + (nS ? nS + (nS === 1 ? ' vare' : ' varer') : 'Ingen ennå') + '</span></span><span class="go" aria-hidden="true">›</span></a></div>';
     // 4a. v0.18.1: Hjemmeadresse (felles i husstanden, brukes av «Nå» for Hjemme/Borte)
     h += lbl('Hjem') + '<div class="k17-grp" data-testid="hjem-grp">' + (K17.hjemEdit
-      ? '<div class="k17-hjem"><label class="field"><span>Hjemmeadresse</span><input type="search" id="hjem-sok" data-testid="hjem-sok" autocomplete="off" placeholder="Gate og nummer, sted" value=""></label>' +
+      ? '<div class="k17-hjem"><label class="field"><span>Adresse</span><input type="search" id="hjem-sok" data-testid="hjem-sok" autocomplete="off" placeholder="Gate og nummer, sted" value=""></label>' +
         '<ul class="k17-hjem-hits" data-testid="hjem-forslag" role="listbox"></ul>' +
         '<div class="row"><button type="button" class="btn" data-action="hjem-avbryt" data-testid="hjem-avbryt">Avbryt</button></div></div>'
-      : '<button type="button" class="k17-row" data-action="hjem-endre" data-testid="hjem-rad"><span class="t"><b>Hjemmeadresse</b><span data-testid="hjem-adresse">' + esc(K17.hjem ? K17.hjem.adresse : 'Ikke satt') + '</span></span><span class="go" aria-hidden="true">›</span></button>' +
+      : '<button type="button" class="k17-row" data-action="hjem-endre" data-testid="hjem-rad"><span class="t"><b>Adresse</b><span data-testid="hjem-adresse">' + esc(K17.hjem ? K17.hjem.adresse : 'Ikke satt') + '</span></span><span class="go" aria-hidden="true">›</span></button>' +
         (K17.hjem ? '<button type="button" class="k17-row k17-danger" data-action="hjem-fjern" data-testid="hjem-fjern"><span class="t"><b>Fjern adresse</b></span></button>' : '')) + '</div>' +
       '<p class="k17-note">Felles for husstanden. «Nå» på telefonen bruker den til å se om du er hjemme. Adressen slås opp hos Entur.</p>';
     // 4. Kjøkkenskjerm · felles
@@ -6925,7 +7003,7 @@
           aisle: document.getElementById('ai-aisle').value || guessAisle(name) || 'Tørrvare', active: true };
         ops.addStaple(item);
         var fm3 = {}; fm3[item.id] = 1; ops.setFast(wkDates[0], fm3);
-        msg = 'Lagt til i lista og i faste husvarer';
+        msg = 'Lagt til i lista og i faste varer';
         toast(msg);
       } else {
         var q2 = parseQty(document.getElementById('ai-qty').value);
@@ -7007,8 +7085,9 @@
   /* ---------- v0.16: versjonsnummeret ved logoen og «Nytt i Knaggen» ----------
    * Trykk på «0.16» åpner arket. Etter en oppdatering åpnes det av seg selv én gang (ikke ved aller første åpning,
    * ikke på kjøkkenskjermen og ikke i automatiserte tester uten testkroken KNAGGEN_TEST_NYTT). */
-  var APP_VERSION = '0.18.8', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.18.9', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.18.9', ['Trykk på en rett for å se oppskriften – «Rediger» ligger inni.', 'Tid skrives likt overalt: «45 min (20 aktivt)».', 'Søk viser retten med akkurat det navnet først, og retter med flere varianter legges til med én gang.', '«Koble til» spør om du vil invitere noen eller har fått en invitasjon.', 'Kom i gang holder fast på stegnumrene, og «Nå» viser hvor du slapp.']],
     ['0.18.8', ['En ny telefon eller PC blir spurt om navn og hvem den tilhører når den kobles til, og en enhet som fjernes fra husstanden får tydelig beskjed om det.', '«Fyll man–fre» hopper over dager som har vært, og både «Erstatt» og «Fjern middagen» kan angres i 8 sekunder – varene kommer tilbake på lista.', 'Er det ingen holdeplass i nærheten, står det tydelig «Fra hjemme (…)» over avgangene. «Nå» viser like mange avganger som kjøkkenskjermen, og ⚙ synes også om natta.', 'Finn retter viser både aktiv tid og total tid, og «Ferdigkjøpt» velges ikke uten at du ber om det.']],
     ['0.18.7', ['«Nå» viser avganger fra husstandens holdeplasser – eller de nærmeste til hjemmeadressen hvis ingen er valgt. Med posisjon på står det bare «⌂ Hjemme» eller omtrent hvor du er øverst, med «Endre» hvis du vil velge selv.']],
     ['0.18.6', ['Når du legger til en oppskrift fra nettet, starter dagene på i dag: velg «I dag», «I morgen», en dag den neste uka eller en hvilken som helst dato fram i tid. Har dagen allerede en middag, spør Knaggen før den byttes ut.']],
