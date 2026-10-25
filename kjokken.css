@@ -331,3 +331,10 @@ html[data-tema="lys"] .kj .k-sheet { --k-cal-1: #3f6e5a; --k-cal-2: #44617a; --k
 .na-note { color: var(--muted); margin: 0; }
 .na-dep-err { display: flex; align-items: center; gap: 12px; justify-content: space-between; margin: 6px 0 0; color: var(--ink); }
 .na-dep-err p { margin: 0; flex: 1; } .na-dep-err .btn { flex: none; min-height: 40px; padding: 6px 14px; border-radius: 10px; border: 1px solid var(--brand); color: var(--brand); background: transparent; font-weight: 600; }
+/* v0.18.5: navnet på husstanden, kortes med … */
+.kj .k-delt-top { max-width: min(40vw, 320px); }
+.kj .k-delt-top .k-dot { flex: none; }
+.kj .k-delt-top .k-dot.off, .kj .k-delt-top .k-dot.pending, .kj .k-delt-top .k-dot.connecting { background: var(--k-accent, #c98a2b); }
+.kj .k-delt-top .k-delt-navn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* v0.18.5: knappene øverst følger ikke innbrenningsforskyvningen (ellers kunne de skli delvis ut av skjermen) */
+.kj .k-delt-top, .kj .k-gear-top { transform: translate(calc(-1 * var(--k-shift-x, 0px)), calc(-1 * var(--k-shift-y, 0px))); }

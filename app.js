@@ -894,9 +894,21 @@
   function renderSyncStatus() {
     var el = document.getElementById('sync-status');
     if (!el) return;
-    var link = document.getElementById('sync-link');   // v0.16.1: «● Delt» er en lenke til Husstand → Del
-    if (link) link.hidden = !hh;
-    if (!hh) { el.hidden = true; return; }
+    var link = document.getElementById('sync-link');   // v0.18.5: husstandens navn (før «● Delt»), ett trykk til Husstand
+    var nm = document.getElementById('sync-name');
+    if (link && !nm) { nm = document.createElement('span'); nm.id = 'sync-name'; nm.className = 'sync-name'; nm.setAttribute('data-testid', 'hh-knapp-navn'); link.appendChild(nm); }
+    if (!hh) {
+      el.hidden = true;
+      var can = typeof syncMode === 'function' ? syncMode() : true;
+      if (link) {
+        link.hidden = !can; link.href = '#koble'; link.classList.add('none');
+        link.setAttribute('aria-label', 'Koble til en husstand');
+        link.removeAttribute('title');
+      }
+      if (nm) nm.textContent = 'Koble til';
+      return;
+    }
+    if (link) { link.hidden = false; link.href = '#husstand'; link.classList.remove('none'); }
     el.hidden = false;
     var offline = !navigator.onLine || syncStatus.fromCache || syncStatus.failed;
     var pending = syncStatus.pending || swapOverlays.length > 0;   // v0.4.4: bytter i køen
@@ -905,10 +917,15 @@
     else if (offline) { txt = pending ? 'Frakoblet · lagres senere' : 'Frakoblet'; cls = 'off'; }
     else if (pending) { txt = 'Lagrer …'; cls = 'pending'; }
     else { txt = 'Delt'; cls = 'ok'; }
-    el.textContent = txt;
+    el.textContent = txt;   // statusteksten er nå bare for skjermlesere; prikken viser tilstanden
     el.className = 'sync-status ' + cls;
     el.setAttribute('data-state', cls);
-    if (link) link.setAttribute('aria-label', txt + ' – åpne Husstand og delingslenken');
+    var name = (typeof hhName === 'function' && hhName()) || 'Husstand';
+    if (nm) nm.textContent = name;
+    if (link) {
+      link.setAttribute('aria-label', name + ' · ' + (cls === 'ok' ? 'synkronisert' : txt) + ' – åpne Husstand og innstillinger');
+      link.setAttribute('title', name + ' · ' + (cls === 'ok' ? 'synkronisert' : txt));
+    }
   }
   window.addEventListener('online', renderSyncStatus);
   window.addEventListener('online', function () { processSwaps(); });   // v0.4.4
@@ -1521,6 +1538,7 @@
     var tab = parts[0];
     var K = window.KnaggenKjokken;
     markPhone();
+    try { renderSyncStatus(); } catch (e) { }   // v0.18.5: «Koble til» også uten husstand
     if (tab === 'kjokken' && K && K.narrow && K.narrow() && !parts[1]) { tabActive('na'); setTabsHidden(false); document.body.classList.add('k-open'); document.body.classList.add('k-na-open'); main.innerHTML = ''; K.show(''); return; }   // v0.18: «Nå» – fanelinja blir stående
     document.body.classList.remove('k-na-open');
     if (tab === 'kjokken' && K) { setTabsHidden(true); document.body.classList.add('k-open'); main.innerHTML = ''; K.show(parts.slice(1).join('/')); return; }
@@ -5564,6 +5582,25 @@
     h += '<p class="k17-note">Navn, «tilhører» og sist aktiv (bare dag) er synlige for alle i husstanden.</p>';
     return h;
   }
+  // v0.18.5: Husstand viser bare en oppsummering av enhetene; trykk åpner egen side med hele lista
+  function devStats() {
+    var l = deviceList(), act = l.filter(function (d) { return d.last != null && dayNum() - d.last <= 7; }).length;
+    var me = l.filter(function (d) { return d.me; })[0];
+    return { n: l.length, act: act, rest: l.length - act, me: me ? me.name : '' };
+  }
+  function devSummaryHtml() {
+    var st = devStats();
+    var info = [st.act + ' aktive siste uke', st.rest ? st.rest + ' eldre' : ''].filter(Boolean).join(' · ');
+    return '<div class="k17-grp"><a class="k17-row" href="#husstand/enheter" data-testid="k17-enheter-rad"><span class="k17-ic">' + DEV_IC.phone + '</span>' +
+      '<span class="t"><b data-testid="k17-enheter-antall">Enheter · ' + st.n + ' tilkoblet</b><span data-testid="k17-enheter-info">' + esc(info) + '</span>' +
+      (st.me ? '<span data-testid="k17-enheter-denne">denne: ' + esc(st.me) + '</span>' : '') + '</span><span class="go" aria-hidden="true">›</span></a></div>';
+  }
+  function renderDevicesPage() {
+    var h = '<section class="page k17" data-page="husstand" data-sub="enheter" data-v17="1">' +
+      '<div class="k17-head"><div class="t"><h2 class="k17-name" style="cursor:default">Enheter</h2><div class="k17-sub" data-testid="k17-enheter-sub">' + esc(hhName() || 'Husstand') + ' · ' + devStats().n + ' tilkoblet</div></div>' +
+      '<a class="btn" href="#husstand" data-testid="enheter-tilbake">Tilbake</a></div>' + devicesHtml() + '</section>';
+    main.innerHTML = h;
+  }
   function countText() {
     var n = K17.memberDocs ? K17.memberDocs.length : ui.members;
     return n ? n + (n === 1 ? ' enhet' : ' enheter') : 'Delt husstand';
@@ -5634,7 +5671,7 @@
   }
   function settingsK17(docs, meta) {
     var p = docs.filter(function (d) { return d.id === 'profil'; })[0];
-    K17.name = p && typeof p.name === 'string' ? p.name : '';
+    K17.name = p && typeof p.name === 'string' ? p.name : ''; renderSyncStatus();
     var k = docs.filter(function (d) { return d.id === 'kjokken'; })[0];
     K17.kitchen = k && Array.isArray(k.stops) ? { stops: k.stops, lat: k.lat, lon: k.lon } : null;
     var hj = docs.filter(function (d) { return d.id === 'hjem'; })[0];   // v0.18.1: hjemmeadresse
@@ -5686,7 +5723,7 @@
   function saveName(v) {
     v = String(v || '').trim().slice(0, 40);
     if (!v || !hh) return;
-    K17.name = v;
+    K17.name = v; renderSyncStatus();
     Sync.write.setProfile(hh.hid, v).catch(function () { toast('Fikk ikke lagret navnet. Prøv igjen.'); });
     renderHousehold();
   }
@@ -5786,11 +5823,11 @@
       '<p class="k17-note">Uten nett kan du fortsatt bruke lista. Endringene sendes når enheten er på nett igjen.</p>';
     k17Open('k17-delt', h);
   }
-  document.addEventListener('click', function (e) {
+  document.addEventListener('click', function (e) {   // v0.18.5: ett trykk går rett til Husstand (eller koblingsflyten)
     var l = e.target.closest && e.target.closest('#sync-link');
-    if (!l || !hh || V010_LAYOUT) return;
+    if (!l || V010_LAYOUT) return;
     e.preventDefault();
-    openSyncSheet();
+    location.hash = hh ? '#husstand' : '#koble';
   }, true);
 
   // «Hva er denne enheten?» etter tilkobling (ikke modalt, så ingenting blokkeres)
@@ -5816,6 +5853,7 @@
 
   // Husstand-siden (v0.17, spec §4 / skissen husstand). Uten husstand vises v0.16-siden (opprett / koble til).
   function renderHouseholdV017() {
+    if (/^#husstand\/enheter/.test(location.hash)) return renderDevicesPage();
     var prev = main.querySelectorAll('[data-page="husstand"] details');
     if (prev.length) { HS_OPEN = {}; prev.forEach(function (d) { if (d.open) HS_OPEN[d.getAttribute('data-sec')] = true; }); }
     if (/^#husstand\/hverdag/.test(location.hash)) HS_OPEN.hverdag = true;
@@ -5837,7 +5875,7 @@
     h += kindBannerHtml();
     if (ui.justCreated) h += '<p class="notice" data-testid="opprettet">Husstanden er opprettet' + (ui.movedOwn ? ', og rettene, uka og lista fra denne telefonen er flyttet inn.' : '.') + ' Legg til de andre under Enheter.</p>';
     // 1. Enheter
-    h += lbl('Enheter') + devicesHtml();
+    h += lbl('Enheter') + devSummaryHtml();   // v0.18.5: én rad; full liste på #husstand/enheter
     // 2. Middag
     var scalePref = hsState().scale !== false, lim = weekdayLimit();
     var b1 = peopleCountersHtml('hsh', hasP ? hsPeople() : hp, { testid: 'hs-innstillinger' }) +
@@ -5967,7 +6005,7 @@
     if (unsubscribe) { unsubscribe(); unsubscribe = null; }
     hh = null; syncReady = null; swapOverlays = []; lastDays = []; weeklyExtras = []; sharedExtras = []; migratingHid = null;
     ui.members = null; ui.invite = null; ui.justCreated = false; ui.busy = false;
-    K17.name = ''; K17.devices = null; K17.memberDocs = null; K17.selfSeen = false; K17.creating = false; K17.kitchen = null; K17.kitchenSeen = false; K17.hjem = null; K17.hjemEdit = false; k17Close(); lsDel(K17_REG_KEY);
+    K17.name = ''; setTimeout(renderSyncStatus, 0); K17.devices = null; K17.memberDocs = null; K17.selfSeen = false; K17.creating = false; K17.kitchen = null; K17.kitchenSeen = false; K17.hjem = null; K17.hjemEdit = false; k17Close(); lsDel(K17_REG_KEY);
     clearTimeout(connectTimer); syncStatus.connecting = false;
     lsDel(HH_KEY);
     if (hid) { lsDel(MIRROR_PREFIX + hid); lsDel(SWAPQ_PREFIX + hid); }
@@ -6839,8 +6877,9 @@
   /* ---------- v0.16: versjonsnummeret ved logoen og «Nytt i Knaggen» ----------
    * Trykk på «0.16» åpner arket. Etter en oppdatering åpnes det av seg selv én gang (ikke ved aller første åpning,
    * ikke på kjøkkenskjermen og ikke i automatiserte tester uten testkroken KNAGGEN_TEST_NYTT). */
-  var APP_VERSION = '0.18.4', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.18.5', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.18.5', ['Knappen øverst viser nå navnet på husstanden og tar deg rett til Husstand, og enhetene har fått sin egen side.']],
     ['0.18.4', ['«Delt» står nå alltid øverst, også på kjøkkenskjermen og over «Nå» på telefonen, og en PC eller telefon som kobles til husstanden får straks navn i enhetslista.']],
     ['0.18.3', ['Oppskriften steg for steg passer bedre på telefonen: mindre tittel, ingrediensene kan legges sammen, og Forrige/Neste ligger alltid synlig under teksten. Nettbrett og PC er som før.', '«Neste avganger» på «Nå» blir ikke lenger stående på «Henter avganger …»: svarer ikke Entur innen 8 sekunder får du beskjed og en «Prøv igjen»-knapp, de sist hentede avgangene vises mens nye hentes, og uten valgt holdeplass får du en lenke til innstillingen.']],
     ['0.18.2', ['På telefonen har «Nå» fått egen fane, og appen åpner der. Telefonen kjennes igjen også når den holdes på tvers. Nettbrett og PC er som før.']],

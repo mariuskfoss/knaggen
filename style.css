@@ -1368,3 +1368,11 @@ a.btn { display: flex; align-items: center; justify-content: center; text-decora
 .tabs .tab-na { display: none; }
 body.k-phone .tabs { grid-template-columns: repeat(4, 1fr); }
 body.k-phone .tabs .tab-na { display: flex; }
+
+/* v0.18.5: husstandens navn i stedet for «Delt»; statusprikken beholdes, statusteksten er for skjermlesere */
+.sync-link { gap: 6px; min-width: 0; max-width: min(46vw, 220px); font-size: 14px; font-weight: 600; color: var(--ink); }
+.sync-link .sync-status { font-size: 0; gap: 0; flex: none; }
+.sync-link .sync-status::before { width: 9px; height: 9px; }
+.sync-link .sync-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sync-link.none .sync-name { color: var(--brand); }
+.topbar h1 { flex: none; }

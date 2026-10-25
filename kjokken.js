@@ -705,12 +705,15 @@
   function isNight() { var p = effPhase(); return p.a === 'natt' && p.b === 'natt'; }
   // v0.18.4: «Delt»/husstand-knappen er alltid med på kjøkkenskjermen (før dekket skjermen hele appens topplinje,
   // så man kom ikke til Husstand). Vises når enheten er med i en husstand (samme vilkår som «Delt» i topplinja).
-  function deltBtn() {
+  function deltBtn() {   // v0.18.5: viser husstandens navn (som topplinja), statusprikken beholdes
     var l = document.getElementById('sync-link');
-    if (!l || l.hidden) return '';
-    return '<a class="k-delt-top" href="#husstand" data-k="delt" data-testid="k-delt" aria-label="Delt – åpne husstand og innstillinger"><span class="k-dot" aria-hidden="true"></span>Delt</a>';
+    if (!l || l.hidden || l.classList.contains('none')) return '';
+    var nmEl = document.getElementById('sync-name'), nm = nmEl ? nmEl.textContent : 'Husstand';
+    var st = document.getElementById('sync-status'), cls = st ? st.getAttribute('data-state') || 'ok' : 'ok';
+    var e = function (x) { return String(x).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+    return '<a class="k-delt-top" href="#husstand" data-k="delt" data-testid="k-delt" title="' + e(nm) + '" aria-label="' + e(nm) + ' – åpne husstand og innstillinger"><span class="k-dot ' + e(cls) + '" aria-hidden="true"></span><span class="k-delt-navn">' + e(nm) + '</span></a>';
   }
-  try { var slEl = document.getElementById('sync-link'); if (slEl) new MutationObserver(function () { if (open && view === 'idle' && root && !root.querySelector('.k-sheet')) render(); }).observe(slEl, { attributes: true, attributeFilter: ['hidden'] }); } catch (e) { }
+  try { var slEl = document.getElementById('sync-link'); if (slEl) new MutationObserver(function () { if (open && view === 'idle' && root && !root.querySelector('.k-sheet')) render(); }).observe(slEl, { attributes: true, attributeFilter: ['hidden', 'title', 'class'], subtree: true, childList: true, characterData: true }); } catch (e) { }
   function onTap(e) {
     lastTap = Date.now();
     var t = e.target.closest ? e.target.closest('[data-k]') : null, k = t && t.getAttribute('data-k');
