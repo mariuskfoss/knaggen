@@ -634,7 +634,8 @@
     return rows.slice(0, max);
   }
   // v0.18.3: feil/tidsavbrudd med «Prøv igjen», «oppdaterer» mens sist hentede (bare i minnet) vises, og tom-tilstand
-  function naErrTxt(e) { return e === 'timeout' ? 'Entur svarte ikke innen 8 sekunder.' : e === 'rate' ? 'Entur ber oss vente litt før neste henting.' : navigator.onLine === false ? 'Telefonen er uten nett.' : 'Fikk ikke hentet avgangene nå.'; }
+  // v0.18.11: ingen kilde i teksten (merkevare/tekstregler.md)
+  function naErrTxt(e) { return navigator.onLine === false ? 'Telefonen er uten nett.' : 'Avgangene er ikke tilgjengelige akkurat nå.'; }
   function naDepState(data, busy, err, at) {
     if (err) return '<div class="na-dep-err" data-testid="na-avg-feil" role="alert"><p>' + esc(naErrTxt(err)) + (data && at ? ' Viser sist hentede.' : '') + '</p>' +
       '<button type="button" class="btn small" data-k="na-avg-igjen" data-testid="na-avg-igjen">Prøv igjen</button></div>';
@@ -643,7 +644,7 @@
   }
   function naNoStop() {
     // v0.18.10 (S3): Entur feiler / ber oss vente → si det, i stedet for bare «Ingen holdeplass valgt»
-    if (gateBlocked('nearest') || gateBlocked('dep') || homeNear.err || pos.depErr) return '<div class="na-dep-err" data-testid="na-avg-feil" role="alert"><p>Entur svarer ikke akkurat nå. Vi prøver igjen om litt.</p>' +
+    if (gateBlocked('nearest') || gateBlocked('dep') || homeNear.err || pos.depErr) return '<div class="na-dep-err" data-testid="na-avg-feil" role="alert"><p>Avgangene er ikke tilgjengelige akkurat nå.</p>' +
       '<button type="button" class="btn small" data-k="na-avg-igjen" data-testid="na-avg-igjen">Prøv igjen</button></div>';
     return '<p class="na-note" data-testid="na-avg-tom">Ingen holdeplass valgt. <a href="#kjokken/innstillinger/avg" data-k="na-endre" data-testid="na-avg-velg">Velg holdeplass</a></p>';
   }
@@ -713,7 +714,7 @@
       if (bs.stops.length && (rr.length || !bErr)) h += '<ul class="na-card na-dep' + (local ? '' : ' na-hjemmefra') + '" data-testid="na-avg-her">' + (rr.length ? rr.map(function (x) { return '<li><span class="no">' + esc(x.no) + '</span><b>' + esc(x.stop) + '<span>mot ' + esc(x.front) + '</span></b><span class="mn">' + minTxt(x.ms, t) + '</span></li>'; }).join('') : '<li class="note">' + (data ? 'Ingen avganger den neste timen' : 'Henter avganger …') + '</li>') + '</ul>';
       else if (!bs.stops.length) h += naNoStop();
       if (bs.stops.length) h += local ? naDepState(pos.dep, pos.depBusy, pos.depErr, pos.depAt) : naDepState(dep.data, dep.busy, dep.err, dep.at);
-      if (bs.stops.length) h += '<p class="na-src" data-testid="na-holdeplass-kilde">' + (local ? 'Holdeplasser nær deg' : bs.src === 'felles' ? 'Husstandens holdeplasser hjemme' : 'Holdeplass valgt manuelt') + ' · <a href="#kjokken/innstillinger/avg" data-k="na-endre" data-testid="na-endre">Endre</a></p>';
+      if (bs.stops.length) h += '<p class="na-src" data-testid="na-holdeplass-kilde">' + (local ? 'Holdeplasser nær deg' : bs.src === 'felles' ? 'Husstandens holdeplasser hjemme' : 'Holdeplass valgt manuelt') + ' · <button type="button" class="na-status-endre" data-k="na-modus-endre" data-testid="na-endre">Endre</button></p>';   // v0.18.11 (S7): åpner Hjemme/Borte, ikke kjøkkenskjerm-innstillingene
       var buy = A.naBuy ? A.naBuy() : { items: [], open: 0 };
       h += '<p class="na-lbl">Kjøp på vei hjem</p><div class="na-card" data-testid="na-kjop">' +
         (!m ? '<p class="note">Ingen middag valgt i dag.</p>' : !buy.items.length ? '<p class="note">Alt til ' + esc(m.name) + ' er handlet.</p>' :
@@ -750,7 +751,7 @@
   }
   function naClear() { for (var k in TOK.dag) root.style.removeProperty('--k-' + k); ['--k-fade', '--k-shift-x', '--k-shift-y', 'top', 'bottom'].forEach(function (p) { root.style.removeProperty(p); }); root.classList.remove('k-natt'); root.removeAttribute('data-fase'); }
   function naTap(k, t, e) {
-    if (k === 'na-modus-endre') { naEdit = true; render(); return true; }
+    if (k === 'na-modus-endre') { naEdit = true; render(); var sg = root && root.querySelector('.na-seg button.on, .na-seg button'); if (sg) { sg.scrollIntoView({ block: 'nearest' }); sg.focus(); } return true; }
     if (k === 'na-modus-ferdig') { e.preventDefault(); naEdit = false; render(); return true; }
     if (k === 'na-hjemme' || k === 'na-borte') { setNaMode(k === 'na-hjemme' ? 'hjemme' : 'borte'); return true; }
     if (k === 'na-avg-igjen') { gate('dep').until = 0; gate('nearest').until = 0; dep.until = 0; dep.fails = 0; /* v0.18.9: brukerens «Prøv igjen» får ett nytt forsøk */ pos.depAt = 0; pos.depErr = ''; if (!dep.busy) pollDep(); naPoll(); render(); return true; }
@@ -793,7 +794,7 @@
       '</div><div class="k-right"><div class="k-o3">' + weatherHtml(s) + '</div>' + dep + next +
       '</div></div>' +
       '<div class="k-foot k-fadeable"><a class="k-mark k-til-appen" href="#liste" data-k="toapp" data-testid="k-til-appen">' + MARK + 'Knaggen<span class="k-ta">Til appen ›</span></a>' +
-      '<span class="k-credit" data-testid="k-kreditering">Værdata fra MET Norway · Avganger fra Entur</span></div></div>';
+      '<span class="k-credit" data-testid="k-kreditering">Data fra Entur og MET Norway</span></div></div>';
   }
   function cookHtml() {
     var m = cook.meal, steps = m.steps.length ? m.steps : ['Ingen fremgangsmåte er lagt inn for denne retten. Ingrediensene står til venstre.'];
@@ -933,7 +934,7 @@
         if (!list.some(function (x) { return x.id === p.id; })) list.push({ id: p.id, name: p.name, dist: Math.round(e.node.distance || 0), modes: modes });
       });
       sheet.near = { lat: pos.lat, lon: pos.lon, list: list };
-    }, function () { sheet.nearErr = 'Fikk ikke hentet holdeplasser fra Entur nå.'; }).then(function () { sheet.nearBusy = false; refreshSheet(); });
+    }, function () { sheet.nearErr = 'Fikk ikke hentet holdeplasser nå.'; }).then(function () { sheet.nearBusy = false; refreshSheet(); });
   }
   function loadDirs(id) {
     if (sheet.dirs[id]) return;
@@ -989,7 +990,7 @@
       (full ? '<p class="meta">Fjern en holdeplass for å velge en annen.</p>' : '') +
       '<div class="rows" data-testid="k-holdeplasser">' + rows + '</div>' +
       (navigator.geolocation ? '<button type="button" class="kb" data-k="avggeo" data-testid="k-avg-geo">Finn holdeplasser nær posisjonen min</button>' : '') +
-      '<p class="meta">Avganger fra Entur. Skjermen spør Entur direkte hvert 30. sekund mens den vises.</p>';
+      '<p class="meta">Avgangene oppdateres hvert 30. sekund mens skjermen vises.</p>';
   }
   function kalHtml() {
     var A = api();

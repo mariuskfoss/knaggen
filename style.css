@@ -482,7 +482,7 @@ select option:disabled { color: var(--line-strong); }
 .list-tools .seg.sort button + button { border-left: 1px solid var(--line); }
 .list-tools .seg.sort button.on { background: var(--brand-soft); color: var(--brand); box-shadow: inset 0 -3px 0 var(--brand); } /* strek = ikke bare farge */
 .tool-btn {
-  flex: none; width: 46px; min-height: var(--tap); display: inline-flex; align-items: center; justify-content: center; padding: 0;
+  flex: none; width: var(--tap); min-width: var(--tap); min-height: var(--tap); display: inline-flex; align-items: center; justify-content: center; padding: 0;
   border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--card); color: var(--brand); cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }

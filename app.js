@@ -1295,7 +1295,7 @@
     var tom = f === 'Tom';
     var por = r._oneoff ? null : (tom ? 0 : SC.servingsOf(r) * f);
     return {
-      date: d, name: r.name, id: r.id || null, time: r._oneoff ? '' : timeText(r), oneoff: !!r._oneoff, mark: markOf(d),
+      date: d, name: shownName(r), id: r.id || null, time: r._oneoff ? '' : timeText(r), oneoff: !!r._oneoff, mark: markOf(d),
       portions: por == null ? '' : fmtPor(por) + (por === 1 ? ' porsjon' : ' porsjoner'),
       ingredients: (r.ingredients || []).filter(function (i) { return i && String(i.name || '').trim(); }).map(function (i) {
         var q = (tom || f === 1) ? i.qty : scaleQty(i.qty, i.unit, f, normName(i.name));
@@ -1834,7 +1834,7 @@
     var n = r.name || '';
     if (/ \(/.test(n)) return n;
     var key = r.variant || (r.fromLib && r.fromLib.variant), d = (r.lib || (r.fromLib && r.fromLib.id)) ? dishById(r.lib || r.fromLib.id) : null;
-    var v = d && key && d.variants && d.variants.length > 1 ? variantOf(d, key) : null;
+    var v = d && key && d.variants && d.variants.length ? variantOf(d, key) : null;
     return v ? n + ' (' + v.name.toLowerCase() + ')' : n;
   }
   function renderRetter() {
@@ -2022,7 +2022,7 @@
   function dishRecipe(d, v) {
     var id = 'lib-' + d.id + '-' + v.key, n = 2;
     while (recipeById(id)) id = 'lib-' + d.id + '-' + v.key + '-' + (n++);
-    var r = { id: id, name: d.name + (d.variants.length > 1 ? ' (' + v.name.charAt(0).toLowerCase() + v.name.slice(1) + ')' : ''), minutes: v.minutes, note: '', origin: 'knaggen', servings: v.servings || 4, lib: d.id, variant: v.key,
+    var r = { id: id, name: d.name + (d.variants.length ? ' (' + v.name.charAt(0).toLowerCase() + v.name.slice(1) + ')' : ''), minutes: v.minutes, note: '', origin: 'knaggen', servings: v.servings || 4, lib: d.id, variant: v.key,
       ingredients: v.ingredients.map(function (i) { return { name: i[0], qty: i[1], unit: i[2], aisle: normAisle(i[3]) }; }),
       steps: (v.steps || []).slice() };
     if (v.passiveMinutes) { r.passiveMinutes = v.passiveMinutes; r.passiveKind = v.passiveKind; }
@@ -2478,7 +2478,7 @@
         var o = state.oneoffs[d];
         var sel = state.week_plan[d];
         var r = !o && sel ? recipeById(sel) : null;
-        var dn = o ? o.name : r ? r.name : '';
+        var dn = o ? o.name : r ? shownName(r) : '';
         var devCls = '';
         if (r && !o && dayDelta(d)) {
           var _dd = dayDelta(d), _net = SC.netPeople(_dd);
@@ -2504,7 +2504,7 @@
           rs.forEach(function (x) {
             var usedIdx = usedBy[x.id];
             var takenElsewhere = usedIdx != null && usedIdx !== i;
-            h += '<option value="' + esc(x.id) + '"' + (r && r.id === x.id ? ' selected' : '') + '>' + esc(x.name) +
+            h += '<option value="' + esc(x.id) + '"' + (r && r.id === x.id ? ' selected' : '') + '>' + esc(shownName(x)) +
               (takenElsewhere ? (r ? ' (bytt med ' : ' (flytt fra ') + DAY_SHORT[usedIdx] + ')' : '') + '</option>';
           });
           h += '<option value="__oneoff__">＋ Engangsmiddag …</option></select>' + swapBtn(d, dn) + '</div>';
@@ -2539,7 +2539,7 @@
         var o = state.oneoffs[d];
         var sel = state.week_plan[d];
         var r = !o && sel ? recipeById(sel) : null;
-        var dn = o ? o.name : r ? r.name : '';
+        var dn = o ? o.name : r ? shownName(r) : '';
         var mk = dn ? markOf(d) : null;   // v0.16
         // Merke bare ved avvik: hvem som spiser (+2 til middag …), eller tid over det vanlige
         var tag = '';
@@ -2598,7 +2598,7 @@
   }
   function dayBodyHtml(d, dates, rs, usedBy, swapBtn) {
     var i = dates.indexOf(d), h = '';
-    var o = state.oneoffs[d], sel = state.week_plan[d], r = !o && sel ? recipeById(sel) : null, dn = o ? o.name : r ? r.name : '';
+    var o = state.oneoffs[d], sel = state.week_plan[d], r = !o && sel ? recipeById(sel) : null, dn = o ? o.name : r ? shownName(r) : '';
     if (o) {
       h += '<div class="oneoff"><span class="badge">Engangsmiddag</span><span class="oneoff-name">' + esc(o.name) + '</span>' +
         '<span class="day-meta">' + o.ingredients.length + (o.ingredients.length === 1 ? ' ingrediens' : ' ingredienser') + '</span></div>' +
@@ -5094,6 +5094,7 @@
   var invSheet = { shared: false, inv: null, error: '' };
   function openInviteSheet() {
     invSheet = { shared: false, inv: null, error: '', creating: !hh };
+    invSheet.baseDev = (K17.devices || []).length; invSheet.baseMem = ui.members || 1;   // v0.18.11: arket lukkes når en ny enhet/medlem dukker opp
     openV9Sheet('inv', inviteSheetHtml(), function () {
       // Lukket med ✕ / Esc / utenfor: steg 3 regnes som gjort bare hvis meldingen eller lenka faktisk er sendt/kopiert
       if (invSheet.shared) finishInvite();
@@ -5795,6 +5796,7 @@
   function devicesSnapshot(docs, meta, err) {
     if (!docs) { if (err && hh) setTimeout(function () { ensureSelfDevice(); }, 3000); return; }   // eldre regler: ingen enhetsliste; v0.18.4: lytteren feilet (f.eks. rett etter kobling) – skriv likevel egen enhet
     K17.devices = docs;
+    invCheckJoined();
     var me = myUid(), mine = docs.filter(function (d) { return d.id === me; })[0];
     if (hh && me && !mine && !ui.deleting) ensureSelfDevice();
     if (meta && !meta.fromCache && hh && me) {
@@ -6110,7 +6112,7 @@
         '<div class="row"><button type="button" class="btn" data-action="hjem-avbryt" data-testid="hjem-avbryt">Avbryt</button></div></div>'
       : '<button type="button" class="k17-row" data-action="hjem-endre" data-testid="hjem-rad"><span class="t"><b>Adresse</b><span data-testid="hjem-adresse">' + esc(K17.hjem ? K17.hjem.adresse : 'Ikke satt') + '</span></span><span class="go" aria-hidden="true">›</span></button>' +
         (K17.hjem ? '<button type="button" class="k17-row k17-danger" data-action="hjem-fjern" data-testid="hjem-fjern"><span class="t"><b>Fjern adresse</b></span></button>' : '')) + '</div>' +
-      '<p class="k17-note">Felles for husstanden. «Nå» på telefonen bruker den til å se om du er hjemme. Adressen slås opp hos Entur.</p>';
+      '<p class="k17-note">Felles for husstanden. «Nå» på telefonen bruker den til å se om du er hjemme.</p>';
     // 4. Kjøkkenskjerm · felles
     var ks = K17.kitchen && K17.kitchen.stops.length ? K17.kitchen.stops.map(function (s) { return s.name; }).join(' + ') : 'Ingen holdeplasser ennå';
     h += lbl('Kjøkkenskjerm · felles') + '<div class="k17-grp"><a class="k17-row" href="#kjokken/innstillinger/avg" data-testid="hs-kjokken"><span class="t"><b>Kalendere og avganger</b><span>' + esc(ks) + '</span></span><span class="go" aria-hidden="true">›</span></a></div>' +
@@ -6429,9 +6431,19 @@
       copyText(inviteLink(x), 'Lenka er kopiert'); markInvited();
     }, function (e) { ui.inviteBusy = false; ui.inviteErr = inviteErrText(e); refreshDeling(); });
   }
+  // v0.18.11: inviterings-arket lukkes så snart enhetslista eller medlemslista vokser (samme signal som «N tilkoblet»)
+  function invCheckJoined() {
+    var ivs = v9Sheet(); if (!ivs || ivs.id !== 'inv' || !invSheet || !invSheet.inv) return;
+    var nd = (K17.devices || []).length, nm = ui.members || 0;
+    if ((K17.devices && nd > Math.max(1, invSheet.baseDev || 0)) || nm > Math.max(1, invSheet.baseMem || 0)) {
+      invSheet.shared = true; closeV9Sheet(false); toast('Den andre er med i husstanden nå', 4000);
+      var cur = readHH(); if (cur && hh && cur.hid === hh.hid && !cur.othersSeen) { cur.othersSeen = true; writeHH(cur); hh.othersSeen = true; }
+    }
+  }
   // «Den andre er med i husstanden nå» – én gang hos den som inviterte (§4)
   function membersChanged() {
     if (!hh) return;
+    invCheckJoined();
     var n = ui.members || 0;
     if (n > 1 && lsGet(START_KEY) === 'open') { lsSet(START_KEY, 'done'); if (main.querySelector('[data-page="uke"]')) renderUke(); }
     var cur = readHH();
@@ -7093,16 +7105,17 @@
   /* ---------- v0.16: versjonsnummeret ved logoen og «Nytt i Knaggen» ----------
    * Trykk på «0.16» åpner arket. Etter en oppdatering åpnes det av seg selv én gang (ikke ved aller første åpning,
    * ikke på kjøkkenskjermen og ikke i automatiserte tester uten testkroken KNAGGEN_TEST_NYTT). */
-  var APP_VERSION = '0.18.10', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.18.11', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
-    ['0.18.10', ['Større knapper overalt (minst 48 px) og like skriftstørrelser og hjørner – også på kjøkkenskjermen.', 'Retter viser varianten i navnet, f.eks. «Kyllinggryte med sopp (halvferdig)», og telleren i Finn retter viser sist valgte.', 'Når Entur ikke svarer, står det nå på «Nå».']],
+    ['0.18.11', ['Når avgangene ikke kan hentes, står det «Avgangene er ikke tilgjengelige akkurat nå» med «Prøv igjen».', '«Endre» på «Nå» lar deg velge Hjemme eller Borte.', 'Retter med bare én variant viser også varianten i navnet, og invitasjonsarket lukkes når den andre blir med.']],
+    ['0.18.10', ['Større knapper overalt (minst 48 px) og like skriftstørrelser og hjørner – også på kjøkkenskjermen.', 'Retter viser varianten i navnet, f.eks. «Kyllinggryte med sopp (halvferdig)», og telleren i Finn retter viser sist valgte.', 'Når avgangene ikke er tilgjengelige, står det nå på «Nå».']],
     ['0.18.9', ['Trykk på en rett for å se oppskriften – «Rediger» ligger inni.', 'Tid skrives likt overalt: «45 min (20 aktivt)».', 'Søk viser retten med akkurat det navnet først, og retter med flere varianter legges til med én gang.', '«Koble til» spør om du vil invitere noen eller har fått en invitasjon.', 'Kom i gang holder fast på stegnumrene, og «Nå» viser hvor du slapp.']],
     ['0.18.8', ['En ny telefon eller PC blir spurt om navn og hvem den tilhører når den kobles til, og en enhet som fjernes fra husstanden får tydelig beskjed om det.', '«Fyll man–fre» hopper over dager som har vært, og både «Erstatt» og «Fjern middagen» kan angres i 8 sekunder – varene kommer tilbake på lista.', 'Er det ingen holdeplass i nærheten, står det tydelig «Fra hjemme (…)» over avgangene. «Nå» viser like mange avganger som kjøkkenskjermen, og ⚙ synes også om natta.', 'Finn retter viser både aktiv tid og total tid, og «Ferdigkjøpt» velges ikke uten at du ber om det.']],
     ['0.18.7', ['«Nå» viser avganger fra husstandens holdeplasser – eller de nærmeste til hjemmeadressen hvis ingen er valgt. Med posisjon på står det bare «⌂ Hjemme» eller omtrent hvor du er øverst, med «Endre» hvis du vil velge selv.']],
     ['0.18.6', ['Når du legger til en oppskrift fra nettet, starter dagene på i dag: velg «I dag», «I morgen», en dag den neste uka eller en hvilken som helst dato fram i tid. Har dagen allerede en middag, spør Knaggen før den byttes ut.']],
     ['0.18.5', ['Knappen øverst viser nå navnet på husstanden og tar deg rett til Husstand, og enhetene har fått sin egen side.']],
     ['0.18.4', ['«Delt» står nå alltid øverst, også på kjøkkenskjermen og over «Nå» på telefonen, og en PC eller telefon som kobles til husstanden får straks navn i enhetslista.']],
-    ['0.18.3', ['Oppskriften steg for steg passer bedre på telefonen: mindre tittel, ingrediensene kan legges sammen, og Forrige/Neste ligger alltid synlig under teksten. Nettbrett og PC er som før.', '«Neste avganger» på «Nå» blir ikke lenger stående på «Henter avganger …»: svarer ikke Entur innen 8 sekunder får du beskjed og en «Prøv igjen»-knapp, de sist hentede avgangene vises mens nye hentes, og uten valgt holdeplass får du en lenke til innstillingen.']],
+    ['0.18.3', ['Oppskriften steg for steg passer bedre på telefonen: mindre tittel, ingrediensene kan legges sammen, og Forrige/Neste ligger alltid synlig under teksten. Nettbrett og PC er som før.', '«Neste avganger» på «Nå» blir ikke lenger stående på «Henter avganger …»: svarer det ikke innen 8 sekunder får du beskjed og en «Prøv igjen»-knapp, de sist hentede avgangene vises mens nye hentes, og uten valgt holdeplass får du en lenke til innstillingen.']],
     ['0.18.2', ['På telefonen har «Nå» fått egen fane, og appen åpner der. Telefonen kjennes igjen også når den holdes på tvers. Nettbrett og PC er som før.']],
     ['0.18.1', ['Husstanden kan legge inn en hjemmeadresse under Husstand → Hjem. «Nå» bruker den til å se om du er hjemme, og du kan fjerne den når som helst.', 'Velg tema på hver enhet: System, Lys eller Mørk (Husstand → Denne enheten). Kjøkkenskjermen på nettbrettet følger fortsatt tiden på døgnet.']],
     ['0.18.0', ['Ny «Nå»-side på telefonen (Kjøkken-lenken på smale skjermer): Hjemme viser klokke, vær, dagens middag, kvelden og neste avganger. Borte viser avganger, det du må kjøpe til middagen i dag og familiens ettermiddag. Du kan la telefonen bytte selv med posisjon (Husstand → Denne enheten). Posisjonen lagres aldri.']],
