@@ -1828,8 +1828,14 @@
     var key = r.variant || (r.fromLib && r.fromLib.variant), d = (r.lib || (r.fromLib && r.fromLib.id)) ? dishById(r.lib || r.fromLib.id) : null;
     var v = d && key ? variantOf(d, key) : null;
     if (!v) return '';
-    if (!r.fromLib && / \(/.test(r.name || '')) return '';   // v0.18.9: varianten står allerede i navnet, «Taco (kjøttdeig)»
-    return r.fromLib ? 'Tilpasset · ' + v.name : v.name;
+    return r.fromLib ? 'Tilpasset' : '';   // v0.18.10: varianten står alltid i navnet (shownName), «Taco (halvferdig)»
+  }
+  function shownName(r) {
+    var n = r.name || '';
+    if (/ \(/.test(n)) return n;
+    var key = r.variant || (r.fromLib && r.fromLib.variant), d = (r.lib || (r.fromLib && r.fromLib.id)) ? dishById(r.lib || r.fromLib.id) : null;
+    var v = d && key && d.variants && d.variants.length > 1 ? variantOf(d, key) : null;
+    return v ? n + ' (' + v.name.toLowerCase() + ')' : n;
   }
   function renderRetter() {
     var rs = sortedRecipes();
@@ -1846,7 +1852,7 @@
         if (r.minutes) meta.push(timeShort(r));
         meta.push(r.ingredients.length + (r.ingredients.length === 1 ? ' ingrediens' : ' ingredienser'));
         h += '<li><a class="card recipe-card" href="#retter/' + encodeURIComponent(r.id) + '">' +
-          '<span class="card-title">' + esc(r.name) + (/^tm-/.test(r.id) ? ' <span class="badge" data-testid="tatt-med">Tatt med</span>' : '') + '</span>' +
+          '<span class="card-title">' + esc(shownName(r)) + (/^tm-/.test(r.id) ? ' <span class="badge" data-testid="tatt-med">Tatt med</span>' : '') + '</span>' +
           '<span class="card-meta">' + esc(meta.join(' · ')) + '</span>' +
           (r.note ? '<span class="card-note">' + esc(r.note) + '</span>' : '') +
           '</a></li>';
@@ -1863,7 +1869,7 @@
       rs.forEach(function (r) {
         var vl = variantLabel(r);
         h += '<li><a class="v11-row recipe-card" href="#retter/' + encodeURIComponent(r.id) + '">' +
-          '<span class="t"><b class="card-title">' + esc(r.name) + (/^tm-/.test(r.id) ? ' <span class="badge" data-testid="tatt-med">Tatt med</span>' : '') + '</b>' +
+          '<span class="t"><b class="card-title">' + esc(shownName(r)) + (/^tm-/.test(r.id) ? ' <span class="badge" data-testid="tatt-med">Tatt med</span>' : '') + '</b>' +
           (vl ? '<span class="s recipe-variant" data-testid="variantnavn">' + esc(vl) + '</span>' : '') + '</span>' +
           '<span class="tid card-meta">' + esc(timeShort(r)) + '</span><span class="go" aria-hidden="true">›</span></a></li>';
       });
@@ -1907,7 +1913,7 @@
     var vl = variantLabel(r), meta = [timeText(r), vl, r.note].filter(Boolean);
     var steps = r.steps && r.steps.length ? r.steps : defaultSteps(r);
     var h = '<section class="page" data-page="rett">';
-    h += '<div class="page-head"><a class="back" href="#retter">‹ Retter</a><h2 data-testid="rett-navn">' + esc(r.name) + '</h2>' +
+    h += '<div class="page-head"><a class="back" href="#retter">‹ Retter</a><h2 data-testid="rett-navn">' + esc(shownName(r)) + '</h2>' +
       '<a class="btn" href="#retter/' + encodeURIComponent(r.id) + '/rediger" data-testid="rett-rediger">Rediger</a></div>';
     if (meta.length) h += '<p class="rv-meta" data-testid="rett-meta">' + esc(meta.join(' · ')) + '</p>';
     h += '<h3 class="section-title">Ingredienser</h3><ul class="rv-ing" data-testid="rett-ingredienser">' + (r.ingredients || []).filter(function (i) { return i && String(i.name || '').trim(); }).map(function (i) {
@@ -2028,6 +2034,7 @@
     if (!v) return;
     if (ownedDish(d).variants[v.key]) { toast(d.name + ' · ' + v.name + ' finnes allerede i rettene'); return; }
     var r = dishRecipe(d, v);
+    finn.last = r.name;   // v0.18.10 (Trude polish 1)
     ops.saveRecipe(r, true);
     renderFinnList();
     toast(r.name + ' lagt til', UNDO_MS, { label: 'Angre', run: function () {
@@ -2088,7 +2095,7 @@
         var own = ownedDish(d), v = variantOf(d, finn.sel[d.id]) || defaultVariant(d, T), open = finn.open === d.id;
         var done = own.any;   // hake når husstanden har retten (en variant, tilpasset eller fra før); ✓ åpner variantene
         h += '<li class="' + (open ? 'v11-open' : '') + '" data-dish="' + esc(d.id) + '" data-testid="finn-rett">' +
-          '<div class="v11-row"><button type="button" class="t" data-action="finn-open" data-dish="' + esc(d.id) + '" aria-expanded="' + open + '" style="background:none;border:0;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer;min-height:44px;justify-content:center">' +
+          '<div class="v11-row"><button type="button" class="t" data-action="finn-open" data-dish="' + esc(d.id) + '" aria-expanded="' + open + '" style="background:none;border:0;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer;min-height:var(--tap);justify-content:center">' +
           '<b>' + esc(d.name) + '</b></button><span class="tid" data-testid="finn-tid">' + esc(timeShort(v)) + '</span>' +
           '<button type="button" class="v11-add' + (done ? ' on' : '') + '" data-action="finn-add" data-dish="' + esc(d.id) + '" data-testid="finn-pluss" aria-label="' + (done ? 'Lagt til: ' + esc(d.name) + ' – vis varianter' : 'Legg til ' + esc(d.name)) + '">' + (done ? '✓' : '+') + '</button></div>' +
           (open ? finnVariantsHtml(d, own) : '') + '</li>';
@@ -2102,7 +2109,7 @@
     if (keep) { var k = el.querySelector(keep); if (k) k.focus({ preventScroll: true }); }
     var c = main.querySelector('[data-testid="finn-antall"]'); if (c) c.textContent = finnCount();
   }
-  function finnCount() { var n = state.recipes.length; return n + ' valgt'; }
+  function finnCount() { var n = state.recipes.length; return n + ' valgt' + (finn.last ? ' · sist: ' + finn.last : ''); }   // v0.18.10: varianten synlig i telleren
   // v0.18.9: startet fra Kom i gang (#retter/finn/uke) → Ferdig går tilbake til Uke, der neste steg står åpent
   function finnBack() { return /^#retter\/finn\/uke/.test(location.hash) ? ['#uke', 'Uke'] : ['#retter', 'Retter']; }
   function renderFinn() {
@@ -4838,7 +4845,7 @@
     if (!st.s0) h += '<li class="on" data-step="0"><span class="n">0</span><span class="h">Velg 5–10 retter familien liker</span><div class="km-body">' + recipesStepBody() + '</div></li>';
     // 1 Velg middager
     if (st.s1) {
-      h += '<li class="done" data-step="1">' + done + '<span class="h"><span class="sr">ferdig: </span>' +
+      h += '<li class="done" data-step="1">' + done + '<span class="h"><span class="sr">ferdig, </span>' +
         (st.n === 1 ? '1 middag valgt' : st.n + ' middager valgt <span class="s">· bytt gjerne en kveld</span>') + '</span></li>';
     } else if (!st.s0) {
       h += '<li class="todo" data-step="1"><span class="n">1</span><span class="h">Velg middager</span></li>';
@@ -4850,7 +4857,7 @@
     // 2 Lista lager seg selv
     if (st.s2) {
       var p = hsPeople(), nItems = listCount();
-      h += '<li class="done" data-step="2">' + done + '<span class="h"><span class="sr">ferdig: </span>Lista: ' + nItems + (nItems === 1 ? ' vare' : ' varer') +
+      h += '<li class="done" data-step="2">' + done + '<span class="h"><span class="sr">ferdig, </span>Lista: ' + nItems + (nItems === 1 ? ' vare' : ' varer') +
         (p && hsScaleOn() ? ' for ' + esc(SC.peopleText(p, true)) : ' <span class="s">· mengder som i oppskriftene</span>') +
         ' <a href="#liste" data-testid="km-se-lista">Se lista ›</a></span></li>';
     } else if (st.active === 2) {
@@ -4906,7 +4913,7 @@
       '<ol class="km-steps" aria-label="Kom i gang, ' + words[steps.length] + ', steg ' + (act + 1) + ' av ' + steps.length + '">';
     steps.forEach(function (s, i) {
       var cls = s[1] ? 'done' : i === act ? 'on' : 'todo';
-      h += '<li class="' + cls + '" data-step="' + s[0] + '"' + (i === act ? ' aria-current="step"' : '') + '><span class="n">' + (s[1] ? IC.check : (i + 1)) + '</span><span class="h">' + (s[1] ? '<span class="sr">ferdig: </span>' : '') + s[2] + '</span>' +
+      h += '<li class="' + cls + '" data-step="' + s[0] + '"' + (i === act ? ' aria-current="step"' : '') + '><span class="n">' + (s[1] ? IC.check : (i + 1)) + '</span><span class="h">' + (s[1] ? '<span class="sr">ferdig, </span>' : '') + s[2] + '</span>' +
         (cls === 'on' ? '<div class="km-body">' + s[3] + '</div>' : '') + '</li>';
     });
     return h + '</ol></section>';
@@ -5831,7 +5838,7 @@
     K17.selfSeen = false;
     dropHousehold();
     lsSet(REMOVED_KEY, JSON.stringify({ name: nm, at: Date.now() }));
-    resetToIntro('Denne enheten er koblet fra' + (nm ? ' «' + nm + '»' : '') + ' og er ikke lenger med i husstanden.');
+    resetToIntro('');   // v0.18.10 (S6): meldingen vises én gang – i arket under
     showRemovedNotice();
   }
   function showRemovedNotice() {
@@ -6430,6 +6437,7 @@
     var cur = readHH();
     if (cur && cur.hid === hh.hid && cur.invited && !cur.othersSeen && n > (cur.inviteBase || 1)) {
       cur.othersSeen = true; writeHH(cur); hh.othersSeen = true;
+      var ivs = v9Sheet(); if (ivs && ivs.id === 'inv') { if (typeof invSheet === 'object' && invSheet) invSheet.shared = true; closeV9Sheet(false); }   // v0.18.10: arket lukkes så meldingen synes
       toast('Den andre er med i husstanden nå', 4000);
     }
     var el = document.querySelector('[data-testid="hs-koblet"]');
@@ -7085,8 +7093,9 @@
   /* ---------- v0.16: versjonsnummeret ved logoen og «Nytt i Knaggen» ----------
    * Trykk på «0.16» åpner arket. Etter en oppdatering åpnes det av seg selv én gang (ikke ved aller første åpning,
    * ikke på kjøkkenskjermen og ikke i automatiserte tester uten testkroken KNAGGEN_TEST_NYTT). */
-  var APP_VERSION = '0.18.9', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.18.10', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.18.10', ['Større knapper overalt (minst 48 px) og like skriftstørrelser og hjørner – også på kjøkkenskjermen.', 'Retter viser varianten i navnet, f.eks. «Kyllinggryte med sopp (halvferdig)», og telleren i Finn retter viser sist valgte.', 'Når Entur ikke svarer, står det nå på «Nå».']],
     ['0.18.9', ['Trykk på en rett for å se oppskriften – «Rediger» ligger inni.', 'Tid skrives likt overalt: «45 min (20 aktivt)».', 'Søk viser retten med akkurat det navnet først, og retter med flere varianter legges til med én gang.', '«Koble til» spør om du vil invitere noen eller har fått en invitasjon.', 'Kom i gang holder fast på stegnumrene, og «Nå» viser hvor du slapp.']],
     ['0.18.8', ['En ny telefon eller PC blir spurt om navn og hvem den tilhører når den kobles til, og en enhet som fjernes fra husstanden får tydelig beskjed om det.', '«Fyll man–fre» hopper over dager som har vært, og både «Erstatt» og «Fjern middagen» kan angres i 8 sekunder – varene kommer tilbake på lista.', 'Er det ingen holdeplass i nærheten, står det tydelig «Fra hjemme (…)» over avgangene. «Nå» viser like mange avganger som kjøkkenskjermen, og ⚙ synes også om natta.', 'Finn retter viser både aktiv tid og total tid, og «Ferdigkjøpt» velges ikke uten at du ber om det.']],
     ['0.18.7', ['«Nå» viser avganger fra husstandens holdeplasser – eller de nærmeste til hjemmeadressen hvis ingen er valgt. Med posisjon på står det bare «⌂ Hjemme» eller omtrent hvor du er øverst, med «Endre» hvis du vil velge selv.']],

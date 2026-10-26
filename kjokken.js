@@ -642,6 +642,9 @@
     return '';
   }
   function naNoStop() {
+    // v0.18.10 (S3): Entur feiler / ber oss vente → si det, i stedet for bare «Ingen holdeplass valgt»
+    if (gateBlocked('nearest') || gateBlocked('dep') || homeNear.err || pos.depErr) return '<div class="na-dep-err" data-testid="na-avg-feil" role="alert"><p>Entur svarer ikke akkurat nå. Vi prøver igjen om litt.</p>' +
+      '<button type="button" class="btn small" data-k="na-avg-igjen" data-testid="na-avg-igjen">Prøv igjen</button></div>';
     return '<p class="na-note" data-testid="na-avg-tom">Ingen holdeplass valgt. <a href="#kjokken/innstillinger/avg" data-k="na-endre" data-testid="na-avg-velg">Velg holdeplass</a></p>';
   }
   function minTxt(ms, t) { var m = Math.floor((ms - t) / 60000); return m < 1 ? 'nå' : m + ' min'; }
@@ -710,7 +713,7 @@
       if (bs.stops.length && (rr.length || !bErr)) h += '<ul class="na-card na-dep' + (local ? '' : ' na-hjemmefra') + '" data-testid="na-avg-her">' + (rr.length ? rr.map(function (x) { return '<li><span class="no">' + esc(x.no) + '</span><b>' + esc(x.stop) + '<span>mot ' + esc(x.front) + '</span></b><span class="mn">' + minTxt(x.ms, t) + '</span></li>'; }).join('') : '<li class="note">' + (data ? 'Ingen avganger den neste timen' : 'Henter avganger …') + '</li>') + '</ul>';
       else if (!bs.stops.length) h += naNoStop();
       if (bs.stops.length) h += local ? naDepState(pos.dep, pos.depBusy, pos.depErr, pos.depAt) : naDepState(dep.data, dep.busy, dep.err, dep.at);
-      h += '<p class="na-src" data-testid="na-holdeplass-kilde">' + (local ? 'Holdeplasser nær deg' : bs.src === 'felles' ? 'Husstandens holdeplasser hjemme' : 'Holdeplass valgt manuelt') + ' · <a href="#kjokken/innstillinger/avg" data-k="na-endre" data-testid="na-endre">Endre</a></p>';
+      if (bs.stops.length) h += '<p class="na-src" data-testid="na-holdeplass-kilde">' + (local ? 'Holdeplasser nær deg' : bs.src === 'felles' ? 'Husstandens holdeplasser hjemme' : 'Holdeplass valgt manuelt') + ' · <a href="#kjokken/innstillinger/avg" data-k="na-endre" data-testid="na-endre">Endre</a></p>';
       var buy = A.naBuy ? A.naBuy() : { items: [], open: 0 };
       h += '<p class="na-lbl">Kjøp på vei hjem</p><div class="na-card" data-testid="na-kjop">' +
         (!m ? '<p class="note">Ingen middag valgt i dag.</p>' : !buy.items.length ? '<p class="note">Alt til ' + esc(m.name) + ' er handlet.</p>' :
