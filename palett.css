@@ -49,3 +49,19 @@
   /* Natt (bakgrunn #000000) */
   --kj-natt-sol: #645a44; --kj-natt-sky: #565a5d; --kj-natt-regn: #4d5d6a; --kj-natt-sno: #4b5c63; --kj-natt-torden: #645844;
 }
+
+/* ===== Kjøkkenskjerm: utseende og aksentfarge (0.18.13, merkevare/kjokken-farger/kjokken-farger.css) =====
+ * Mørk (nøytral blågrå, hele døgnet), værsymboler på Mørk og aksentfarger. Aksent: -lys brukes på Dag/Lys, -mork på Kveld og Mørk;
+ * ingen aksent om natta. Tekst på aksentflate: --kj-ak-pa-lys (hvit) / --kj-ak-pa-mork. Rav: lys #995700 (5.05 mot bakgrunn, hvit tekst 5.65), mørk #e69530 (7.12, mørk tekst 7.12). */
+:root {
+  --kj-mork-bg: #181c1d; --kj-mork-surface: #222829; --kj-mork-line: #2e3536; --kj-mork-ink: #dfe3e1; --kj-mork-muted: #a5aeab;
+  --kj-mork-sol: #997938; --kj-mork-sky: #72818d; --kj-mork-regn: #4f83b0; --kj-mork-sno: #4d859d; --kj-mork-torden: #9d7839;
+  --kj-ak-pa-lys: #ffffff; --kj-ak-pa-mork: #181c1d;
+  --kj-ak-salvie-lys: #3f6e5a; --kj-ak-salvie-mork: #93c2ab;
+  --kj-ak-messing-lys: #7c5d28; --kj-ak-messing-mork: #d6b98a;
+  --kj-ak-rav-lys: #995700; --kj-ak-rav-mork: #e69530;
+  --kj-ak-fjord-lys: #2f5f86; --kj-ak-fjord-mork: #9cc0e0;
+  --kj-ak-lyng-lys: #6a4f80; --kj-ak-lyng-mork: #c4aedb;
+  --kj-ak-rust-lys: #9a4a32; --kj-ak-rust-mork: #e3a58e;
+  --kj-ak-mose-lys: #556327; --kj-ak-mose-mork: #bccb8a;
+}

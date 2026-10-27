@@ -257,12 +257,13 @@ function subscribe(hid, oldest, handlers) {
     });
   }
   function listen(name, q, quiet) {
-    let first = true;
+    let first = true, wasCache = true;
     if (!quiet) expected++;
     unsubs.push(fs.onSnapshot(q, { includeMetadataChanges: true }, snap => {
       if (!quiet) metas[name] = snap.metadata;
-      const changed = first || snap.docChanges().length > 0;
-      first = false;
+      // 0.18.13: «serveren har svart» (cache → server uten endringer) gir også beskjed for settings: appen må vite at hjemmeadressen sikkert mangler
+      const changed = first || snap.docChanges().length > 0 || (name === 'settings' && wasCache && !snap.metadata.fromCache);
+      first = false; if (!snap.metadata.fromCache) wasCache = false;
       if (changed && handlers[name]) handlers[name](snap.docs.map(d => Object.assign({ id: d.id }, d.data())), snap.metadata);
       if (!quiet) status();
     }, err => {

@@ -1,0 +1,80 @@
+/* 0.18.13: kopi av merkevare/kjokken-farger/aksent-app.css (Mons, 27.10) – fasit, ikke endre her uten å endre der. */
+/* ===== Aksentfarge for hele appen (merkevare/kjokken-farger/aksent-app) =====
+ * Marius 27.10: sju valg (salvie = standard, messing, rav, fjord, lyng, rust, mose). Gjelder hele appen, lagres lokalt per telefon.
+ * Utseende Lys/Mørk/Følg døgnet gjelder fortsatt bare kjøkkenskjermen. Appens vanlige tema (System/Lys/Mørk) er uendret.
+ * LASTES ETTER style.css og palett.css. Ingen rå farger i appens regler: aksenten byttes ved å bytte --brand-familien.
+ *
+ * Slik virker det (forslag til koden, ikke gjort i appen):
+ *  - Verdien lagres i localStorage «knaggen:aksent» (tekst: messing|rav|fjord|lyng|rust|mose; ingen verdi = salvie).
+ *  - index.html setter <html data-aksent="…"> før CSS-en tegnes, på samme måte som data-tema (linje 28 i dag).
+ *  - Velgeren er en rad med sju fargeprikker (som personfarge-velgeren .f-pf .f-sw), «Gjelder bare denne telefonen».
+ *
+ * Aksenten styrer (alt går via tokens, så ingen selektor må endres): --brand, --brand-ink, --brand-soft, --brand-soft-line,
+ *   --inv-brand, --inv-brand-ink og --tone-top. Se aksent-app.md for selektorlista (lenker, primærknapper, valgt fane,
+ *   «I dag», fokusring, brytere/avkrysning, merker, valgt segment, tellere).
+ * Styres IKKE av aksenten: personfarger (--a-*), værsymboler (--w-*, --kj-*), logo, messingkortet (--tone-middag, --a-messing, .f-ill),
+ *   advarsel (--accent, --accent-ink), feil/fare (--danger*), og suksess-merker (egen --ok, under).
+ * Verdier: salvie = appens verdier i dag (uendret standard). Øvrige: farge-v1/kjokken-farger. Kontrast: aksent-app.md. */
+
+/* Rå aksentverdier (brukes også av kjøkkenskjermen, se «Kjøkken-bro» nederst) */
+:root { --aks-lys: #3f6e5a; --aks-mork: #86a898; --aks-pa-lys: #ffffff; --aks-pa-mork: #10201a;
+  /* Suksess (synk ok, «✓ lagt til», trygg status) skal ikke skifte farge med aksenten */
+  --ok: #86a898; }
+@media (prefers-color-scheme: light) { :root:not([data-tema="mork"]) { --ok: #3f6e5a; } }
+:root[data-tema="lys"] { --ok: #3f6e5a; }
+
+/* ---- Messing: Lys #7c5d28 · Mørk #d6b98a ---- */
+:root[data-aksent="messing"] { --aks-lys: #7c5d28; --aks-mork: #d6b98a; }
+@media (prefers-color-scheme: dark) { :root[data-aksent="messing"]:not([data-tema="lys"]) { --brand: #d6b98a; --brand-ink: #10201a; --brand-soft: #2b2f2d; --brand-soft-line: #44433b; --inv-brand: #7c5d28; --inv-brand-ink: #ffffff; --tone-top: #242826; } }
+:root[data-aksent="messing"][data-tema="mork"] { --brand: #d6b98a; --brand-ink: #10201a; --brand-soft: #2b2f2d; --brand-soft-line: #44433b; --inv-brand: #7c5d28; --inv-brand-ink: #ffffff; --tone-top: #242826; }
+@media (prefers-color-scheme: light) { :root[data-aksent="messing"]:not([data-tema="mork"]) { --brand: #7c5d28; --brand-ink: #ffffff; --brand-soft: #ede9e0; --brand-soft-line: #d1c6b3; --inv-brand: #d6b98a; --inv-brand-ink: #10201a; --tone-top: #eeebe3; } }
+:root[data-aksent="messing"][data-tema="lys"] { --brand: #7c5d28; --brand-ink: #ffffff; --brand-soft: #ede9e0; --brand-soft-line: #d1c6b3; --inv-brand: #d6b98a; --inv-brand-ink: #10201a; --tone-top: #eeebe3; }
+
+/* ---- Rav: Lys #995700 · Mørk #e69530 ---- */
+:root[data-aksent="rav"] { --aks-lys: #995700; --aks-mork: #e69530; }
+@media (prefers-color-scheme: dark) { :root[data-aksent="rav"]:not([data-tema="lys"]) { --brand: #e69530; --brand-ink: #10201a; --brand-soft: #2c2d28; --brand-soft-line: #483c29; --inv-brand: #995700; --inv-brand-ink: #ffffff; --tone-top: #252622; } }
+:root[data-aksent="rav"][data-tema="mork"] { --brand: #e69530; --brand-ink: #10201a; --brand-soft: #2c2d28; --brand-soft-line: #483c29; --inv-brand: #995700; --inv-brand-ink: #ffffff; --tone-top: #252622; }
+@media (prefers-color-scheme: light) { :root[data-aksent="rav"]:not([data-tema="mork"]) { --brand: #995700; --brand-ink: #ffffff; --brand-soft: #f0e8dc; --brand-soft-line: #dbc4a5; --inv-brand: #e69530; --inv-brand-ink: #10201a; --tone-top: #efeae1; } }
+:root[data-aksent="rav"][data-tema="lys"] { --brand: #995700; --brand-ink: #ffffff; --brand-soft: #f0e8dc; --brand-soft-line: #dbc4a5; --inv-brand: #e69530; --inv-brand-ink: #10201a; --tone-top: #efeae1; }
+
+/* ---- Fjord: Lys #2f5f86 · Mørk #9cc0e0 ---- */
+:root[data-aksent="fjord"] { --aks-lys: #2f5f86; --aks-mork: #9cc0e0; }
+@media (prefers-color-scheme: dark) { :root[data-aksent="fjord"]:not([data-tema="lys"]) { --brand: #9cc0e0; --brand-ink: #10201a; --brand-soft: #272f32; --brand-soft-line: #39454c; --inv-brand: #2f5f86; --inv-brand-ink: #ffffff; --tone-top: #21282b; } }
+:root[data-aksent="fjord"][data-tema="mork"] { --brand: #9cc0e0; --brand-ink: #10201a; --brand-soft: #272f32; --brand-soft-line: #39454c; --inv-brand: #2f5f86; --inv-brand-ink: #ffffff; --tone-top: #21282b; }
+@media (prefers-color-scheme: light) { :root[data-aksent="fjord"]:not([data-tema="mork"]) { --brand: #2f5f86; --brand-ink: #ffffff; --brand-soft: #e5e9eb; --brand-soft-line: #b8c7d2; --inv-brand: #9cc0e0; --inv-brand-ink: #10201a; --tone-top: #eaebe8; } }
+:root[data-aksent="fjord"][data-tema="lys"] { --brand: #2f5f86; --brand-ink: #ffffff; --brand-soft: #e5e9eb; --brand-soft-line: #b8c7d2; --inv-brand: #9cc0e0; --inv-brand-ink: #10201a; --tone-top: #eaebe8; }
+
+/* ---- Lyng: Lys #6a4f80 · Mørk #c4aedb ---- */
+:root[data-aksent="lyng"] { --aks-lys: #6a4f80; --aks-mork: #c4aedb; }
+@media (prefers-color-scheme: dark) { :root[data-aksent="lyng"]:not([data-tema="lys"]) { --brand: #c4aedb; --brand-ink: #10201a; --brand-soft: #2a2e32; --brand-soft-line: #41414b; --inv-brand: #6a4f80; --inv-brand-ink: #ffffff; --tone-top: #23272a; } }
+:root[data-aksent="lyng"][data-tema="mork"] { --brand: #c4aedb; --brand-ink: #10201a; --brand-soft: #2a2e32; --brand-soft-line: #41414b; --inv-brand: #6a4f80; --inv-brand-ink: #ffffff; --tone-top: #23272a; }
+@media (prefers-color-scheme: light) { :root[data-aksent="lyng"]:not([data-tema="mork"]) { --brand: #6a4f80; --brand-ink: #ffffff; --brand-soft: #ebe7ea; --brand-soft-line: #cbc2d0; --inv-brand: #c4aedb; --inv-brand-ink: #10201a; --tone-top: #edeae8; } }
+:root[data-aksent="lyng"][data-tema="lys"] { --brand: #6a4f80; --brand-ink: #ffffff; --brand-soft: #ebe7ea; --brand-soft-line: #cbc2d0; --inv-brand: #c4aedb; --inv-brand-ink: #10201a; --tone-top: #edeae8; }
+
+/* ---- Rust: Lys #9a4a32 · Mørk #e3a58e ---- */
+:root[data-aksent="rust"] { --aks-lys: #9a4a32; --aks-mork: #e3a58e; }
+@media (prefers-color-scheme: dark) { :root[data-aksent="rust"]:not([data-tema="lys"]) { --brand: #e3a58e; --brand-ink: #10201a; --brand-soft: #2c2e2d; --brand-soft-line: #473f3c; --inv-brand: #9a4a32; --inv-brand-ink: #ffffff; --tone-top: #252726; } }
+:root[data-aksent="rust"][data-tema="mork"] { --brand: #e3a58e; --brand-ink: #10201a; --brand-soft: #2c2e2d; --brand-soft-line: #473f3c; --inv-brand: #9a4a32; --inv-brand-ink: #ffffff; --tone-top: #252726; }
+@media (prefers-color-scheme: light) { :root[data-aksent="rust"]:not([data-tema="mork"]) { --brand: #9a4a32; --brand-ink: #ffffff; --brand-soft: #f0e7e1; --brand-soft-line: #dbc0b6; --inv-brand: #e3a58e; --inv-brand-ink: #10201a; --tone-top: #f0eae4; } }
+:root[data-aksent="rust"][data-tema="lys"] { --brand: #9a4a32; --brand-ink: #ffffff; --brand-soft: #f0e7e1; --brand-soft-line: #dbc0b6; --inv-brand: #e3a58e; --inv-brand-ink: #10201a; --tone-top: #f0eae4; }
+
+/* ---- Mose: Lys #556327 · Mørk #bccb8a ---- */
+:root[data-aksent="mose"] { --aks-lys: #556327; --aks-mork: #bccb8a; }
+@media (prefers-color-scheme: dark) { :root[data-aksent="mose"]:not([data-tema="lys"]) { --brand: #bccb8a; --brand-ink: #10201a; --brand-soft: #29302d; --brand-soft-line: #3f473b; --inv-brand: #556327; --inv-brand-ink: #ffffff; --tone-top: #232926; } }
+:root[data-aksent="mose"][data-tema="mork"] { --brand: #bccb8a; --brand-ink: #10201a; --brand-soft: #29302d; --brand-soft-line: #3f473b; --inv-brand: #556327; --inv-brand-ink: #ffffff; --tone-top: #232926; }
+@media (prefers-color-scheme: light) { :root[data-aksent="mose"]:not([data-tema="mork"]) { --brand: #556327; --brand-ink: #ffffff; --brand-soft: #e9e9e0; --brand-soft-line: #c4c8b2; --inv-brand: #bccb8a; --inv-brand-ink: #10201a; --tone-top: #ecebe3; } }
+:root[data-aksent="mose"][data-tema="lys"] { --brand: #556327; --brand-ink: #ffffff; --brand-soft: #e9e9e0; --brand-soft-line: #c4c8b2; --inv-brand: #bccb8a; --inv-brand-ink: #10201a; --tone-top: #ecebe3; }
+
+/* ---- Selektorer som ikke går via --brand ---- */
+/* «I dag» i Uke bruker --a-salvie (personfargen) rett: skal følge aksenten */
+.v11-day.today .dname, .days.v11-rows > li.day.today .dname { color: var(--brand); }
+/* Suksess-merker beholder salvie uansett aksent (med rust/messing/rav ville «ok» lest som feil/advarsel) */
+.sync-status.ok::before { background: var(--ok); }
+.uv-status .ok, .ai-match .ok, .k17-ok { color: var(--ok); }
+.k17-sub .dot, .k17-pill .dot { color: var(--ok); }
+.fv-starter.added::before { color: var(--ok); }
+
+/* ---- Kjøkken-bro ----
+ * Kjøkkenskjermen følger den globale aksenten (ingen egen aksentvelger lenger). I kjokken-farger.css: fjern .kj.a-<navn> og bruk
+ *   .kj { --ak-lys: var(--aks-lys); --ak-mork: var(--aks-mork); }  og  --kj-ak-pa-lys/-mork = --aks-pa-lys/-mork.
+ * Natt har ingen aksent (beslutning 27.10). */

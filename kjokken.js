@@ -110,8 +110,44 @@
     kveld: { bg: '#120c06', surface: '#1c140b', line: '#2a1e11', ink: '#d8a868', muted: '#a9804c', clock: '#e2b373', brand: '#b88a52', 'on-brand': '#120c06', mark: '#a9804c', brass: '#a9804c',
       'cal-1': '#d8a868', 'cal-2': '#b8ac62', 'cal-3': '#d99a7a', 'cal-4': '#e3c27a', late: '#e3c27a' },
     natt:  { bg: '#000000', surface: '#000000', line: '#000000', ink: '#3a2814', muted: '#3a2814', clock: '#7a542c', brand: '#3a2814', 'on-brand': '#000000', mark: '#2a1d0f', brass: '#2a1d0f',
-      'cal-1': '#000000', 'cal-2': '#000000', 'cal-3': '#000000', 'cal-4': '#000000', late: '#000000' }
+      'cal-1': '#000000', 'cal-2': '#000000', 'cal-3': '#000000', 'cal-4': '#000000', late: '#000000' },
+    // 0.18.13: «Mørk» (kjokken-farger): nøytral blågrå, hele døgnet. Verdiene er --kj-mork-* i palett.css.
+    mork:  { bg: '#181c1d', surface: '#222829', line: '#2e3536', ink: '#dfe3e1', muted: '#a5aeab', clock: '#dfe3e1', brand: '#93c2ab', 'on-brand': '#181c1d', mark: '#dfe3e1', brass: '#93c2ab',
+      'cal-1': '#86a898', 'cal-2': '#8fa8c0', 'cal-3': '#c39ab4', 'cal-4': '#d1a07e', late: '#e3c27a' }
   };
+  /* ---------- Utseende og aksentfarge (0.18.13, merkevare/kjokken-farger) ----------
+   * Bare på denne enheten (localStorage), aldri Firestore. mode: dognet (standard, Dag/Kveld/Natt) | lys (Dag hele døgnet) | mork (Mørk hele døgnet).
+   * Aksent (salvie standard): lys verdi på Dag/Lys, mørk verdi på Kveld/Mørk, ingen om natta. Verdiene står som --kj-ak-<navn>-lys/-mork i palett.css. */
+  var LOOK_KEY = 'knaggen:kjokken-utseende';   // { mode } – gjelder bare kjøkkenskjermen
+  var AKS_KEY = 'knaggen:aksent';   // aksentfargens navn (JSON-streng) – gjelder hele appen på denne enheten; index.html setter html[data-aksent] før CSS-en tegnes
+  var LOOKS = [['dognet', 'Følg døgnet', 'Lys om dagen, dempet om kvelden og natta'], ['lys', 'Lys', 'Alltid lys'], ['mork', 'Mørk', 'Alltid mørk']];
+  var AKS = [['salvie', 'Salvie'], ['messing', 'Messing'], ['rav', 'Rav'], ['fjord', 'Fjord'], ['lyng', 'Lyng'], ['rust', 'Rust'], ['mose', 'Mose']];
+  function look() {
+    var l = lsGet(LOOK_KEY) || {}, ak = lsGet(AKS_KEY), m = 'dognet', a = 'salvie', i;
+    for (i = 0; i < LOOKS.length; i++) if (LOOKS[i][0] === l.mode) m = l.mode;
+    for (i = 0; i < AKS.length; i++) if (AKS[i][0] === ak) a = ak;
+    return { mode: m, aks: a };
+  }
+  // Aksenten gjelder hele appen: html[data-aksent] (satt av index.html før første tegning) bytter --brand-familien i aksent-app.css (Mons). Salvie er standard (ingen attributt).
+  function setAksent(name) {
+    lsSet(AKS_KEY, name);
+    var h = document.documentElement; if (name === 'salvie') h.removeAttribute('data-aksent'); else h.setAttribute('data-aksent', name);
+  }
+  setAksent(look().aks);
+  function akVal(name, tone) {
+    var v = ''; try { v = getComputedStyle(document.documentElement).getPropertyValue('--kj-ak-' + name + '-' + tone).trim(); } catch (e) { }
+    return /^#[0-9a-f]{6}$/i.test(v) ? v : (tone === 'lys' ? '#3f6e5a' : '#93c2ab');
+  }
+  // Fargene som aksenten gir i en fase: [aksent, tekst på aksentflate]. Natt: ingen aksent (Natt-fargene).
+  function tokOf(name) {
+    var o = {}, b = TOK[name], k, L = look(), lys = akVal(L.aks, 'lys'), mork = akVal(L.aks, 'mork');
+    for (k in b) o[k] = b[k];
+    if (name === 'dag') { o.ak = lys; o['ak-pa'] = '#ffffff'; o.brand = lys; o.brass = lys; }
+    else if (name === 'kveld') { o.ak = mork; o['ak-pa'] = '#120c06'; o.brass = mork; }   // Kveld beholder ravtonen; aksenten er bare en liten detalj
+    else if (name === 'mork') { o.ak = mork; o['ak-pa'] = '#181c1d'; o.brand = mork; o.brass = mork; }
+    else { o.ak = b.clock; o['ak-pa'] = '#000000'; }
+    return o;
+  }
   function hex2lin(h) { return [1, 3, 5].map(function (i) { var c = parseInt(h.substr(i, 2), 16) / 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }); }
   function lin2hex(c) { return '#' + c.map(function (x) { x = x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(Math.max(0, x), 1 / 2.4) - 0.055; var v = Math.max(0, Math.min(255, Math.round(x * 255))); return (v < 16 ? '0' : '') + v.toString(16); }).join(''); }
   function toLab(h) {
@@ -130,6 +166,9 @@
   var wx = lsGet(WX_KEY), wxBusy = false, wxErr = '';
 
   function effPhase() {
+    var md = look().mode;
+    if (md === 'lys') return { a: 'dag', b: 'dag', t: 0, raw: 0 };
+    if (md === 'mork') return { a: 'mork', b: 'mork', t: 0, raw: 0 };
     var p = phaseAt(now(), settings());
     var nattIn = p.a === 'natt' || p.b === 'natt';
     if (nattIn && (view === 'cook' || now() - woke < WAKE_MS)) {
@@ -140,7 +179,7 @@
   }
   function applyPhase() {
     if (!root || root.classList.contains('k-na')) return;
-    var p = effPhase(), A = TOK[p.a], B = TOK[p.b];
+    var p = effPhase(), A = tokOf(p.a), B = tokOf(p.b);
     for (var k in A) root.style.setProperty('--k-' + k, mixHex(A[k], B[k], p.t));
     var name = phaseName(p), full = p.a === 'natt' && p.b === 'natt';
     // Mot Natt: alt utenom klokka tones ut de siste 10 minuttene; fra Natt: inn i første halvdel.
@@ -150,6 +189,8 @@
     root.style.setProperty('--k-fade', String(Math.round(fade * 100) / 100));
     root.classList.toggle('k-natt', full);
     root.setAttribute('data-fase', full ? 'natt' : name);
+    root.setAttribute('data-skjerm', name === 'dag' ? 'lys' : 'mork');   // arket i innstillingene følger skjermens utseende
+    var LK = look(); root.style.setProperty('--k-ak-lys', akVal(LK.aks, 'lys')); root.style.setProperty('--k-ak-mork', akVal(LK.aks, 'mork'));
     // Innbrenning: sakte Lissajous-bane. Dag/Kveld ±8 px, 1 px i minuttet; Natt ±40 px, hvert 5. minutt.
     var amp = full ? 40 : 8, step = full ? Math.floor(now() / 300000) : Math.floor(now() / 60000);
     var x = Math.round(amp * Math.sin(step * 2 * Math.PI / (full ? 37 : 97))), y = Math.round(amp * Math.sin(step * 2 * Math.PI / (full ? 23 : 71) + 1));
@@ -398,7 +439,8 @@
     if (!a.stops.length || !dep.data) {
       if (!a.stops.length) return '';
       return '<div class="k-dep k-fadeable k-o4" data-testid="k-avganger"><p class="k-lbl">Avganger</p><p class="note" data-testid="k-avg-note">' +
-        (dep.err ? 'Fikk ikke hentet avgangene nå.' : 'Henter avganger …') + '</p></div>';
+        (dep.err ? 'Fikk ikke hentet avgangene nå.' : 'Henter avganger …') + '</p>' +
+        (dep.err ? '<button type="button" class="k-igjen" data-k="avg-igjen" data-testid="k-avg-igjen">Prøv igjen</button>' : '') + '</div>';
     }
     var per = fit.lvl >= 1 ? 2 : 3, until = Math.min(t + DEP_WINDOW, bedMs(t)), many = a.stops.length > 1, html = [];
     a.stops.forEach(function (st) {
@@ -540,6 +582,9 @@
     if (!posWanted() || pos.busy) return;
     if (pos.at && Date.now() - pos.at < NA_POS_EVERY) return;
     pos.busy = true;
+    try { if (navigator.permissions && navigator.permissions.query) navigator.permissions.query({ name: 'geolocation' }).then(function (r) {
+      if (r && r.state === 'denied' && pos.busy && pos.lat == null && !pos.err) { pos.err = 'nektet'; if (open && naOn()) render(); }   // avslått: vis valget med en gang
+    }, function () { }); } catch (e) { }
     navigator.geolocation.getCurrentPosition(function (p) {
       pos.busy = false; pos.at = Date.now(); pos.err = '';
       pos.lat = round3(p.coords.latitude); pos.lon = round3(p.coords.longitude);   // bare avrundet, og bare i minnet
@@ -681,7 +726,11 @@
     var h = '<div class="na" data-testid="na" data-modus="' + mm.mode + '">';
     var sp = A.startProgress ? A.startProgress() : null;   // v0.18.9: oppsettet er ikke ferdig – vei tilbake til Kom i gang
     if (sp) h += '<a class="na-fortsett" href="#uke" data-k="na-go" data-testid="na-fortsett">Fortsett oppsettet (steg ' + sp.step + ' av ' + sp.of + ')\u00a0<i aria-hidden="true">›</i></a>';
-    if (auto && !naEdit) {
+    // 0.18.13 (D): delt posisjon som ikke er funnet ennå (og ikke avslått/feilet): aldri vis Hjemme/Borte-valget mens vi venter. Rolig linje med siste kjente modus.
+    var venter = pw && !pos.err && (pos.lat == null || !!(A.homePending && A.homePending()));   // + hjemmeadressen er ikke lest ennå (posMode() ville gitt null → valget glimtet)
+    if (venter && !naEdit) {
+      h += '<p class="na-status na-venter" data-testid="na-status-venter" aria-live="polite"><span data-testid="na-status-tekst">' + (home ? '⌂ Hjemme' : 'Borte') + '</span></p>';
+    } else if (auto && !naEdit) {
       // v0.18.7: posisjon er på og vi vet hvor hjemme er → rolig statuslinje i stedet for knapper
       var nm = placeName(), lbl;
       if (mm.mode === 'hjemme') lbl = '⌂ Hjemme';
@@ -704,12 +753,16 @@
       h += '<p class="na-clock" data-testid="na-klokke">' + clock + '</p><p class="na-date" data-testid="na-dato">' + esc(DAYS[d.getDay()] + ' ' + d.getDate() + '. ' + MONTHS[d.getMonth()] + (w ? ' · ' + w : '')) + '</p>';
       h += '<p class="na-lbl">Middag i dag</p>' + (m
         ? '<button type="button" class="na-din f-middag" data-k="cook" data-testid="na-middag">' + ILL_PLATE + '<span class="f-mt"><b>' + esc(m.mark === 'rester' ? 'Rester – ' + m.name : m.name) + '</b>' + (m.time ? '<span>' + esc(m.time) + '</span>' : '') + '</span></button>'
-        : '<p class="na-din none" data-testid="na-middag-tom">Ingen middag valgt</p>');
+        : '<p class="na-din none" data-testid="na-middag-tom">Ingen middag valgt</p>' + naMiddagKnapp());
       var ev = naEvents(t);
       if (ev.length) h += '<p class="na-lbl">I kveld</p><ul class="na-card" data-testid="na-ikveld">' + ev.slice(0, 3).map(function (e) { return '<li><b>' + esc(e.tm + ' ' + e.t) + '</b>' + chip(e) + '</li>'; }).join('') + '</ul>';
       var a = homeStops();
       h += '<p class="na-lbl">Neste avganger</p>';
-      if (a.loading) h += '<ul class="na-card na-dep" data-testid="na-avganger"><li class="note">' + (homeNear.err ? 'Fant ikke holdeplasser nær hjemmeadressen nå.' : 'Finner holdeplasser nær hjemme …') + '</li></ul>';
+      if (a.loading) {
+        var nearFail = !!homeNear.err || (!homeNear.busy && gateBlocked('nearest'));
+        h += '<ul class="na-card na-dep" data-testid="na-avganger"><li class="note">' + (nearFail ? 'Fant ikke holdeplasser nær hjemmeadressen nå.' : 'Finner holdeplasser nær hjemme …') + '</li></ul>';
+        if (nearFail) h += '<div class="na-dep-err" data-testid="na-naer-feil"><button type="button" class="btn small" data-k="na-avg-igjen" data-testid="na-avg-igjen">Prøv igjen</button></div>';   // 0.18.13
+      }
       else if (a.stops.length) {
         var r = naLineRows(a.stops, dep.data, t);
         if (r.length || !dep.err) h += '<ul class="na-card na-dep" data-testid="na-avganger">' + (r.length ? r.join('') : '<li class="note">' + (dep.data && !dep.busy ? 'Ingen avganger den neste timen' : 'Henter avganger …') + '</li>') + '</ul>';
@@ -746,6 +799,11 @@
       '<p class="na-credit" data-testid="na-kreditering">Data fra Entur og MET Norway</p></div>';   // v0.18.12: lisens (NLOD/CC BY), diskret nederst på Nå
     return h;
   }
+  // 0.18.13 (Trude): uten middag i dag får «Nå» en tydelig knapp – «Legg inn første rett» når husstanden ikke har noen retter ennå, ellers «Velg middag i dag» (til Uke).
+  function naMiddagKnapp() {
+    var A = api(), c = A && A.naCounts ? A.naCounts() : { recipes: 0 }, first = !c.recipes;
+    return '<a class="na-din-knapp" href="' + (first ? '#retter' : '#uke') + '" data-k="na-go" data-testid="na-middag-velg">' + (first ? 'Legg inn første rett' : 'Velg middag i dag') + '\u00a0<i aria-hidden="true">›</i></a>';
+  }
   function naPlace() {
     // Topp = nederste kant av topplinja (og fanelinja hvis den ligger øverst); bunn = fanelinja hvis den ligger nederst.
     var hd = document.querySelector('.topbar'), tb = document.querySelector('.tabs'), ih = window.innerHeight;
@@ -764,12 +822,12 @@
     ['.topbar', '.tabs'].forEach(function (q) { var el = document.querySelector(q); if (el) naObs.observe(el); });
     try { new MutationObserver(function () { if (root && root.classList.contains('k-na')) naPlace(); }).observe(document.body, { attributes: true, attributeFilter: ['class'] }); } catch (e) { }
   }
-  function naClear() { for (var k in TOK.dag) root.style.removeProperty('--k-' + k); ['--k-fade', '--k-shift-x', '--k-shift-y', 'top', 'bottom'].forEach(function (p) { root.style.removeProperty(p); }); root.classList.remove('k-natt'); root.removeAttribute('data-fase'); }
+  function naClear() { for (var k in TOK.dag) root.style.removeProperty('--k-' + k); ['--k-fade', '--k-shift-x', '--k-shift-y', 'top', 'bottom'].forEach(function (p) { root.style.removeProperty(p); }); root.classList.remove('k-natt'); root.removeAttribute('data-fase'); root.removeAttribute('data-skjerm'); ['--k-ak', '--k-ak-pa', '--k-ak-lys', '--k-ak-mork'].forEach(function (p) { root.style.removeProperty(p); }); }
   function naTap(k, t, e) {
     if (k === 'na-modus-endre') { naEdit = true; render(); var sg = root && root.querySelector('.na-seg button.on, .na-seg button'); if (sg) { sg.scrollIntoView({ block: 'nearest' }); sg.focus(); } return true; }
     if (k === 'na-modus-ferdig') { e.preventDefault(); naEdit = false; render(); return true; }
     if (k === 'na-hjemme' || k === 'na-borte') { setNaMode(k === 'na-hjemme' ? 'hjemme' : 'borte'); return true; }
-    if (k === 'na-avg-igjen') { gate('dep').until = 0; gate('nearest').until = 0; dep.until = 0; dep.fails = 0; /* v0.18.9: brukerens «Prøv igjen» får ett nytt forsøk */ pos.depAt = 0; pos.depErr = ''; if (!dep.busy) pollDep(); naPoll(); render(); return true; }
+    if (k === 'na-avg-igjen') { gate('dep').until = 0; gate('nearest').until = 0; homeNear.err = ''; dep.until = 0; dep.fails = 0; /* v0.18.9: brukerens «Prøv igjen» får ett nytt forsøk */ pos.depAt = 0; pos.depErr = ''; if (!dep.busy) pollDep(); naPoll(); render(); return true; }
     if (k === 'na-endre') { e.preventDefault(); location.hash = '#kjokken/innstillinger/avg'; return true; }
     if (k === 'na-go' || k === 'na-lista') { return true; }   // vanlige lenker (fanelinja-sidene)
     if (t && t.hasAttribute && t.hasAttribute('data-na-key')) return true;
@@ -892,6 +950,7 @@
     }
     if (root.classList.contains('k-na') && naTap(k, e.target, e)) return;
     if (root.classList.contains('k-na') && !k) return;   // trykk på tomt område i «Nå» gjør ingenting
+    if (k === 'avg-igjen') { gate('dep').until = 0; dep.until = 0; dep.fails = 0; if (!dep.busy) pollDep(); return; }   // 0.18.13: ett nytt forsøk (ingen løkke; pollDep har sin egen ventetid ved ny feil)
     if (k === 'cook') return openCook();
     if (k === 'toapp') { e.preventDefault(); return toApp('#liste'); }
     if (k === 'delt') { e.preventDefault(); try { sessionStorage.setItem(SS_FROM, '1'); } catch (x) { } location.hash = '#husstand'; return; }   // v0.18.4
@@ -932,13 +991,29 @@
       (navigator.geolocation ? '<button type="button" class="kb" data-k="geo" data-testid="k-geo">Bruk posisjonen min</button>' : '') +
       '<p class="k-help k-err" data-testid="k-set-feil" hidden></p>' +
       '<div class="acts"><button type="submit" class="kb pri" data-testid="k-lagre">Lagre</button><button type="button" class="kb" data-k="cancel">Avbryt</button></div>' +
-      '</form>';
+      '</form>' + utseendeHtml();
+  }
+  // 0.18.13: «Utseende» nederst under «Tid og sted» (en seksjon, ikke en fane). Valget slår inn med en gang og lagres bare på denne enheten.
+  function utseendeHtml() {
+    var L = look();
+    var aks = '<h3 class="lab" id="k-ak-h">Aksentfarge</h3><p class="lead">Gjelder hele appen på denne enheten.</p><div class="k-aks" role="radiogroup" aria-labelledby="k-ak-h">' + AKS.map(function (x) {
+      var on = L.aks === x[0];
+      return '<button type="button" role="radio" data-k="aks" data-v="' + x[0] + '" data-testid="k-aksent-' + x[0] + '" aria-checked="' + on + '"><span class="k-ak a-' + x[0] + '" style="--sw-lys:var(--kj-ak-' + x[0] + '-lys);--sw-mork:var(--kj-ak-' + x[0] + '-mork)" aria-hidden="true">' + (on ? '✓' : '') + '</span>' + x[1] + '</button>';
+    }).join('') + '</div>';
+    // Lys/Mørk/Følg døgnet gjelder bare kjøkkenskjermen (nettbrett/PC), så telefonen viser bare aksenten.
+    var modes = isPhone() ? '' : '<h3 class="lab" id="k-kj-h">Kjøkkenskjermen</h3><p class="lead">Gjelder bare kjøkkenskjermen.</p>' +
+      '<div class="rows" role="radiogroup" aria-labelledby="k-kj-h">' + LOOKS.map(function (x) {
+        return '<button type="button" role="radio" class="row k-opt" data-k="look" data-v="' + x[0] + '" data-testid="k-utseende-' + x[0] + '" aria-checked="' + (L.mode === x[0]) + '"><span class="box' + (L.mode === x[0] ? ' on' : '') + '" aria-hidden="true"></span><span><b>' + x[1] + '</b><span class="meta">' + x[2] + '</span></span></button>';
+      }).join('') + '</div>';
+    return '<section class="k-utseende" data-testid="k-utseende" aria-labelledby="k-ut-h"><h3 class="lab" id="k-ut-h">Utseende</h3>' +
+      '<p class="lead">Lagres bare på denne enheten. Kan endres når som helst.</p>' + aks + modes + '</section>';
   }
   function loadNear(force) {
     var a = avg(), pos = avgPos(a);
     if (sheet.nearBusy) return;
     if (!pos) { sheet.near = null; sheet.nearErr = 'Legg inn hjemmeadressen under Husstand, eller bruk posisjonen, så finner vi holdeplassene i nærheten.'; return; }
     if (!force && sheet.near && sheet.near.lat === pos.lat && sheet.near.lon === pos.lon) return;
+    if (!force && sheet.nearFail && sheet.nearFail.lat === pos.lat && sheet.nearFail.lon === pos.lon) return;   // 0.18.13: feilet henting prøves ikke i løkke (hver tegning kalte loadNear → ny forespørsel)
     sheet.nearBusy = true; sheet.nearErr = '';
     enturCall(Q_NEAR, { lat: pos.lat, lon: pos.lon }).then(function (d) {
       var list = [];
@@ -948,8 +1023,8 @@
         if (!modes.length && p.transportMode) modes = [].concat(p.transportMode);
         if (!list.some(function (x) { return x.id === p.id; })) list.push({ id: p.id, name: p.name, dist: Math.round(e.node.distance || 0), modes: modes });
       });
-      sheet.near = { lat: pos.lat, lon: pos.lon, list: list };
-    }, function () { sheet.nearErr = 'Fikk ikke hentet holdeplasser nå.'; }).then(function () { sheet.nearBusy = false; refreshSheet(); });
+      sheet.near = { lat: pos.lat, lon: pos.lon, list: list }; sheet.nearFail = null;
+    }, function () { sheet.nearErr = 'Fikk ikke hentet holdeplasser nå.'; sheet.nearFail = { lat: pos.lat, lon: pos.lon }; }).then(function () { sheet.nearBusy = false; refreshSheet(); });
   }
   function loadDirs(id) {
     if (sheet.dirs[id]) return;
@@ -1002,6 +1077,7 @@
     return scope +
       '<p class="lab">Nærmest ' + esc(a.lat != null ? 'posisjonen din' : s.place || 'stedet') + '</p>' +
       (sheet.nearBusy && !list.length ? '<p class="meta">Henter holdeplasser …</p>' : '') + (sheet.nearErr ? '<p class="meta" data-testid="k-avg-feil">' + esc(sheet.nearErr) + '</p>' : '') +
+      (sheet.nearErr && sheet.nearFail && !sheet.nearBusy ? '<button type="button" class="kb" data-k="avgigjen" data-testid="k-avg-igjen">Prøv igjen</button>' : '') +
       (full ? '<p class="meta">Fjern en holdeplass for å velge en annen.</p>' : '') +
       '<div class="rows" data-testid="k-holdeplasser">' + rows + '</div>' +
       (navigator.geolocation ? '<button type="button" class="kb" data-k="avggeo" data-testid="k-avg-geo">Finn holdeplasser nær posisjonen min</button>' : '') +
@@ -1083,6 +1159,12 @@
     if (k === 'cancel') return closeSheet();
     if (k === 'toapp') { e.preventDefault(); var sh = root.querySelector('.k-sheet'); if (sh) sh.remove(); return toApp('#liste'); }
     if (k === 'startk') { setStartKitchen(t.checked); return; }
+    if (k === 'look' || k === 'aks') {
+      if (k === 'look') lsSet(LOOK_KEY, { mode: t.getAttribute('data-v') }); else setAksent(t.getAttribute('data-v'));
+      applyPhase(); refreshSheet();
+      var fb = root.querySelector('[data-k="' + k + '"][data-v="' + t.getAttribute('data-v') + '"]'); if (fb) fb.focus();
+      return;
+    }
     if (k === 'tab') { sheet.tab = t.getAttribute('data-tab'); sheet.adding = false; sheet.calErr = ''; return refreshSheet(); }
     if (k === 'geo') {
       sheetErr('');
@@ -1095,6 +1177,7 @@
     }
     if (k === 'avgegen') { var cur = avg(); lsSet(AVG_KEY, { lat: cur.lat, lon: cur.lon, stops: cur.stops, own: true }); dep.data = null; refreshSheet(); return; }
     if (k === 'avgfelles') { var l0 = lsGet(AVG_KEY) || {}; delete l0.own; lsSet(AVG_KEY, l0); dep.data = null; dep.fails = 0; refreshSheet(); if (!sharedK()) saveAvg(avg()); return; }
+    if (k === 'avgigjen') { sheet.nearFail = null; gate('nearest').until = 0; loadNear(true); refreshSheet(); return; }   // 0.18.13: ett nytt forsøk
     if (k === 'avggeo') {
       navigator.geolocation.getCurrentPosition(function (p) {
         var a = avg(); a.lat = Math.round(p.coords.latitude * 1e4) / 1e4; a.lon = Math.round(p.coords.longitude * 1e4) / 1e4; saveAvg(a); loadNear(true); refreshSheet();
@@ -1267,6 +1350,6 @@
   document.addEventListener('submit', function () { if (!open) dirty = false; }, true);
   window.addEventListener('hashchange', function () { dirty = false; });
 
-  window.KnaggenKjokken = { show: show, hide: hide, sharedChanged: sharedChanged, isOpen: function () { return open; }, isNa: function () { return open && naOn(); }, narrow: function () { return isPhone(); }, phone: function () { return isPhone(); },
+  window.KnaggenKjokken = { show: show, hide: hide, sharedChanged: sharedChanged, homeChanged: function () { try { if (open && naOn()) render(); } catch (e) { } }, aksentChanged: function () { try { if (open) render(); } catch (e) { } }, isOpen: function () { return open; }, isNa: function () { return open && naOn(); }, narrow: function () { return isPhone(); }, phone: function () { return isPhone(); },
     _test: { refresh: function () { render(); }, naMode: function () { return naMode(); }, posMode: function () { return posMode(); }, poll: function () { dep.fails = 0; dep.until = 0; pollDep(); }, loadCal: function () { loadCal(true); }, fit: function () { return fit.lvl; }, bedMs: bedMs, phaseAt: phaseAt, schedule: schedule, sunTimes: sunTimes, settings: settings, mixHex: mixHex, wxIcon: wxIcon, wxText: wxText, setKal: function (l, ev) { kal.list = l; kal.ev = ev; kal.at = Date.now(); render(); } } };
 })();

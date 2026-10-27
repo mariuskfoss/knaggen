@@ -178,6 +178,7 @@
       if (sk && ro.day !== today() && (ro.n || 0) < 3) html = '<div class="v5-minn-rad" data-testid="v5-minn-rad"><a class="na-fortsett" href="' + NAMES[sk][1] + '" data-testid="v5-minn">' + NAMES[sk][0] + '\u00a0<i aria-hidden="true">›</i></a>' +
         '<a href="#" class="btn ghost v5-minn-x" data-v5="minn-ikke-na" data-testid="v5-minn-ikke-na">Ikke nå</a></div>';
     }
+    na.classList.toggle('v5-retter-minn', /data-testid="v5-minn"/.test(html) && /#oppsett\/4/.test(html));   // 0.18.13: påminnelsen «Legg inn noen retter» og «Legg inn første rett» står ikke samtidig – påminnelsen vinner
     if (!html) { if (el) el.remove(); }
     else if (!el || el.getAttribute('data-h') !== html) { if (!el) { el = document.createElement('div'); el.className = 'v5-na'; } el.innerHTML = html; el.setAttribute('data-h', html); if (el.parentNode !== na || na.firstChild !== el) na.insertBefore(el, na.firstChild); }
     var tom = na.querySelector('[data-testid="na-avg-tom"]');

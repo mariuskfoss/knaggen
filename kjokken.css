@@ -372,3 +372,52 @@ body.k-phone .kj .k-ing button { min-height: var(--tap, 48px); }
 .kj:not(.k-na)[data-fase="kveld"] { --w-sol: var(--kj-kveld-sol); --w-sky: var(--kj-kveld-sky); --w-regn: var(--kj-kveld-regn); --w-sno: var(--kj-kveld-sno); --w-torden: var(--kj-kveld-torden); }
 .kj:not(.k-na)[data-fase="natt"] { --w-sol: var(--kj-natt-sol); --w-sky: var(--kj-natt-sky); --w-regn: var(--kj-natt-regn); --w-sno: var(--kj-natt-sno); --w-torden: var(--kj-natt-torden); }
 .kj .k-cal .dot.k-dot-n { background: var(--k-muted); }
+
+/* ===== 0.18.13: utseende og aksentfarge på kjøkkenskjermen (merkevare/kjokken-farger) =====
+ * kjokken.js setter --k-*-fargene (også --k-ak, aksenten) og data-skjerm (lys | mork) på .kj. Ingen aksent om natta. */
+/* B (Mons): innholdet i innstillingsarket skal ikke bli bredere enn skjermen (stakk ca. 20 px ut ved 360 px) */
+.kj .k-set { grid-template-columns: minmax(0, 1fr); }
+.kj:not(.k-na)[data-fase="mork"] { --w-sol: var(--kj-mork-sol); --w-sky: var(--kj-mork-sky); --w-regn: var(--kj-mork-regn); --w-sno: var(--kj-mork-sno); --w-torden: var(--kj-mork-torden); }
+.kj:not(.k-na):not([data-fase="natt"]) .k-cal .tm { color: var(--k-ak); }
+.kj:not(.k-na):not([data-fase="natt"]) .k-cal .dot.k-dot-n { background: var(--k-ak); }
+.kj:not(.k-na):not([data-fase="natt"]) .k-til-appen .k-ta { color: var(--k-ak); border-bottom-color: var(--k-ak); }
+/* Arket følger skjermens utseende (på «Nå» på telefon følger det appens tema som før) */
+.kj:not(.k-na)[data-skjerm="lys"] .k-sheet { --k-bg: #f4f2ed; --k-surface: #ebe8e1; --k-line: #dcd7cd; --k-ink: #252a28; --k-muted: #596260; --k-clock: #252a28; --k-mark: #252a28;
+  --k-brand: var(--k-ak-lys); --k-on-brand: var(--kj-ak-pa-lys); --k-brass: var(--k-ak-lys); --k-late: #7c5d28; --k-accent: #7c5d28;
+  --k-cal-1: #3f6e5a; --k-cal-2: #44617a; --k-cal-3: #7a4f6a; --k-cal-4: #8a5232; color-scheme: light; }
+.kj:not(.k-na)[data-skjerm="mork"] .k-sheet { --k-bg: var(--kj-mork-bg); --k-surface: var(--kj-mork-surface); --k-line: var(--kj-mork-line); --k-ink: var(--kj-mork-ink); --k-muted: var(--kj-mork-muted); --k-clock: var(--kj-mork-ink); --k-mark: var(--kj-mork-ink);
+  --k-brand: var(--k-ak-mork); --k-on-brand: var(--kj-ak-pa-mork); --k-brass: var(--k-ak-mork); --k-late: #e3c27a; --k-accent: #e3c27a;
+  --k-cal-1: #86a898; --k-cal-2: #8fa8c0; --k-cal-3: #c39ab4; --k-cal-4: #d1a07e; color-scheme: dark; }
+.kj:not(.k-na)[data-skjerm="mork"] .k-sheet .k-set .warnline, .kj:not(.k-na)[data-skjerm="mork"] .k-sheet .k-set .kb.del { color: #f0a69a; }
+/* Innstillinger → Utseende */
+.kj .k-utseende { display: grid; gap: 12px; margin-top: 8px; padding-top: 16px; border-top: 1px solid var(--k-line); }
+.kj .k-utseende .lab { margin: 6px 0 0; }
+.kj .k-opt { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; align-items: center; width: 100%; min-height: var(--tap); text-align: left; }
+.kj .k-opt .box { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--k-muted); display: grid; place-items: center; }
+.kj .k-set .k-opt .box { border-radius: 50%; }
+.kj .k-set .k-opt .box.on { border-color: var(--k-brand); background: none; }
+.kj .k-opt .box.on::after { content: ""; width: 12px; height: 12px; border-radius: 50%; background: var(--k-brand); }
+.kj .k-opt b { display: block; }
+.kj .k-opt .meta { display: block; color: var(--k-muted); font-size: var(--fs-16); }
+.kj .k-aks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 6px; }
+.kj .k-aks button { display: grid; justify-items: center; align-content: start; gap: 6px; min-height: var(--tap); font-size: var(--fs-16); color: var(--k-ink); font-weight: 600; text-align: center; }
+.kj .k-aks .k-ak { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; box-shadow: 0 0 0 2px var(--k-bg);
+  background: var(--sw-mork); color: var(--kj-ak-pa-mork); }
+.kj .k-aks button[aria-checked="true"] .k-ak { box-shadow: 0 0 0 3px var(--k-bg), 0 0 0 5px var(--k-ink); }
+.kj[data-skjerm="lys"] .k-aks .k-ak { background: var(--sw-lys); color: var(--kj-ak-pa-lys); }
+@media (prefers-color-scheme: light) { html:not([data-tema="mork"]) .kj.k-na .k-aks .k-ak { background: var(--sw-lys); color: var(--kj-ak-pa-lys); } }
+html[data-tema="lys"] .kj.k-na .k-aks .k-ak { background: var(--sw-lys); color: var(--kj-ak-pa-lys); }
+/* 0.18.13: «Nå» uten middag i dag – tydelig knapp til å legge inn første rett / velge middag */
+.kj.k-na .na-din-knapp { display: flex; align-items: center; justify-content: center; min-height: var(--tap, 48px); margin: 6px 0 0; padding: 0 14px; border-radius: var(--radius, 12px); background: var(--brand); color: var(--brand-ink); font-weight: 650; text-decoration: none; }
+.kj.k-na .na-din-knapp i { font-style: normal; }
+
+/* 0.18.13 (D): «venter på posisjon» – rolig linje, ingen hopp når posisjonen er funnet */
+.kj.k-na .na-status.na-venter { min-height: var(--tap, 48px); }
+/* 0.18.13 (B): topplinja i arket (tittel, «Til appen», ✕) kan krympe, så ✕ aldri havner utenfor 360 px */
+.kj .k-set .top { min-width: 0; }
+.kj .k-set .top h2 { min-width: 0; flex: 1 1 auto; overflow-wrap: anywhere; }
+.kj .k-set .top > * { flex-shrink: 0; }
+.kj .k-set .top > h2 { flex-shrink: 1; }
+
+/* 0.18.13: «Prøv igjen» på kjøkkenskjermen */
+.kj .k-dep .k-igjen { justify-self: start; min-height: var(--tap, 48px); min-width: var(--tap, 48px); padding: 0 20px; border-radius: var(--radius); border: 1px solid var(--k-brand, currentColor); background: transparent; color: var(--k-brand, inherit); font: inherit; font-size: var(--fs-16); font-weight: 650; }

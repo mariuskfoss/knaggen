@@ -367,7 +367,12 @@ a { color: var(--brand); }
 .item-add-form { display: grid; gap: 8px; padding-bottom: 12px; }
 .ai-row { display: grid; grid-template-columns: 64px 1fr 1.4fr; gap: 6px; }
 .check { display: flex; align-items: center; gap: 10px; font-size: var(--fs-16); min-height: var(--tap); }
-.check input { width: 22px; height: 22px; accent-color: var(--brand); }
+/* 0.18.13: selve avkrysningsboksen er 48 × 48 px trykkflate (tegnet boks 24 px i midten) */
+.check input, .v5-fn input { -webkit-appearance: none; appearance: none; position: relative; flex: none; width: 48px; height: 48px; margin: 0 -12px; padding: 0; border: 0; background: none; cursor: pointer; }
+.check input::before, .v5-fn input::before { content: ""; position: absolute; inset: 12px; box-sizing: border-box; border: 2px solid var(--line-strong); border-radius: var(--radius-s); background: var(--card); }
+.check input:checked::before, .v5-fn input:checked::before { background: var(--brand); border-color: var(--brand); }
+.check input:checked::after, .v5-fn input:checked::after { content: "✓"; position: absolute; inset: 12px; display: grid; place-items: center; color: var(--brand-ink); font-size: var(--fs-16); font-weight: 800; line-height: 1; }
+.check input:focus-visible, .v5-fn input:focus-visible { outline: 3px solid var(--brand); outline-offset: -6px; border-radius: var(--radius); }
 
 .item { display: flex; align-items: center; }
 .item label { flex: 1; min-width: 0; }
@@ -1395,6 +1400,7 @@ body.k-phone .tabs .tab-na { display: flex; }
 .k188-panel .k17-banner { margin: 0; border: 0; background: transparent; }
 .k188-panel .row { flex-wrap: wrap; gap: 8px; }
 .k188-panel .k17-btn { min-height: var(--tap); }
+.k188-panel .k17-btn.txt { color: var(--ink); border-color: var(--line-strong); }   /* 0.18.13: «Senere» er en nøytral knapp, ikke rød */
 .k188-panel .k17-field { margin: 8px 0; }
 
 /* ===== v0.18.9 «polish» ===== */
@@ -1419,6 +1425,20 @@ body.k-phone .tabs .tab-na { display: flex; }
 .km-steps li.on { font-weight: 700; }
 /* Ny-enhet-panelet skal ikke dekke kort/knapper på PC */
 body:has(.k188-panel) main { padding-bottom: 280px; }
+/* v0.18.13 (Trude): på telefon er panelet kompakt (ca. 20 % av høyden, aldri over en tredel): forklaringen skjules, feltene står side om side */
+@media (max-width: 999px) {
+  .k188-panel { max-height: 34vh; }
+  .k188-panel .k17-banner { padding: 10px 12px; }
+  .k188-panel .k188-q { display: block; font-size: var(--fs-16); }
+  .k188-panel .k17-banner > p { display: none; }
+  .k188-panel .k17-field { margin: 6px 0; }
+  .k188-panel .k17-field { display: grid; grid-template-columns: 74px 1fr; align-items: center; gap: 8px; }   /* 0.18.13: etikett til venstre, så 48 px-feltene får plass i en tredel av skjermen */
+  .k188-panel .k17-field label { font-size: var(--fs-13); margin: 0; }
+  .k188-panel .k17-in { min-height: var(--tap, 48px); padding: 6px 10px; }
+  .k188-panel .row { gap: 6px; margin-top: 6px; }
+  .k188-panel .k17-btn { min-height: var(--tap, 48px); padding-top: 0; padding-bottom: 0; }
+  body:has(.k188-panel) main { padding-bottom: 200px; }
+}
 @media (min-width: 1000px) {
   .k188-panel { left: auto; right: 12px; transform: none; width: 300px; }
 }
@@ -1446,7 +1466,6 @@ body:has(.k188-panel) main { padding-bottom: 280px; }
 .v5-fn { list-style: none; margin: 12px 0; padding: 0; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
 .v5-fn li + li { border-top: 1px solid var(--line); }
 .v5-fn label { display: flex; gap: 12px; align-items: center; min-height: var(--tap); padding: 10px 12px; cursor: pointer; }
-.v5-fn input { width: 24px; height: 24px; accent-color: var(--brand); flex: none; }
 .v5-fn small { display: block; color: var(--muted); font-size: var(--fs-14); }
 .v5-snart { display: inline-block; padding: 4px 10px; border-radius: var(--pill); background: var(--brand-soft); color: var(--ink); font-weight: 600; font-size: var(--fs-14); }
 .v5-acts { display: flex; gap: 8px; max-width: 560px; width: 100%; margin: 0 auto; }
@@ -1517,4 +1536,28 @@ body { background-color: var(--bg); background-image: linear-gradient(180deg, va
 .v5-minn-rad { display: flex; gap: 8px; align-items: stretch; margin: 0 0 12px; }
 .v5-minn-rad .na-fortsett { flex: 1; margin: 0; }
 .v5-minn-rad .v5-minn-x { flex: 0 0 auto; min-height: var(--tap, 48px); display: inline-flex; align-items: center; }
+.v5-retter-minn .na-din-knapp[href="#retter"] { display: none !important; }   /* 0.18.13 */
 .v5-on [data-testid="v5-minn"].na-fortsett { display: flex; }
+
+/* 0.18.13 (E): Nå (.kj.k-na, z-index 50) lå over ark og meldinger (.overlay 30, toast 20, nytt-ark): versjonsarket viste bare «Fint»-knappen.
+ * Mens Nå er åpen ligger arkene og panelet over Nå (50) og toppfeltet (60). */
+body.k-na-open .overlay { z-index: 70; }
+body.k-na-open .k188-panel { z-index: 65; }
+body.k-na-open .toast, body.k-na-open .toast-dock { z-index: 75; }
+
+/* ===== 0.18.13: aksentvelger i Husstand → Utseende (sju prikker). Prikken viser aksenten slik den ser ut i gjeldende tema. ===== */
+.k17-aks { flex-wrap: wrap; align-items: flex-start; }
+.k17-aks > .t { flex: 1 1 100%; }
+.hs-utseende { margin-bottom: 16px; }
+.hs-utseende .k17-lbl { margin-bottom: 2px; }
+.hs-utseende .k17-ut-sub { margin: 0 4px 8px; }
+.aks-rad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 4px; flex: 1 1 100%; }   /* 0.18.13: 4 + 3 på telefon (aldri 5 + 2) */
+@media (min-width: 600px) { .aks-rad { grid-template-columns: repeat(7, 1fr); } }
+.aks-rad button { display: grid; justify-items: center; align-content: start; gap: 4px; min-height: var(--tap); border: 0; background: none; color: var(--ink); font: inherit; font-size: var(--fs-14); padding: 2px 0; }
+.aks-rad .aks-dot { width: 36px; height: 36px; border-radius: var(--pill); display: grid; place-items: center; font-weight: 800; background: var(--sw-mork); color: var(--aks-pa-mork); box-shadow: 0 0 0 2px var(--card); }
+.aks-rad button[aria-checked="true"] .aks-dot { box-shadow: 0 0 0 3px var(--card), 0 0 0 5px var(--ink); }
+@media (prefers-color-scheme: light) { html:not([data-tema="mork"]) .aks-rad .aks-dot { background: var(--sw-lys); color: var(--aks-pa-lys); } }
+html[data-tema="lys"] .aks-rad .aks-dot { background: var(--sw-lys); color: var(--aks-pa-lys); }
+
+/* 0.18.13: «Vis N handlet» er en trykkflate på minst 48 px */
+.show-done { display: inline-flex; align-items: center; min-height: var(--tap, 48px); min-width: var(--tap, 48px); padding-top: 0; padding-bottom: 0; }

@@ -1138,6 +1138,7 @@
     h += '<span id="deling"></span>' + sec('del', 'Del', sum4, b4, 'del');
     // 5. Denne telefonen
     if (syncMode()) h += sec('telefon', 'Denne telefonen', hh ? 'Koblet til husstanden' : 'Bli med via lenke eller kode', phoneRowsHtml(), 'telefon');   // v0.18.9: «Ikke koblet» bare ett sted (Del)
+    h += utseendeHusstandHtml();
     h += '</section>';
     main.innerHTML = h;
   }
@@ -1335,6 +1336,8 @@
     // v0.17: felles kjøkkenoppsett (null = ikke lest / finnes ikke / eldre regler)
     sharedKitchen: function () { return hh && K17.kitchen ? K17.kitchen : null; },
     personColor: function (id) { return personColor(id); },   // 0.18.12: samme farge overalt
+    // 0.18.13: true til husstandens hjemmeadresse er lest fra serveren (eller 10 s er gått) – «Nå» viser ventetilstand i stedet for Hjemme/Borte-valget
+    homePending: function () { if (!hh || K17.hjem || K17.hjemSeen) return false; if (!K17.hjemT0) K17.hjemT0 = Date.now(); return Date.now() - K17.hjemT0 < 10000; },
     home: function () { var x = hh ? K17.hjem : document.documentElement.classList.contains('v5-on') ? v5PendingHome() : null; return x ? { lat: x.lat, lon: x.lon } : null; },   // v0.18.1 (+ v5: lokal adresse før husstand)
     homeAddress: function () { var x = hh ? K17.hjem : v5PendingHome(); return x ? x.adresse : ''; },   // hjemme-v5
     geoLookup: function (q) { return geoLookup(q); },
@@ -1853,13 +1856,21 @@
   // Eksakt lik først, så begynner med, så inneholder. Store/små bokstaver likt, æøå som vanlige bokstaver.
   function searchKey(s) { s = String(s || ''); if (s.normalize) s = s.normalize('NFC'); return normName(s).toLocaleLowerCase('nb'); }
   // v0.18.12: innen «begynner med» kommer hele ord først («Laks i folie» før «Laksesuppe»), og hver gruppe står alfabetisk.
+  // v0.18.13: rangeringen er felles for Retter, dagvelgeren og «Finn retter» (biblioteket): 0 eksakt, 1 helt ord først, 2 begynner med, 3 inneholder, -1 ingen treff.
+  function searchTier(k, names) {
+    function word(s) { return s.indexOf(k) === 0 && (s.length === k.length || /[\s(,.\-]/.test(s.charAt(k.length))); }
+    var t = -1;
+    names.forEach(function (n) {
+      var x = searchKey(n), v = x === k ? 0 : word(x) ? 1 : x.indexOf(k) === 0 ? 2 : x.indexOf(k) >= 0 ? 3 : -1;
+      if (v >= 0 && (t < 0 || v < t)) t = v;
+    });
+    return t;
+  }
   function searchRecipes(list, q) {
     var k = searchKey(q); if (!k) return list.slice();
     var tiers = [[], [], [], []];
-    function word(s) { return s.indexOf(k) === 0 && (s.length === k.length || /[\s(,.\-]/.test(s.charAt(k.length))); }
     list.forEach(function (r) {
-      var a = searchKey(r.name), b = searchKey(shownName(r));
-      var t = a === k || b === k ? 0 : word(a) || word(b) ? 1 : a.indexOf(k) === 0 || b.indexOf(k) === 0 ? 2 : a.indexOf(k) >= 0 || b.indexOf(k) >= 0 ? 3 : -1;
+      var t = searchTier(k, [r.name, shownName(r)]);
       if (t >= 0) tiers[t].push(r);
     });
     tiers.forEach(function (g) { g.sort(function (x, y) { return shownName(x).localeCompare(shownName(y), 'nb'); }); });
@@ -2097,14 +2108,14 @@
     var names = Object.keys(cats).sort(function (a, b) { return a.localeCompare(b, 'nb'); });
     if (!list.length) return '<p class="empty" data-testid="finn-tomt">Ingen retter passer. Prøv et annet filter.</p>';
     var T = finnTime(), h = '';
-    // v0.18.9: ved søk står eksakt navn og navn som begynner med søkeordet øverst, før kategoriene
+    // v0.18.9: ved søk står de beste treffene øverst, før kategoriene. v0.18.13: samme rangering som det felles søket i Retter og dagvelgeren
+    // (eksakt, helt ord, begynner med – hver gruppe alfabetisk); «inneholder» blir stående i kategoriene.
     var top = [];
     if (finn.q) {
-      var q0 = normName(finn.q);
-      top = list.filter(function (d) { return normName(d.name).indexOf(q0) === 0; }).sort(function (a, b) {
-        var ea = normName(a.name) === q0 ? 0 : 1, eb = normName(b.name) === q0 ? 0 : 1;
-        return ea - eb || a.name.length - b.name.length || a.name.localeCompare(b.name, 'nb');
-      });
+      var q0 = searchKey(finn.q), tr = [[], [], []];
+      list.forEach(function (d) { var t = searchTier(q0, [d.name]); if (t >= 0 && t <= 2) tr[t].push(d); });
+      tr.forEach(function (g) { g.sort(function (a, b) { return a.name.localeCompare(b.name, 'nb'); }); });
+      top = tr[0].concat(tr[1], tr[2]);
       if (top.length) {
         h += '<h3 class="v11-cat"><span>Beste treff · ' + top.length + '</span></h3><ul class="v11-rows" data-testid="finn-gruppe" data-best="1">';
         top.forEach(function (d) { h += finnRowHtml(d, T); });
@@ -5744,7 +5755,7 @@
    * Spec: spec-v017-husstand.md, design: merkevare/v017-husstand. Alt nytt er nye dokumenter (settings/profil,
    * settings/kjokken, devices/{uid}); ingenting eksisterende flyttes eller slettes. */
   var K17_REG_KEY = 'knaggen:enhet-registrert';   // v0.17: hid der denne enheten har en enhetsoppføring
-  var K17 = { name: '', devices: null, memberDocs: null, selfSeen: false, creating: false, kitchen: null, kitchenSeen: false, sheet: null, removing: false, hjem: null, hjemEdit: false, hjemHits: [], hjemSeq: 0, farger: {}, pers: null, persBusy: false };
+  var K17 = { name: '', devices: null, memberDocs: null, selfSeen: false, creating: false, kitchen: null, kitchenSeen: false, sheet: null, removing: false, hjem: null, hjemSeen: false, hjemT0: 0, hjemEdit: false, hjemHits: [], hjemSeq: 0, farger: {}, pers: null, persBusy: false };
   var DEV_TOUCH_KEY = 'knaggen:enhet-sett', NAME_LATER_KEY = 'knaggen:navn-senere', KIND_ASK_KEY = 'knaggen:enhet-spor';
   var PLAT = { android: 'Android-telefon', iphone: 'iPhone', ipad: 'iPad', nettbrett: 'Nettbrett', windows: 'PC med Windows', mac: 'Mac', linux: 'PC med Linux', annet: 'Nettleser' };
   function devPlatform() {
@@ -5805,6 +5816,24 @@
     if (t === 'lys' || t === 'mork') { lsSet(TEMA_KEY, JSON.stringify(t)); document.documentElement.setAttribute('data-tema', t); }
     else { try { localStorage.removeItem(TEMA_KEY); } catch (e) { } document.documentElement.removeAttribute('data-tema'); }
     temaMedia();
+  }
+  // 0.18.13: aksentfarge for hele appen, lagret per enhet. index.html setter html[data-aksent] før CSS-en tegnes; aksent-app.css bytter --brand-familien.
+  var AKSENT_KEY = 'knaggen:aksent', AKSENTER = [['salvie', 'Salvie'], ['messing', 'Messing'], ['rav', 'Rav'], ['fjord', 'Fjord'], ['lyng', 'Lyng'], ['rust', 'Rust'], ['mose', 'Mose']];
+  function aksentGet() { var t = null; try { t = JSON.parse(localStorage.getItem(AKSENT_KEY) || 'null'); } catch (e) { } return AKSENTER.some(function (x) { return x[0] === t; }) ? t : 'salvie'; }
+  function aksentRadHtml() {
+    return '<span class="aks-rad" role="radiogroup" aria-label="Aksentfarge">' + AKSENTER.map(function (x) { var on = aksentGet() === x[0]; return '<button type="button" role="radio" aria-checked="' + on + '" aria-label="' + x[1] + '" data-action="aksent" data-v="' + x[0] + '" data-testid="aksent-' + x[0] + '"><span class="aks-dot" style="--sw-lys:var(--kj-ak-' + x[0] + '-lys);--sw-mork:var(--kj-ak-' + x[0] + '-mork)" aria-hidden="true">' + (on ? '✓' : '') + '</span><span class="nm">' + x[1] + '</span></button>'; }).join('') + '</span>';
+  }
+  // 0.18.13: «Utseende» nederst på Husstand (med og uten husstand). Valget gjelder bare denne telefonen og lagres lokalt.
+  function utseendeHusstandHtml() {
+    return '<section class="hs-utseende" data-testid="hs-utseende" aria-labelledby="hs-ut-h"><p class="k17-lbl" id="hs-ut-h">Utseende</p>' +
+      '<p class="k17-note k17-ut-sub" data-testid="hs-utseende-sub">Valget gjelder bare denne telefonen.</p>' +
+      '<div class="k17-grp"><div class="k17-row k17-aks"><span class="t"><b>Aksentfarge</b><span>Brukes i hele appen</span></span>' + aksentRadHtml() + '</div></div></section>';
+  }
+  function aksentSet(n) {
+    if (!AKSENTER.some(function (x) { return x[0] === n; })) return;
+    lsSet(AKSENT_KEY, JSON.stringify(n));
+    if (n === 'salvie') document.documentElement.removeAttribute('data-aksent'); else document.documentElement.setAttribute('data-aksent', n);
+    if (window.KnaggenKjokken && window.KnaggenKjokken.aksentChanged) window.KnaggenKjokken.aksentChanged();
   }
   temaMedia();
   try { new MutationObserver(function (ms) { if (temaGet() === 'system') return; ms.forEach(function (m) { m.addedNodes.forEach(function (n) { if (n.nodeType === 1 && n.querySelector && (n.tagName === 'SOURCE' || n.querySelector('source'))) temaMedia(n.parentNode || n); }); }); }).observe(document.body, { childList: true, subtree: true }); } catch (e) { }
@@ -6007,6 +6036,7 @@
     K17.farger = pf && pf.farger && typeof pf.farger === 'object' ? pf.farger : {};
     var hj = docs.filter(function (d) { return d.id === 'hjem'; })[0];   // v0.18.1: hjemmeadresse
     K17.hjem = hj && typeof hj.adresse === 'string' && typeof hj.lat === 'number' && typeof hj.lon === 'number' ? { adresse: hj.adresse, lat: hj.lat, lon: hj.lon } : null;
+    if (K17.hjem || !(meta && meta.fromCache)) K17.hjemSeen = true;   // 0.18.13: adressen finnes, eller serveren har svart at den ikke finnes
     // hjemme-v5: adresse lagt inn i oppsettet før telefonen var med i en husstand → deles når husstanden ikke har en
     if (meta && !meta.fromCache && hh && Sync) { var pend5 = v5PendingHome(); if (pend5) { lsDel(V5_HOME_KEY); if (!K17.hjem) { K17.hjem = pend5; Sync.write.setHome(hh.hid, pend5).catch(function () { }); } } }
     // Migrering (spec §9): første skjerm med lokalt oppsett kopierer holdeplassene til husstanden hvis feltet er tomt.
@@ -6018,6 +6048,7 @@
         Sync.write.setKitchenShared(hh.hid, K17.kitchen).catch(function () { /* eldre regler: blir lokalt */ });
       }
     }
+    if (window.KnaggenKjokken && window.KnaggenKjokken.homeChanged) window.KnaggenKjokken.homeChanged();
     if (window.KnaggenKjokken && window.KnaggenKjokken.sharedChanged) window.KnaggenKjokken.sharedChanged();
     k17Refresh();
   }
@@ -6328,6 +6359,7 @@
       '<ul class="hs-group"><li><button type="button" class="hs-row" data-action="hs-slett-lenker" data-testid="hs-slett-lenker"><span class="t"><b>Slett Oda-lenker</b><span>Lenker fra «Del lista til Oda» slutter å virke.</span></span><span class="go" aria-hidden="true">›</span></button></li>' +
       '<li><button type="button" class="hs-row k17-danger" data-action="hs-slett" data-testid="hs-slett"><span class="t"><b>Slett husstanden</b><span>For alle enheter. Kan ikke angres.</span></span></button></li></ul>';
     h += '<div style="height:16px"></div><span id="deling"></span>' + sec('del', 'Avansert', 'Varig lenke, ny kode, Oda-lenker, slett', b6, 'avansert');
+    h += utseendeHusstandHtml();
     if (ui.justCreated) h += '<div class="form-actions plain"><a class="btn" href="#uke">Ferdig</a></div>';
     h += '</section>';
     main.innerHTML = h;
@@ -6406,7 +6438,7 @@
     if (unsubscribe) { unsubscribe(); unsubscribe = null; }
     hh = null; syncReady = null; swapOverlays = []; lastDays = []; weeklyExtras = []; sharedExtras = []; migratingHid = null;
     ui.members = null; ui.invite = null; ui.justCreated = false; ui.busy = false;
-    K17.name = ''; setTimeout(renderSyncStatus, 0); K17.devices = null; K17.memberDocs = null; K17.selfSeen = false; K17.creating = false; K17.kitchen = null; K17.kitchenSeen = false; K17.hjem = null; K17.hjemEdit = false; K17.farger = {}; K17.pers = null; k17Close(); lsDel(K17_REG_KEY);
+    K17.name = ''; setTimeout(renderSyncStatus, 0); K17.devices = null; K17.memberDocs = null; K17.selfSeen = false; K17.creating = false; K17.kitchen = null; K17.kitchenSeen = false; K17.hjem = null; K17.hjemSeen = false; K17.hjemT0 = 0; K17.hjemEdit = false; K17.farger = {}; K17.pers = null; k17Close(); lsDel(K17_REG_KEY);
     clearTimeout(connectTimer); syncStatus.connecting = false;
     lsDel(HH_KEY);
     if (hid) { lsDel(MIRROR_PREFIX + hid); lsDel(SWAPQ_PREFIX + hid); }
@@ -7056,6 +7088,8 @@
       lsDel(KIND_ASK_KEY); closeKindPanel(); var kb = document.querySelector('[data-testid="k17-hva"]'); if (kb) kb.parentNode.removeChild(kb);
     } else if (a === 'tema') {   // v0.18.1
       temaSet(btn.getAttribute('data-v')); renderHousehold();
+    } else if (a === 'aksent') {   // 0.18.13
+      aksentSet(btn.getAttribute('data-v')); renderHousehold();
     } else if (a === 'pf-velg' || a === 'pf-auto') {   // 0.18.12
       if (hh && Sync) {
         var pm = {}, pid = btn.getAttribute('data-id'); Object.keys(K17.farger || {}).forEach(function (x) { if (PERS_ACC.indexOf(K17.farger[x]) >= 0) pm[x] = K17.farger[x]; });
@@ -7311,8 +7345,9 @@
   /* ---------- v0.16: versjonsnummeret ved logoen og «Nytt i Knaggen» ----------
    * Trykk på «0.16» åpner arket. Etter en oppdatering åpnes det av seg selv én gang (ikke ved aller første åpning,
    * ikke på kjøkkenskjermen og ikke i automatiserte tester uten testkroken KNAGGEN_TEST_NYTT). */
-  var APP_VERSION = '0.18.12', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.18.13', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.18.13', ['Velg aksentfarge for hele appen under Husstand → Utseende. Valget gjelder bare denne telefonen.', 'Fargene på kjøkkenskjermen følger døgnet.', 'Når posisjonen er delt, velger Knaggen Hjemme eller Borte selv. Under står «Endre» hvis du vil bytte.', 'Versjonsinfoen vises igjen når du trykker på versjonsnummeret.', 'Søk i Finn retter.']],
     ['0.18.12', ['Trykk på en vare i handlelista for å endre navn, mengde eller avdeling.', 'Søk i retter, både under Retter og når du velger middag for en dag.', 'Hver person kan velge sin egen farge under Husstand. Fargen er lik på alle telefonene.', 'Nye farger på Nå og kjøkkenskjermen.']],
     ['0.18.11', ['Når avgangene ikke kan hentes, står det «Avgangene er ikke tilgjengelige akkurat nå» med «Prøv igjen».', '«Endre» på «Nå» lar deg velge Hjemme eller Borte.', 'Retter med bare én variant viser også varianten i navnet, og invitasjonsarket lukkes når den andre blir med.']],
     ['0.18.10', ['Større knapper overalt (minst 48 px) og like skriftstørrelser og hjørner – også på kjøkkenskjermen.', 'Retter viser varianten i navnet, f.eks. «Kyllinggryte med sopp (halvferdig)», og telleren i Finn retter viser sist valgte.', 'Når avgangene ikke er tilgjengelige, står det nå på «Nå».']],

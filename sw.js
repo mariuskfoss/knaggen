@@ -5,10 +5,10 @@
  * v0.6: cachenavnet beholder prefikset «ukeshandel-» (internt, ikke synlig). Ny versjon = nytt navn, og activate sletter
  * alle andre «ukeshandel-»-cacher, så en telefon med 0.4.6 rydder ukeshandel-0.4.6 bort ved oppdatering.
  */
-var VERSION = '0.18.12';
+var VERSION = '0.18.13';
 var CACHE = 'ukeshandel-' + VERSION;
 var SDK = 'https://www.gstatic.com/firebasejs/12.19.0/';
-var APP_FILES = ['./', 'index.html', 'hjemme5.js?v=0.18.12', 'palett.css?v=0.18.12', 'style.css?v=0.18.12', 'firebase-config.js?v=0.18.12', 'seed.js?v=0.18.12', 'library.js?v=0.18.12', 'units.js?v=0.18.12', 'delelinje.js?v=0.18.12', 'sync.js?v=0.18.12', 'app.js?v=0.18.12', 'scale.js?v=0.18.12', 'kjokken.css?v=0.18.12', 'kjokken.js?v=0.18.12',  // v0.6 Knaggen: manifest, favicon og lockupen i toppen (så appen ser lik ut uten nett). Hjemskjermikonene hentes av systemet.
+var APP_FILES = ['./', 'index.html', 'hjemme5.js?v=0.18.13', 'palett.css?v=0.18.13', 'style.css?v=0.18.13', 'aksent-app.css?v=0.18.13', 'firebase-config.js?v=0.18.13', 'seed.js?v=0.18.13', 'library.js?v=0.18.13', 'units.js?v=0.18.13', 'delelinje.js?v=0.18.13', 'sync.js?v=0.18.13', 'app.js?v=0.18.13', 'scale.js?v=0.18.13', 'kjokken.css?v=0.18.13', 'kjokken.js?v=0.18.13',  // v0.6 Knaggen: manifest, favicon og lockupen i toppen (så appen ser lik ut uten nett). Hjemskjermikonene hentes av systemet.
   'manifest.webmanifest', 'icons/favicon.svg', 'icons/favicon.ico', 'icons/knaggen-lockup-mork.svg', 'icons/knaggen-lockup-lys.svg', 'icons/apple-touch-icon-mork.png', 'icons/icon-192-mork.png'];   // v0.9: ikonet i hjemskjerm-kortet
 var SDK_FILES = [SDK + 'firebase-app.js', SDK + 'firebase-auth.js', SDK + 'firebase-firestore.js'];
 
