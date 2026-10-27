@@ -1,0 +1,51 @@
+/* Knaggen farge-v1 (merkevare/farge-v1/palett.css): aksenter, vær og myke flater. Verdiene er uendret fra merkevaren;
+ * bare velgerne er tilpasset appen: mørk er standard, lys følger systemet, og html[data-tema] (lys/mork) overstyrer. */
+:root {
+  --a-salvie: #93c2ab;  --a-salvie-soft: #22322b;
+  --a-messing: #d6b98a; --a-messing-soft: #352c1e;
+  --a-fjord: #9cc0e0;   --a-fjord-soft: #1f2c38;
+  --a-lyng: #c4aedb;    --a-lyng-soft: #2c2535;
+  --a-rust: #e3a58e;    --a-rust-soft: #38261f;
+  --a-mose: #bccb8a;    --a-mose-soft: #2a2f1e;
+  --w-sol: #e8c06a; --w-regn: #8db8dc; --w-sky: #a8b6c2; --w-sno: #b9def0; --w-torden: #e2b75a;
+  --tone-top: #1f2a27; --tone-middag: linear-gradient(135deg, #33291b 0%, #202627 75%);
+}
+@media (prefers-color-scheme: light) { :root:not([data-tema="mork"]) {
+  /* aksenter: tekst/ikon · myk flate */
+  --a-salvie: #3f6e5a;  --a-salvie-soft: #e3ece6;
+  --a-messing: #7c5d28; --a-messing-soft: #f3eadb;
+  --a-fjord: #2f5f86;   --a-fjord-soft: #e1eaf2;
+  --a-lyng: #6a4f80;    --a-lyng-soft: #ece5f1;
+  --a-rust: #9a4a32;    --a-rust-soft: #f5e4dc;
+  --a-mose: #556327;    --a-mose-soft: #e9ecd8;
+  /* vær (symboler, ikke tekst) */
+  --w-sol: #d29a2c; --w-regn: #3f78a8; --w-sky: #7f909e; --w-sno: #6fb0d0; --w-torden: #c9952e;
+  /* myke flater */
+  --tone-top: #e9efe9; --tone-middag: linear-gradient(135deg, #f6eedf 0%, #fbfaf7 70%);
+} }
+:root[data-tema="lys"] {
+  /* aksenter: tekst/ikon · myk flate */
+  --a-salvie: #3f6e5a;  --a-salvie-soft: #e3ece6;
+  --a-messing: #7c5d28; --a-messing-soft: #f3eadb;
+  --a-fjord: #2f5f86;   --a-fjord-soft: #e1eaf2;
+  --a-lyng: #6a4f80;    --a-lyng-soft: #ece5f1;
+  --a-rust: #9a4a32;    --a-rust-soft: #f5e4dc;
+  --a-mose: #556327;    --a-mose-soft: #e9ecd8;
+  /* vær (symboler, ikke tekst) */
+  --w-sol: #d29a2c; --w-regn: #3f78a8; --w-sky: #7f909e; --w-sno: #6fb0d0; --w-torden: #c9952e;
+  /* myke flater */
+  --tone-top: #e9efe9; --tone-middag: linear-gradient(135deg, #f6eedf 0%, #fbfaf7 70%);
+}
+
+/* ===== Kjøkkenskjerm: værsymboler per modus (Dag/Kveld/Natt) =====
+ * Kjøkkenskjermen følger sin egen døgnrytme, ikke telefonens tema. Bruk disse i stedet for --w-* der.
+ * Dag og Kveld: minst 3:1 mot bakgrunnen. Natt: svært dempet, ca. 3:1, nesten uten farge.
+ * Bakgrunner fra appens kjokken.js/kjokken.css: Dag #f4f2ed, Kveld #120c06, Natt #000000. */
+:root {
+  /* Dag (bakgrunn #f4f2ed) */
+  --kj-dag-sol: #a27c2f; --kj-dag-sky: #768693; --kj-dag-regn: #4e88bc; --kj-dag-sno: #43829d; --kj-dag-torden: #a67b30;
+  /* Kveld (bakgrunn #120c06) */
+  --kj-kveld-sol: #8c6f36; --kj-kveld-sky: #68747e; --kj-kveld-regn: #49769c; --kj-kveld-sno: #49798d; --kj-kveld-torden: #8f6f38;
+  /* Natt (bakgrunn #000000) */
+  --kj-natt-sol: #645a44; --kj-natt-sky: #565a5d; --kj-natt-regn: #4d5d6a; --kj-natt-sno: #4b5c63; --kj-natt-torden: #645844;
+}

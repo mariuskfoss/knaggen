@@ -55,7 +55,7 @@
   var state = null;
   var memoryOnly = false;
   var hadLocalData = false;
-  var ui = { weekOffset: 0, weekTouched: false, staplesOpen: false, addOpen: false, welcomeClosed: false, welcomeShown: false, sort: lsGet(SORT_KEY) === 'kilde' ? 'kilde' : 'butikk', notice: '', justCreated: false, busy: false, error: '', fvOpenId: null, fvOpenAisle: null, fvQ: '', hsDayDate: null, hsSheet: null };   // v0.7 fv* / v0.8 hs*
+  var ui = { weekOffset: 0, weekTouched: false, staplesOpen: false, addOpen: false, welcomeClosed: false, welcomeShown: false, sort: lsGet(SORT_KEY) === 'kilde' ? 'kilde' : 'butikk', notice: '', justCreated: false, busy: false, error: '', fvOpenId: null, fvOpenAisle: null, fvQ: '', hsDayDate: null, hsSheet: null, editKey: null, retterQ: '', dayQ: '' };   // v0.7 fv* / v0.8 hs*
   var Sync = window.UkeshandelSync || null;
   var hh = null;             // husstandsinfo når vi er i husstandsmodus
   var syncReady = null;      // promise: SDK lastet, innlogget, medlemskap sjekket
@@ -998,6 +998,8 @@
       var cur = readHH() || v;
       cur.core_done = true; cur.migrated = true; writeHH(cur);
       if (hh && hh.hid === v.hid) { hh.core_done = true; hh.migrated = true; }
+      // v0.18.10+ (Trude S1): den som oppretter husstanden får også gi telefonen et navn (kan hoppes over med «Senere»)
+      if (!resume && !window.KNAGGEN_V016_HUSSTAND && !lsGet(KIND_ASK_KEY + ':ferdig:' + v.hid)) { lsSet(KIND_ASK_KEY, v.hid); setTimeout(showKindBanner, 0); }
       return v;
     });
   }
@@ -1332,7 +1334,12 @@
     hid: function () { return hh ? hh.hid : null; },
     // v0.17: felles kjøkkenoppsett (null = ikke lest / finnes ikke / eldre regler)
     sharedKitchen: function () { return hh && K17.kitchen ? K17.kitchen : null; },
-    home: function () { return hh && K17.hjem ? { lat: K17.hjem.lat, lon: K17.hjem.lon } : null; },   // v0.18.1
+    personColor: function (id) { return personColor(id); },   // 0.18.12: samme farge overalt
+    home: function () { var x = hh ? K17.hjem : document.documentElement.classList.contains('v5-on') ? v5PendingHome() : null; return x ? { lat: x.lat, lon: x.lon } : null; },   // v0.18.1 (+ v5: lokal adresse før husstand)
+    homeAddress: function () { var x = hh ? K17.hjem : v5PendingHome(); return x ? x.adresse : ''; },   // hjemme-v5
+    geoLookup: function (q) { return geoLookup(q); },
+    setHome: function (hit) { return v5SetHome(hit); },
+    hasHousehold: function () { return !!hh; },
     setSharedKitchen: function (k) {
       if (!hh || !Sync) return;
       K17.kitchen = { stops: (k.stops || []).slice(0, 3), lat: k.lat, lon: k.lon };
@@ -1504,6 +1511,11 @@
     addExtra: function (x) {
       x.aisle = storeAisle(x.name, x.aisle);
       state.list_extras.push(x);
+      save();
+      remote(function (W, hid) { return W.addExtra(hid, x); });
+    },
+    updateExtra: function (x) {   // j-liste: samme dokument og felter som addExtra
+      x.aisle = storeAisle(x.name, x.aisle);
       save();
       remote(function (W, hid) { return W.addExtra(hid, x); });
     },
@@ -1837,6 +1849,34 @@
     var v = d && key && d.variants && d.variants.length ? variantOf(d, key) : null;
     return v ? n + ' (' + v.name.toLowerCase() + ')' : n;
   }
+  // Søk i retter: samme søk og rekkefølge i Retter og når man velger rett til en dag.
+  // Eksakt lik først, så begynner med, så inneholder. Store/små bokstaver likt, æøå som vanlige bokstaver.
+  function searchKey(s) { s = String(s || ''); if (s.normalize) s = s.normalize('NFC'); return normName(s).toLocaleLowerCase('nb'); }
+  // v0.18.12: innen «begynner med» kommer hele ord først («Laks i folie» før «Laksesuppe»), og hver gruppe står alfabetisk.
+  function searchRecipes(list, q) {
+    var k = searchKey(q); if (!k) return list.slice();
+    var tiers = [[], [], [], []];
+    function word(s) { return s.indexOf(k) === 0 && (s.length === k.length || /[\s(,.\-]/.test(s.charAt(k.length))); }
+    list.forEach(function (r) {
+      var a = searchKey(r.name), b = searchKey(shownName(r));
+      var t = a === k || b === k ? 0 : word(a) || word(b) ? 1 : a.indexOf(k) === 0 || b.indexOf(k) === 0 ? 2 : a.indexOf(k) >= 0 || b.indexOf(k) >= 0 ? 3 : -1;
+      if (t >= 0) tiers[t].push(r);
+    });
+    tiers.forEach(function (g) { g.sort(function (x, y) { return shownName(x).localeCompare(shownName(y), 'nb'); }); });
+    return tiers[0].concat(tiers[1], tiers[2], tiers[3]);
+  }
+  function retterListHtml(rs) {
+    var hits = searchRecipes(rs, ui.retterQ), h = '';
+    if (!hits.length) return '<li><p class="empty" data-testid="retter-sok-tomt">Ingen retter passer.</p></li>';
+    hits.forEach(function (r) {
+      var vl = variantLabel(r);
+      h += '<li><a class="v11-row recipe-card" href="#retter/' + encodeURIComponent(r.id) + '">' +
+        '<span class="t"><b class="card-title">' + esc(shownName(r)) + (/^tm-/.test(r.id) ? ' <span class="badge" data-testid="tatt-med">Tatt med</span>' : '') + '</b>' +
+        (vl ? '<span class="s recipe-variant" data-testid="variantnavn">' + esc(vl) + '</span>' : '') + '</span>' +
+        '<span class="tid card-meta">' + esc(timeShort(r)) + '</span><span class="go" aria-hidden="true">›</span></a></li>';
+    });
+    return h;
+  }
   function renderRetter() {
     var rs = sortedRecipes();
     var h = '<section class="page" data-page="retter">';
@@ -1859,26 +1899,17 @@
       });
       h += '</ul>';
     } else if (!rs.length) {
-      h += '<div class="v11-empty" data-testid="retter-tom"><p>Ingen retter ennå. Velg rettene familien liker fra en lang liste – ett trykk per rett.</p>' +
+      h += '<div class="v11-empty" data-testid="retter-tom"><div class="f-big-empty">' + ILL_POT + '</div><p>Ingen retter ennå. Velg rettene familien liker fra en lang liste – ett trykk per rett.</p>' +
         '<a class="btn primary" href="#retter/finn" data-testid="finn-retter">Finn retter</a>' +
         '<a class="linkbtn" href="#retter/hent" data-testid="hent-inngang">Hent oppskrift fra nettet</a></div>';
     } else {
       h += '<ul class="v11-rows" data-testid="finn-inngang"><li><a class="v11-row" href="#retter/finn" data-testid="finn-flere"><span class="t"><b>Finn flere retter</b></span><span class="go" aria-hidden="true">›</span></a></li>' +
         '<li><a class="v11-row" href="#retter/hent" data-testid="hent-inngang"><span class="t"><b>Hent oppskrift fra nettet</b><span class="s">Lim inn eller del en lenke</span></span><span class="go" aria-hidden="true">›</span></a></li></ul>';
-      h += '<ul class="v11-rows cards" data-testid="retter-liste">';
-      rs.forEach(function (r) {
-        var vl = variantLabel(r);
-        h += '<li><a class="v11-row recipe-card" href="#retter/' + encodeURIComponent(r.id) + '">' +
-          '<span class="t"><b class="card-title">' + esc(shownName(r)) + (/^tm-/.test(r.id) ? ' <span class="badge" data-testid="tatt-med">Tatt med</span>' : '') + '</b>' +
-          (vl ? '<span class="s recipe-variant" data-testid="variantnavn">' + esc(vl) + '</span>' : '') + '</span>' +
-          '<span class="tid card-meta">' + esc(timeShort(r)) + '</span><span class="go" aria-hidden="true">›</span></a></li>';
-      });
-      h += '</ul>';
+      h += '<label class="v11-search"><span class="sr">Søk etter rett</span><input id="retter-q" type="search" placeholder="Søk etter rett" value="' + esc(ui.retterQ) + '" autocomplete="off" data-testid="retter-sok"></label>';
+      h += '<ul class="v11-rows cards" data-testid="retter-liste">' + retterListHtml(rs) + '</ul>';
     }
     h += '<div class="footer-tools">';
-    if (hh) h += '<a class="linkbtn" href="#husstand" data-testid="husstand-lenke">Husstand og innstillinger</a>';
-    else {
-      if (syncMode()) h += '<a class="linkbtn" href="#husstand" data-testid="husstand-lenke">Husstand og innstillinger</a><br>';
+    if (!hh) {   // j-liste: lenkene til Husstand og innstillinger er fjernet her (Husstand nås fra toppen)
       if (isDevHost()) h += '<button type="button" class="linkbtn" data-action="reset-seed" data-testid="reset-seed">Tilbakestill testdata</button>';   // v0.18.8: bare i dev
     }
     if (memoryOnly && !hh) h += '<p class="warn">Nettleseren tillater ikke lagring – endringer forsvinner når du lukker siden.</p>';
@@ -2534,6 +2565,7 @@
         (count ? '<button type="button" class="btn v11-more" data-action="week-menu" data-testid="uke-meny" aria-haspopup="dialog" aria-label="Mer for uka">⋯</button>' : '') + '</div>';   // v0.18.9: tom uke → bare «Fyll man–fre», ingen ⋯
       if (!count && hasRecipes && startStep !== 1 && !swapFrom) h += '<div class="row-actions v11-fill"><button type="button" class="btn primary" data-action="fill-weekdays" data-testid="fyll">Fyll man–fre</button></div>';
       if (ui.notice) { h += '<p class="notice" role="status" data-testid="uke-notis">' + esc(ui.notice) + '</p>'; ui.notice = ''; }
+      if (!count) h += '<div class="f-big-empty" data-testid="uke-tom-ill">' + ILL_POT + '</div>';   // Farge v1: gryta én gang, bare når hele uka er tom
       h += '<ol class="days v11-rows">';
       dates.forEach(function (d, i) {
         var o = state.oneoffs[d];
@@ -2550,7 +2582,7 @@
           '<div class="v11-row">' +
           '<button type="button" class="day-open" data-action="day-open" data-date="' + d + '" data-testid="dag" aria-haspopup="dialog" aria-label="' + esc(dayLabel(d) + ': ' + (dn || 'ingen middag') + (tag ? ', ' + tag : '') + (mk ? (mk === 'rester' ? ', rester' : ', allerede handlet') + ', ikke på handlelista' : '')) + '">' +
           '<span class="dl"><b class="dname">' + DAY_SHORT[i].charAt(0).toUpperCase() + DAY_SHORT[i].slice(1) + '</b><span class="ddate">' + shortDate(d) + '</span></span>' +
-          '<span class="t"><b class="' + (dn ? 'day-name' : 'none') + '">' + esc(dn || 'Tom') + '</b>' + (o ? '<span class="s">Engangsmiddag</span>' : '') + '</span>' +
+          '<span class="t">' + '<b class="' + (dn ? 'day-name' : 'none') + '">' + esc(dn || 'Tom') + '</b>' + (o ? '<span class="s">Engangsmiddag</span>' : '') + '</span>' +
           (tag ? '<span class="v11-tag" data-testid="dag-merke">' + esc(tag) + '</span>' : '') +
           (mk ? '<span class="v16-mark" data-testid="dag-handlet" data-mark="' + mk + '" aria-hidden="true">' + (mk === 'rester' ? ICON_BOWL + 'Rester' : '✓ Handlet') + '</span>' : '') +
           (swapFrom ? '' : '<span class="go" aria-hidden="true">›</span>') + '</button>' +
@@ -2608,9 +2640,12 @@
     } else {
       // Navn med variant når husstanden har flere varianter av samme rett
       var nameCount = {}; rs.forEach(function (x) { nameCount[normName(x.name)] = (nameCount[normName(x.name)] || 0) + 1; });
-      h += '<div class="day-row"><select id="day-' + d + '" class="day-select" data-date="' + d + '" aria-label="Middag ' + esc(dayLabel(d).toLowerCase()) + '">' +
+      if (rs.length) h += '<label class="v11-search day-search"><span class="sr">Søk etter rett</span><input id="day-q" type="search" placeholder="Søk etter rett" value="' + esc(ui.dayQ) + '" autocomplete="off" data-testid="dag-sok"></label>';
+      var hitsD = searchRecipes(rs, ui.dayQ);
+      if (r && hitsD.indexOf(r) < 0) hitsD.unshift(r);   // valgt rett står alltid i lista
+      h += '<div class="day-row"><select id="day-' + d + '" class="day-select" data-date="' + d + '" aria-label="Middag ' + esc(dayLabel(d).toLowerCase()) + '" data-testid="dag-velg">' +
         '<option value="">Tom</option>';
-      rs.forEach(function (x) {
+      hitsD.forEach(function (x) {
         var usedIdx = usedBy[x.id], takenElsewhere = usedIdx != null && usedIdx !== i;
         var vl = nameCount[normName(x.name)] > 1 ? variantLabel(x) : '';
         h += '<option value="' + esc(x.id) + '"' + (r && r.id === x.id ? ' selected' : '') + '>' + esc(x.name + (vl ? ' · ' + vl : '')) +
@@ -2634,6 +2669,12 @@
     return h;
   }
   /* ---------- v0.16: «Allerede handlet» / «Rester» ---------- */
+  // Farge v1 (merkevare/farge-v1): illustrasjoner i merkevarens strek (messing via CSS) og fargeprikk per avdeling (pynt).
+  var f48 = function (d) { return '<svg class="f-ill" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + d + '</svg>'; };
+  var ILL_POT = f48('<path d="M11 22h26v10a8 8 0 0 1-8 8H19a8 8 0 0 1-8-8z"/><path d="M8 22h32M6 27h5M37 27h5"/><circle cx="24" cy="15" r="3"/>');
+  var ILL_BAG = f48('<path d="M12 18h24l-2 22H14z"/><path d="M18 18v-3a6 6 0 0 1 12 0v3"/><path d="M20 28l3 3 6-6" opacity=".7"/>');
+  var AISLE_ACC = { 'Frukt/grønt': 'mose', 'Kjøl': 'fjord', 'Meieri': 'lyng', 'Frys': 'salvie', 'Tørrvare': 'messing', 'Hus': 'rust' };
+  function aisleDot(a) { return '<i class="f-dot f-' + (AISLE_ACC[a] || 'salvie') + '" aria-hidden="true"></i>'; }
   var ICON_BOWL = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 11h18a9 9 0 0 1-18 0z"/><path d="M8 7c0-1.5 1-1.5 1-3M12 7c0-1.5 1-1.5 1-3M16 7c0-1.5 1-1.5 1-3"/></svg>';
   var MARKS = [['', 'Kjøp inn'], ['handlet', 'Handlet'], ['rester', 'Rester']];
   function markSegHtml(d) {
@@ -3217,7 +3258,7 @@
     return !!(h.people && h.scale !== false);
   }
   function hsAsked() {
-    return !!(hsState().asked || lsGet(HS_ASKED_KEY) === '1');
+    return !!(hsState().asked || hsPeople() || lsGet(HS_ASKED_KEY) === '1');   // v0.18.12: husstanden har en verdi → ikke spør igjen (endres under Husstand)
   }
   function dayDelta(date) {
     var d = state.day_people && state.day_people[date];
@@ -3832,15 +3873,79 @@
   }
 
   // v0.6.2: skjemaet åpnes med «＋» i verktøylinja (ingen <details> lenger) og står rett under den.
-  function addItemForm() {
-    return '<div class="add-panel" id="add-panel">' +
-      '<form id="item-add" class="item-add-form" novalidate aria-label="Legg til vare">' +
-      '<input type="text" id="ai-name" placeholder="Vare, f.eks. tannkrem" aria-label="Vare" autocomplete="off" list="known-ings">' +
-      '<div class="ai-row"><input type="text" id="ai-qty" inputmode="decimal" placeholder="1" aria-label="Mengde">' +
-      '<select id="ai-unit" aria-label="Enhet">' + unitOptions('') + '</select>' +
-      '<select id="ai-aisle" aria-label="Avdeling">' + aisleOptions('Tørrvare') + '</select></div>' +
+  // j-liste: samme skjema brukes til å endre en vare (trykk på teksten). e = editInfo(...)
+  function addItemForm(e) {
+    var dis = e && e.kind === 'qty' ? ' disabled' : '';
+    return '<div class="add-panel' + (e ? ' edit-panel' : '') + '" id="add-panel">' +
+      (e ? '<h3 class="edit-h" id="ie-h">Endre vare</h3>' : '') +
+      '<form id="' + (e ? 'item-edit' : 'item-add') + '" class="item-add-form" novalidate ' + (e ? 'aria-labelledby="ie-h" data-key="' + esc(e.key) + '" data-testid="vare-endre"' : 'aria-label="Legg til vare"') + '>' +
+      '<input type="text" id="ai-name" placeholder="Vare, f.eks. tannkrem" aria-label="Vare" autocomplete="off"' + (e ? ' value="' + esc(e.name) + '"' + dis : ' list="known-ings"') + '>' +
+      '<div class="ai-row"><input type="text" id="ai-qty" inputmode="decimal" placeholder="1" aria-label="Mengde"' + (e ? ' value="' + esc(formatQty(e.qty)) + '"' : '') + '>' +
+      '<select id="ai-unit" aria-label="Enhet"' + dis + '>' + unitOptions(e ? e.unit : '') + '</select>' +
+      '<select id="ai-aisle" aria-label="Avdeling"' + dis + '>' + aisleOptions(e ? e.aisle : 'Tørrvare') + '</select></div>' +
+      (e ? (e.kind === 'qty' ? '<p class="hint" data-testid="vare-endre-hint">Varen kommer fra middagene. Navn og avdeling endrer du i retten.</p>' :
+        e.kind === 'staple' ? '<p class="hint" data-testid="vare-endre-hint">Endringen gjelder den faste varen.</p>' : '') +
+        '<div class="form-actions plain"><button type="submit" class="btn primary" data-testid="vare-lagre">Lagre</button>' +
+        '<button type="button" class="btn" data-action="edit-cancel" data-testid="vare-avbryt">Avbryt</button></div></form></div>' :
       '<label class="check"><input type="checkbox" id="ai-staple"> Legg til i faste varer</label>' +
-      '<button type="submit" class="btn primary">Legg til</button></form>' + knownNamesDatalist() + '</div>';
+      '<button type="submit" class="btn primary">Legg til</button></form>' + knownNamesDatalist() + '</div>');
+  }
+  function editInfo(key) {
+    var it = currentItems().filter(function (i) { return i.key === key; })[0];
+    if (!it) return null;
+    var e = { key: key, it: it, name: cap(it.name), aisle: it.aisle, unit: it.unit || '', qty: it.plan ? it.plan.buy : it.qty, kind: 'qty' };
+    var pureExtra = it.sources.length === 1 && it.sources[0] === 'extra' && it.extra_ids.length;
+    var pureStaple = it.sources.length === 1 && it.sources[0] === 'staple' && it.staple_ids.length === 1;
+    if (pureExtra) {
+      var xs = state.list_extras.filter(function (x) { return it.extra_ids.indexOf(x.id) >= 0; });
+      if (xs.length) { e.kind = 'extra'; e.xs = xs; e.name = cap(xs[0].name); e.unit = xs[0].unit || ''; e.aisle = xs[0].aisle || it.aisle;
+        e.qty = xs.reduce(function (a, x) { return a + (x.qty == null ? 1 : x.qty); }, 0); }
+    } else if (pureStaple) {
+      var st = state.staples.filter(function (x) { return x.id === it.staple_ids[0]; })[0];
+      if (st) { e.kind = 'staple'; e.s = st; e.name = cap(st.name); e.unit = st.unit || ''; e.aisle = st.aisle || it.aisle; e.qty = st.qty == null ? 1 : st.qty; }
+    }
+    return e;
+  }
+  function openItemEdit(key) {
+    if (!editInfo(key)) return;
+    ui.editKey = key; ui.addOpen = false; renderListSection();
+    var f = document.getElementById('ai-name');
+    if (f && f.disabled) f = document.getElementById('ai-qty');
+    if (f) { try { f.focus({ preventScroll: true }); } catch (x) { f.focus(); } var p = document.getElementById('add-panel'); if (p && p.scrollIntoView) p.scrollIntoView({ block: 'nearest' }); }
+  }
+  function saveItemEdit(form) {
+    var e = editInfo(form.getAttribute('data-key'));
+    ui.editKey = null;
+    if (!e) { renderListSection(); return; }
+    var it = e.it, q = parseQty(document.getElementById('ai-qty').value);
+    var name = e.kind === 'qty' ? e.name : document.getElementById('ai-name').value.trim();
+    if (!name) { ui.editKey = e.key; document.getElementById('ai-name').focus(); return; }
+    if (e.kind === 'qty') {
+      if (q == null) { ui.editKey = e.key; document.getElementById('ai-qty').focus(); return; }
+      var own = round3(q - (it.base_qty || 0) - (it.adjust_legacy || 0));
+      ops.adjust(it.week, e.key, own, round3(own - (it.adjust_own || 0)));
+    } else {
+      var unit = document.getElementById('ai-unit').value, aisle = document.getElementById('ai-aisle').value || e.aisle;
+      if (e.kind === 'staple') {
+        var other = findStapleByKey(name);
+        if (other && other !== e.s) { ui.editKey = e.key; toast(cap(name) + ' finnes allerede som fast vare'); return; }
+        ops.updateStaple(e.s, { name: name, qty: q == null ? 1 : q, unit: unit, aisle: storeAisle(name, aisle) });
+      } else {
+        var first = e.xs[0];
+        first.name = name; first.qty = q == null ? 1 : q; first.unit = unit; first.aisle = aisle;
+        ops.updateExtra(first);
+        if (e.xs.length > 1) ops.removeExtras(e.xs.slice(1).map(function (x) { return x.id; }));
+      }
+      if (it.adjust) ops.clearAdjust(it.week, e.key);   // mengden er satt på nytt
+      // Avkrysningen følger varen når den får nytt navn (samme avkryssingsfelt som før, ny nøkkel)
+      if (it.checked) {
+        var xid = e.kind === 'extra' ? e.xs[0].id : null, sid = e.kind === 'staple' ? e.s.id : null;
+        var ni = buildList().items.filter(function (i) { return xid ? i.extra_ids.indexOf(xid) >= 0 : i.staple_ids.indexOf(sid) >= 0; })[0];
+        if (ni && ni.key !== e.key) { var cm = {}; cm[e.key] = false; cm[ni.key] = tickValue(ni); ops.setChecks(ni.week || it.week, cm); }
+      }
+    }
+    renderListSection();
+    toast(cap(name) + ' er endret');
   }
   // Merkevares ikoner (＋ og ⋯) i K-knagg-stil, inline så de arver farge.
   var ICON_ADD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 5V19M5 12H19"/></svg>';
@@ -4081,7 +4186,7 @@
     var note = !i.checked && typeof i.tick === 'number' ? U.sizeText(i.tick, i.unit) + ' krysset av' : '';
     return '<li class="item' + (i.checked ? ' checked' : '') + (i.qty === 0 ? ' zero' : '') + ' src-' + o.kind + '" data-key="' + esc(i.key) + '" data-row="' + esc(o.row) + '">' +
       '<label class="cb-hit"><input type="checkbox" data-key="' + esc(i.key) + '"' + (i.checked ? ' checked' : '') + ' aria-label="' + esc(cap(o.name)) + (o.qu ? ' ' + esc(o.qu) : '') + '"></label>' +
-      '<span class="item-text"' + (o.info && o.info.length ? ' data-info="' + esc(o.info.join(' · ')) + '"' : '') + '><span class="item-name">' + esc(cap(o.name)) + '</span>' +
+      '<span class="item-text" tabindex="0" role="button" aria-label="Endre ' + esc(cap(o.name)) + (o.qu ? ' ' + esc(o.qu) : '') + '" data-testid="vare-tekst"' + (o.info && o.info.length ? ' data-info="' + esc(o.info.join(' · ')) + '"' : '') + '><span class="item-name">' + esc(cap(o.name)) + '</span>' +
       (o.qu ? ' <span class="item-qty">' + esc(o.qu) + '</span>' : '') +
       '<span class="item-src">' + (o.src.length ? '<span class="src-line">' + esc(o.src.join(' · ')) + '</span>' : '') +
       (note ? '<span class="src-note" data-testid="krysset-av">' + esc(note) + '</span>' : '') + '</span></span>' +
@@ -4193,17 +4298,20 @@
     }
     h += markedLine();   // v0.16
     h += basisStrip(built.basis);
-    if (ui.addOpen) h += addItemForm();
+    var ed = ui.editKey ? editInfo(ui.editKey) : null;
+    if (!ed) ui.editKey = null;
+    if (ed) h += addItemForm(ed);
+    else if (ui.addOpen) h += addItemForm();
     var shown = built.items.filter(visibleItem);
     var doneBtn = nDone ? '<button type="button" class="linkbtn show-done" data-action="show-done" aria-expanded="' + (ui.showDone ? 'true' : 'false') + '" data-testid="vis-handlet">' +
       (ui.showDone ? 'Skjul handlet' : 'Vis ' + nDone + ' handlet') + '</button>' : '';
     if (!built.items.length || (!shown.length && !nDone)) {
-      h += '<p class="empty">Lista er tom. Velg middager under <a href="#uke">Uke</a>, eller legg til varer.</p>';
+      h += '<div class="f-big-empty" data-testid="liste-tom-ill">' + ILL_BAG + '</div><p class="empty">Lista er tom. Velg middager under <a href="#uke">Uke</a>, eller legg til varer.</p>';
       el.innerHTML = h;
       return;
     }
     if (!built.dinners) h += '<p class="hint">Ingen middager valgt ennå. <a href="#uke">Velg middager</a>.</p>';
-    if (!shown.length) h += '<p class="empty" data-testid="alt-handlet">Alt er handlet.</p>';
+    if (!shown.length) h += '<div class="f-big-empty" data-testid="alt-handlet-ill">' + ILL_BAG + '</div><p class="empty" data-testid="alt-handlet">Alt er handlet.</p>';
     if (kilde) {
       sourceGroups(built).forEach(function (x) {
         var rows = x.rows.filter(function (r) { return visibleItem(r.item); });
@@ -4217,7 +4325,7 @@
       });
     } else {
       groupItems(shown).forEach(function (g) {
-        h += '<h3 class="aisle">' + esc(aisleLabel(g.aisle)) + '</h3><ul class="items">' + g.items.map(butikkLi).join('') + '</ul>';
+        h += '<h3 class="aisle f-dept">' + aisleDot(g.aisle) + esc(aisleLabel(g.aisle)) + '</h3><ul class="items">' + g.items.map(butikkLi).join('') + '</ul>';
       });
     }
     if (doneBtn) h += '<div class="done-row">' + doneBtn + '</div>';
@@ -4352,11 +4460,12 @@
     var li = e.target.closest && e.target.closest('.item[data-key]');
     if (!li || e.target.closest('button, input, label.cb-hit')) return;
     var txt = li.querySelector('.item-text'), info = txt && txt.getAttribute('data-info');
+    itemLpFired = false;
     if (!info) return;
     lpClear();
     var x = e.clientX, y = e.clientY;
     lp.t = setTimeout(function () {
-      lp.t = null;
+      lp.t = null; itemLpFired = true;
       var bb = document.createElement('div');
       bb.className = 'lp-bubble'; bb.setAttribute('role', 'tooltip'); bb.setAttribute('data-testid', 'vare-boble');
       bb.textContent = info;
@@ -4369,6 +4478,19 @@
   });
   ['pointerup', 'pointercancel', 'pointerleave', 'scroll'].forEach(function (ev) { (ev === 'scroll' ? window : main).addEventListener(ev, lpClear, ev === 'scroll' ? { passive: true } : undefined); });
   main.addEventListener('contextmenu', function (e) { if (e.target.closest && e.target.closest('.item .item-text')) e.preventDefault(); });
+  // j-liste: trykk på teksten åpner «Endre vare» (avkryssingsboksen krysser av som før). Ikke etter et langt trykk.
+  var itemLpFired = false;
+  main.addEventListener('click', function (e) {
+    var t = e.target.closest && e.target.closest('.item[data-key] .item-text');
+    if (!t || V010_LAYOUT) return;
+    if (itemLpFired) { itemLpFired = false; return; }
+    openItemEdit(t.closest('.item').getAttribute('data-key'));
+  });
+  main.addEventListener('keydown', function (e) {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('item-text') && e.target.closest('.item[data-key]')) {
+      e.preventDefault(); openItemEdit(e.target.closest('.item').getAttribute('data-key'));
+    }
+  });
 
   // v0.11: Esc lukker dagsarket og ⋯-menyen på Uke
   document.addEventListener('keydown', function (e) {
@@ -4380,6 +4502,8 @@
     if (e.target && e.target.id === 'hjem-sok') { var qv = e.target.value; clearTimeout(hjemTimer); hjemTimer = setTimeout(function () { hjemSearch(qv); }, 300); return; }
     var t = e.target;
     if (t.id === 'finn-q') { finn.q = t.value; renderFinnList(); return; }   // v0.11
+    if (t.id === 'retter-q') { ui.retterQ = t.value; var rl = main.querySelector('[data-testid="retter-liste"]'); if (rl) rl.innerHTML = retterListHtml(sortedRecipes()); return; }
+    if (t.id === 'day-q') { ui.dayQ = t.value; var dp = t.selectionStart; renderUke(); var dq = document.getElementById('day-q'); if (dq) { dq.focus(); try { dq.setSelectionRange(dp, dp); } catch (x) { } } return; }
     if (t.id === 'fv-q') {
       ui.fvQ = t.value;
       // Debounce-ish: tegn på nytt med en gang (liste er liten)
@@ -4795,6 +4919,7 @@
   function showStart() {
     var s = lsGet(START_KEY);
     if (s === 'closed' || s === 'done') return false;
+    if (s !== 'open' && document.documentElement.classList.contains('v5-on')) return false;   // 0.18.12: hjemme-v5 er standard – nye telefoner får «Sett opp hjemmet» på Nå, ikke Kom i gang/introsiden
     if (s === 'open') {
       if (hh && (ui.members || 0) > 1) { lsSet(START_KEY, 'done'); return false; }
       return true;
@@ -4977,7 +5102,7 @@
     lsSet(START_KEY, 'closed');
     renderUke();
     focusEl(".week-tools [data-testid=\"fyll\"]:not([disabled])", ".week-nav [data-action=\"week-next\"]");
-    toast('Husstand og invitasjon finner du under Retter → Husstand', UNDO_MS, { label: 'Angre', run: function () {
+    toast('Husstand og invitasjon finner du øverst til høyre', UNDO_MS, { label: 'Angre', run: function () {
       lsSet(START_KEY, 'open');
       if (skipped) {
         state.household_size = prevHs;
@@ -5279,7 +5404,7 @@
     if (!syncMode()) { main.innerHTML = h + '<p class="empty">Deling er ikke satt opp ennå.</p><a class="btn" href="#uke">Til Knaggen</a></div></section>'; return; }
     if (p.status === 'loading') { main.innerHTML = h + '<p class="inv-wait" role="status">Henter invitasjonen …</p></div></section>'; return; }
     if (p.status === 'gone') {
-      main.innerHTML = h + '<h2>Invitasjonen gjelder ikke lenger</h2><p class="lead" data-testid="inv-utlopt">Invitasjonen gjelder ikke lenger. Be den som sendte den om en ny (Retter → Husstand → Inviter).</p>' +
+      main.innerHTML = h + '<h2>Invitasjonen gjelder ikke lenger</h2><p class="lead" data-testid="inv-utlopt">Invitasjonen gjelder ikke lenger. Be den som sendte den om en ny (Husstand øverst til høyre → Inviter).</p>' +
         '<div class="acts"><a class="btn primary" href="#uke" data-testid="til-knaggen">Til Knaggen</a></div></div></section>';
       return;
     }
@@ -5393,7 +5518,7 @@
       '<form class="code-in" id="koble-form" novalidate><input type="text" id="koble-kode" inputmode="text" autocapitalize="characters" autocomplete="one-time-code" spellcheck="false" placeholder="XXXX-XXXX" aria-label="Kode fra invitasjonen" data-testid="koble-kode" maxlength="14">' +
       '<button type="submit" class="btn" data-testid="koble-til"' + (connect.busy ? ' disabled' : '') + '>Koble til</button></form>' +
       (connect.error ? '<p class="form-error" role="alert" data-testid="koble-feil">' + esc(connect.error) + '</p>' : '') +
-      '<p class="hint">Koden står i invitasjonen, eller under Retter → Husstand på en telefon som er med.</p>' +
+      '<p class="hint">Koden står i invitasjonen, eller under Husstand øverst til høyre på en telefon som er med.</p>' +
       (fromHusstand || fromIntro ? '' : '<button type="button" class="linkbtn new" data-action="koble-ny" data-testid="koble-ny">Ny her? Start uten husstand</button>') +
       '</div></section>';
     // v0.18.8: feil eller utløpt kode tømmer ikke feltet – verdien beholdes gjennom omtegningen
@@ -5619,7 +5744,7 @@
    * Spec: spec-v017-husstand.md, design: merkevare/v017-husstand. Alt nytt er nye dokumenter (settings/profil,
    * settings/kjokken, devices/{uid}); ingenting eksisterende flyttes eller slettes. */
   var K17_REG_KEY = 'knaggen:enhet-registrert';   // v0.17: hid der denne enheten har en enhetsoppføring
-  var K17 = { name: '', devices: null, memberDocs: null, selfSeen: false, creating: false, kitchen: null, kitchenSeen: false, sheet: null, removing: false, hjem: null, hjemEdit: false, hjemHits: [], hjemSeq: 0 };
+  var K17 = { name: '', devices: null, memberDocs: null, selfSeen: false, creating: false, kitchen: null, kitchenSeen: false, sheet: null, removing: false, hjem: null, hjemEdit: false, hjemHits: [], hjemSeq: 0, farger: {}, pers: null, persBusy: false };
   var DEV_TOUCH_KEY = 'knaggen:enhet-sett', NAME_LATER_KEY = 'knaggen:navn-senere', KIND_ASK_KEY = 'knaggen:enhet-spor';
   var PLAT = { android: 'Android-telefon', iphone: 'iPhone', ipad: 'iPad', nettbrett: 'Nettbrett', windows: 'PC med Windows', mac: 'Mac', linux: 'PC med Linux', annet: 'Nettleser' };
   function devPlatform() {
@@ -5633,6 +5758,8 @@
     return 'annet';
   }
   // Bare grov type lagres; nettlesernavnet brukes bare i navneforslaget (aldri hele user agent-strengen).
+  // v0.18.12 (S1): «Telefonen til …» – bare nettbrett kalles «Nettbrettet»
+  function devNoun() { var p = devPlatform(); return p === 'ipad' || p === 'nettbrett' ? 'Nettbrettet' : 'Telefonen'; }
   function devSuggestion(p) {
     var ua = navigator.userAgent || '';
     if (p === 'windows' || p === 'mac' || p === 'linux') {
@@ -5684,6 +5811,21 @@
   // v0.18.1: hjemmeadresse – oppslag i Entur Geocoder (autocomplete) rett fra nettleseren. Adressen logges aldri.
   var GEO_URL = 'https://api.entur.io/geocoder/v1/autocomplete';
   var hjemTimer = null;
+  var V5_HOME_KEY = 'knaggen:v5:adresse';   // hjemme-v5: adresse uten husstand (bare på denne telefonen til den blir med)
+  function v5PendingHome() { try { var x = JSON.parse(lsGet(V5_HOME_KEY) || 'null'); return x && typeof x.adresse === 'string' && isFinite(x.lat) && isFinite(x.lon) ? x : null; } catch (e) { return null; } }
+  function geoLookup(q) {   // samme adresseoppslag som Husstand → Hjem
+    return fetch(GEO_URL + '?text=' + encodeURIComponent(q.trim()) + '&lang=no&size=5&layers=address,venue', { headers: { 'ET-Client-Name': 'mariuskfoss-knaggen' } })
+      .then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); })
+      .then(function (d) {
+        return ((d && d.features) || []).map(function (f) { var c = f.geometry && f.geometry.coordinates, pr = f.properties || {}; return c ? { adresse: String(pr.label || pr.name || '').slice(0, 200), lat: +c[1], lon: +c[0] } : null; })
+          .filter(function (x) { return x && x.adresse && isFinite(x.lat) && isFinite(x.lon); });
+      });
+  }
+  function v5SetHome(hit) {
+    var h = { adresse: String(hit.adresse).slice(0, 200), lat: r4(hit.lat), lon: r4(hit.lon) };
+    if (hh && Sync) { K17.hjem = h; if (window.KnaggenKjokken && window.KnaggenKjokken.sharedChanged) window.KnaggenKjokken.sharedChanged(); return Sync.write.setHome(hh.hid, h); }
+    lsSet(V5_HOME_KEY, JSON.stringify(h)); return Promise.resolve();
+  }
   function hjemSearch(q) {
     var seq = ++K17.hjemSeq, ul = main.querySelector('[data-testid="hjem-forslag"]');
     if (!ul) return;
@@ -5861,8 +6003,12 @@
     K17.name = p && typeof p.name === 'string' ? p.name : ''; if (p || !(meta && meta.fromCache)) hhNameCache(K17.name); renderSyncStatus();
     var k = docs.filter(function (d) { return d.id === 'kjokken'; })[0];
     K17.kitchen = k && Array.isArray(k.stops) ? { stops: k.stops, lat: k.lat, lon: k.lon } : null;
+    var pf = docs.filter(function (d) { return d.id === 'personer'; })[0];   // 0.18.12: valgte personfarger (felles)
+    K17.farger = pf && pf.farger && typeof pf.farger === 'object' ? pf.farger : {};
     var hj = docs.filter(function (d) { return d.id === 'hjem'; })[0];   // v0.18.1: hjemmeadresse
     K17.hjem = hj && typeof hj.adresse === 'string' && typeof hj.lat === 'number' && typeof hj.lon === 'number' ? { adresse: hj.adresse, lat: hj.lat, lon: hj.lon } : null;
+    // hjemme-v5: adresse lagt inn i oppsettet før telefonen var med i en husstand → deles når husstanden ikke har en
+    if (meta && !meta.fromCache && hh && Sync) { var pend5 = v5PendingHome(); if (pend5) { lsDel(V5_HOME_KEY); if (!K17.hjem) { K17.hjem = pend5; Sync.write.setHome(hh.hid, pend5).catch(function () { }); } } }
     // Migrering (spec §9): første skjerm med lokalt oppsett kopierer holdeplassene til husstanden hvis feltet er tomt.
     if (meta && !meta.fromCache && hh && !K17.kitchenSeen) {
       K17.kitchenSeen = true;
@@ -5903,7 +6049,7 @@
   // Husstandens navn
   function openNameSheet() {
     var ov = k17Open('k17-navn', k17Head('k17-navn', 'Husstandens navn') +
-      '<form data-k17="navn"><div class="k17-field"><label for="k17-navn-in">Navn</label><input class="k17-in" id="k17-navn-in" maxlength="40" required value="' + esc(hhName() || 'Hjemme') + '" data-testid="k17-navn-felt" autofocus>' +
+      '<form data-k17="navn"><div class="k17-field"><label for="k17-navn-in">Navn</label><input class="k17-in" id="k17-navn-in" maxlength="40" required value="' + esc(hhName() || 'Husstanden vår') + '" data-testid="k17-navn-felt" autofocus>' +
       '<p class="hint">Alle i husstanden ser navnet.</p></div><div class="k17-acts"><button type="button" class="k17-btn" data-k17="close">Avbryt</button><button type="submit" class="k17-btn pri" data-testid="k17-navn-lagre">Lagre</button></div></form>');
     ov.querySelector('form').addEventListener('submit', function (e) { e.preventDefault(); saveName(ov.querySelector('input').value); k17Close(); });
   }
@@ -5988,6 +6134,7 @@
       return h;
     }
     var ov = k17Open('k17-kode-ark', body(), { refresh: function () { var s = ov.querySelector('.k17-sheet'); if (s) s.innerHTML = body(); } });
+    K17.sheet.baseDev = (K17.devices || []).length; K17.sheet.baseMem = ui.members || 1;   // v0.18.12: kodearket lukkes også når en ny enhet/medlem dukker opp (som invitasjonsarket)
     if (!validInvite()) {
       ui.inviteErr = '';
       ensureInvite(false).then(function () { if (K17.sheet && K17.sheet.refresh) K17.sheet.refresh(); }, function (e) { ui.inviteErr = inviteErrText(e); if (K17.sheet && K17.sheet.refresh) K17.sheet.refresh(); });
@@ -6021,22 +6168,29 @@
   // v0.18.8: første gang etter kobling spørres enheten om navn og hvem den tilhører (ikke modalt; tomt eier-felt er lov).
   function kindBannerHtml() {
     if (!hh || lsGet(KIND_ASK_KEY) !== hh.hid) return '';
-    var sug = devSuggestion(devPlatform());
+    var sug = '';   // v0.18.12 (S1): tomt navnefelt med grått eksempel; navnet fylles av «Tilhører» («Telefonen til Lena»)
     return '<div class="k17-banner k188-ny" data-testid="k17-hva"><b>Hvem sin enhet er dette?</b><p>Gi enheten et navn, så ser alle i husstanden hvilken det er. Velg Kjøkkenskjerm for et nettbrett på kjøkkenet.</p>' +
-      '<div class="k17-field"><label for="k17-hva-navn">Navn</label><input class="k17-in" id="k17-hva-navn" maxlength="40" value="' + esc(sug) + '" data-sug="' + esc(sug) + '" data-testid="k17-hva-navn"></div>' +
+      '<div class="k17-field"><label for="k17-hva-navn">Navn</label><input class="k17-in" id="k17-hva-navn" maxlength="40" value="" data-sug="" placeholder="F.eks. ' + esc(devNoun()) + ' til Lena" data-testid="k17-hva-navn"></div>' +
       '<div class="k17-field"><label for="k17-hva-eier">Tilhører</label><input class="k17-in" id="k17-hva-eier" maxlength="40" placeholder="F.eks. Lena, Ola eller Alle" data-testid="k17-hva-eier"></div>' +
-      '<div class="row"><button type="button" class="k17-btn pri" data-action="k17-hva" data-v="person" data-testid="k17-hva-person">Lagre</button>' +
+      '<div class="row"><button type="button" class="k17-btn txt" data-action="k17-hva-senere" data-testid="k17-hva-senere">Senere</button><button type="button" class="k17-btn pri" data-action="k17-hva" data-v="person" data-testid="k17-hva-person">Lagre</button>' +
       '<button type="button" class="k17-btn" data-action="k17-hva" data-v="kjokken" data-testid="k17-hva-kjokken">Det er kjøkkenskjermen</button></div></div>';
   }
   // Vises som et fast, ikke-modalt panel nederst (utenfor main), så det ikke tegnes bort av synk mens man skriver
   // og ikke dekker topplinja eller resten av appen.
+  // forhåndsutfylt navn følger eieren: «Telefonen til Lena», til man skriver selv (panelet og siden)
+  document.addEventListener('input', function (e) {   // forhåndsutfylt navn følger eieren: «Telefonen til Lena», til man skriver selv
+      if (e.target.id !== 'k17-hva-eier') return;
+      var ni = document.getElementById('k17-hva-navn'), sug = ni && ni.getAttribute('data-sug'), ow = e.target.value.trim();
+      if (!ni || (ni.value !== sug && ni.value !== ni.getAttribute('data-auto'))) return;
+      var v = ow ? devNoun() + ' til ' + ow.slice(0, 26) : sug;
+      ni.value = v; ni.setAttribute('data-auto', v);
+  });
   function showKindBanner() {
     if (!hh || lsGet(KIND_ASK_KEY) !== hh.hid || document.querySelector('[data-testid="k17-hva"]')) return;
     if (document.querySelector('.ask-overlay')) { setTimeout(showKindBanner, 1500); return; }
     var pn = document.createElement('div');
     pn.className = 'k188-panel'; pn.id = 'k188-ny'; pn.setAttribute('role', 'region'); pn.setAttribute('aria-label', 'Ny enhet i ' + (hhName() || 'husstanden'));
-    pn.innerHTML = kindBannerHtml().replace('<b>Hvem sin enhet er dette?</b>', '<b class="k188-q">Hvem sin enhet er dette?</b>').replace('<div class="row">',
-      '<div class="row"><button type="button" class="k17-btn txt" data-action="k17-hva-senere" data-testid="k17-hva-senere">Senere</button>');
+    pn.innerHTML = kindBannerHtml().replace('<b>Hvem sin enhet er dette?</b>', '<b class="k188-q">Hvem sin enhet er dette?</b>');
     document.body.appendChild(pn);
     pn.addEventListener('click', function (e) {
       var b = e.target.closest('[data-action]'); if (!b) return;
@@ -6051,7 +6205,7 @@
     var ni = document.getElementById('k17-hva-navn'), oi = document.getElementById('k17-hva-eier');
     var nm = ni ? ni.value.trim().slice(0, 40) : '', ow = oi ? oi.value.trim().slice(0, 40) : '';
     var typed = !!(ni && nm && nm !== ni.getAttribute('data-sug'));
-    lsDel(KIND_ASK_KEY);
+    lsDel(KIND_ASK_KEY); if (hh) lsSet(KIND_ASK_KEY + ':ferdig:' + hh.hid, '1');
     var me = myUid(), mine = (K17.devices || []).filter(function (d) { return d.id === me; })[0];
     if (v === 'kjokken') lsSet('knaggen:start-kjokken', 'true');
     var f = v === 'kjokken' ? { type: 'kjokken', name: typed ? nm : (mine && mine.name_set ? mine.name : 'Kjøkkenskjerm'), owner_label: ow || (mine && mine.owner_label) || 'Kjøkkenet', name_set: true }
@@ -6064,6 +6218,36 @@
     else toast('Lagret: ' + f.name + (f.owner_label ? ' · ' + f.owner_label : ''));
   }
 
+  // 0.18.12 Farge v1: personfarge. Valgt farge (settings/personer.farger, felles) ellers automatisk: FNV-1a av
+  // personens stabile id (kalender-id) mot personpaletten. Lik på alle telefoner.
+  var PERS_ACC = ['fjord', 'lyng', 'rust', 'mose'], PERS_TXT = { fjord: 'Blå', lyng: 'Lilla', rust: 'Rust', mose: 'Mosegrønn' };
+  function personAuto(id) {
+    var h = 2166136261, x = String(id || '');
+    for (var i = 0; i < x.length; i++) { h ^= x.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    return PERS_ACC[h % PERS_ACC.length];
+  }
+  function personColor(id) { var f = (hh && K17.farger) || {}; return PERS_ACC.indexOf(f[id]) >= 0 ? f[id] : personAuto(id); }
+  function loadPersons() {
+    var S = window.UkeshandelSync;
+    if (!hh || !S || !S.calendar || K17.persBusy) return;
+    K17.persBusy = true;
+    S.calendar(hh.hid, 'liste', {}).then(function (r) { K17.pers = ((r && r.kalendere) || []).map(function (c) { return { id: c.id, name: c.name || '' }; }); },
+      function () { if (!K17.pers) K17.pers = []; K17.persErr = true; }).then(function () { K17.persBusy = false; if (/^#husstand$/.test(location.hash)) renderHousehold(); });
+  }
+  function personsHtml() {
+    if (!K17.pers) { loadPersons(); return '<div class="k17-grp" data-testid="pf-grp"><p class="k17-note" style="padding:12px 14px">Henter personene …</p></div>'; }
+    if (!K17.pers.length) return '<div class="k17-grp" data-testid="pf-grp"><a class="k17-row" href="#kjokken/innstillinger" data-testid="pf-ingen"><span class="t"><b>Ingen personer ennå</b><span>Personene kommer fra kalenderne på kjøkkenskjermen</span></span><span class="go" aria-hidden="true">›</span></a></div>';
+    var f = K17.farger || {};
+    return '<div class="k17-grp" data-testid="pf-grp">' + K17.pers.map(function (p) {
+      var cur = personColor(p.id), own = PERS_ACC.indexOf(f[p.id]) >= 0;
+      return '<div class="k17-row f-pfrow" data-testid="pf-person" data-id="' + esc(p.id) + '"><span class="t"><b><span class="f-chip f-' + cur + '" data-testid="pf-brikke" data-farge="' + cur + '">' + esc(p.name) + '</span></b><span>' + (own ? PERS_TXT[cur] + ' · valgt' : 'Automatisk') + '</span></span>' +
+        '<span class="f-pf" role="radiogroup" aria-label="Farge for ' + esc(p.name) + '">' + PERS_ACC.map(function (a) {
+          var on = cur === a;
+          return '<button type="button" role="radio" aria-checked="' + on + '" aria-label="' + PERS_TXT[a] + (own || !on ? '' : ' (automatisk)') + '" data-action="pf-velg" data-id="' + esc(p.id) + '" data-a="' + a + '" data-testid="pf-' + a + '" class="f-sw f-' + a + (on ? ' on' : '') + '"></button>';
+        }).join('') + '</span>' +
+        (own ? '<button type="button" class="btn small f-pf-auto" data-action="pf-auto" data-id="' + esc(p.id) + '" data-testid="pf-auto">Automatisk</button>' : '') + '</div>';
+    }).join('') + '</div>';
+  }
   // Husstand-siden (v0.17, spec §4 / skissen husstand). Uten husstand vises v0.16-siden (opprett / koble til).
   function renderHouseholdV017() {
     if (/^#husstand\/enheter/.test(location.hash)) return renderDevicesPage();
@@ -6085,7 +6269,7 @@
       '<div class="k17-sub" data-testid="k17-hh-sub"><span class="dot">●</span> ' + esc(countText()) + ' · ' + (off ? 'frakoblet' : 'synkronisert') + '</div></div>' +
       '</div>';
     if (!name && lsGet(NAME_LATER_KEY) !== hh.hid) h += '<div class="k17-banner" data-testid="k17-navn-banner"><b>Gi husstanden et navn</b><p>Så ser alle enhetene hvilken husstand de er med i.</p>' +
-      '<div class="row"><input class="k17-in" id="k17-banner-in" maxlength="40" value="Hjemme" aria-label="Navn på husstanden" data-testid="k17-banner-felt"></div><div class="row" style="margin-top:8px"><button type="button" class="k17-btn pri" data-action="k17-banner-lagre" data-testid="k17-banner-lagre">Lagre</button><button type="button" class="k17-btn" data-action="k17-banner-senere" data-testid="k17-banner-senere">Senere</button></div></div>';
+      '<div class="row"><input class="k17-in" id="k17-banner-in" maxlength="40" value="Husstanden vår" aria-label="Navn på husstanden" data-testid="k17-banner-felt"></div><div class="row" style="margin-top:8px"><button type="button" class="k17-btn pri" data-action="k17-banner-lagre" data-testid="k17-banner-lagre">Lagre</button><button type="button" class="k17-btn" data-action="k17-banner-senere" data-testid="k17-banner-senere">Senere</button></div></div>';
     if (!document.getElementById('k188-ny')) h += kindBannerHtml();
     if (ui.justCreated) h += '<p class="notice" data-testid="opprettet">Husstanden er opprettet' + (ui.movedOwn ? ', og rettene, uka og lista fra denne telefonen er flyttet inn.' : '.') + ' Legg til de andre under Enheter.</p>';
     // 1. Enheter
@@ -6113,6 +6297,8 @@
       : '<button type="button" class="k17-row" data-action="hjem-endre" data-testid="hjem-rad"><span class="t"><b>Adresse</b><span data-testid="hjem-adresse">' + esc(K17.hjem ? K17.hjem.adresse : 'Ikke satt') + '</span></span><span class="go" aria-hidden="true">›</span></button>' +
         (K17.hjem ? '<button type="button" class="k17-row k17-danger" data-action="hjem-fjern" data-testid="hjem-fjern"><span class="t"><b>Fjern adresse</b></span></button>' : '')) + '</div>' +
       '<p class="k17-note">Felles for husstanden. «Nå» på telefonen bruker den til å se om du er hjemme.</p>';
+    // 4b. 0.18.12: personfarger (felles)
+    h += lbl('Personer') + personsHtml() + '<p class="k17-note">Fargen følger personen i «Nå» og på alle telefonene i husstanden.</p>';
     // 4. Kjøkkenskjerm · felles
     var ks = K17.kitchen && K17.kitchen.stops.length ? K17.kitchen.stops.map(function (s) { return s.name; }).join(' + ') : 'Ingen holdeplasser ennå';
     h += lbl('Kjøkkenskjerm · felles') + '<div class="k17-grp"><a class="k17-row" href="#kjokken/innstillinger/avg" data-testid="hs-kjokken"><span class="t"><b>Kalendere og avganger</b><span>' + esc(ks) + '</span></span><span class="go" aria-hidden="true">›</span></a></div>' +
@@ -6220,7 +6406,7 @@
     if (unsubscribe) { unsubscribe(); unsubscribe = null; }
     hh = null; syncReady = null; swapOverlays = []; lastDays = []; weeklyExtras = []; sharedExtras = []; migratingHid = null;
     ui.members = null; ui.invite = null; ui.justCreated = false; ui.busy = false;
-    K17.name = ''; setTimeout(renderSyncStatus, 0); K17.devices = null; K17.memberDocs = null; K17.selfSeen = false; K17.creating = false; K17.kitchen = null; K17.kitchenSeen = false; K17.hjem = null; K17.hjemEdit = false; k17Close(); lsDel(K17_REG_KEY);
+    K17.name = ''; setTimeout(renderSyncStatus, 0); K17.devices = null; K17.memberDocs = null; K17.selfSeen = false; K17.creating = false; K17.kitchen = null; K17.kitchenSeen = false; K17.hjem = null; K17.hjemEdit = false; K17.farger = {}; K17.pers = null; k17Close(); lsDel(K17_REG_KEY);
     clearTimeout(connectTimer); syncStatus.connecting = false;
     lsDel(HH_KEY);
     if (hid) { lsDel(MIRROR_PREFIX + hid); lsDel(SWAPQ_PREFIX + hid); }
@@ -6433,6 +6619,11 @@
   }
   // v0.18.11: inviterings-arket lukkes så snart enhetslista eller medlemslista vokser (samme signal som «N tilkoblet»)
   function invCheckJoined() {
+    var ks = K17.sheet;   // v0.18.12: «Legg til enhet eller person» → kodearket (Husstand → Enheter)
+    if (ks && ks.id === 'k17-kode-ark' && ks.baseDev != null) {
+      var kd = (K17.devices || []).length, km = ui.members || 0;
+      if ((K17.devices && kd > Math.max(1, ks.baseDev)) || km > Math.max(1, ks.baseMem)) { k17Close(); toast('Den andre er med i husstanden nå', 4000); }
+    }
     var ivs = v9Sheet(); if (!ivs || ivs.id !== 'inv' || !invSheet || !invSheet.inv) return;
     var nd = (K17.devices || []).length, nm = ui.members || 0;
     if ((K17.devices && nd > Math.max(1, invSheet.baseDev || 0)) || nm > Math.max(1, invSheet.baseMem || 0)) {
@@ -6587,7 +6778,7 @@
       return;
     } else if (a === 'day-open') {   // v0.11
       if (lp.fired) { lp.fired = false; return; }   // v0.16: klikket etter et langt trykk
-      ui.dayOpen = btn.getAttribute('data-date'); ui.weekMenu = false; renderUke();
+      ui.dayOpen = btn.getAttribute('data-date'); ui.weekMenu = false; ui.dayQ = ''; renderUke();
       var dsel = main.querySelector('#day-sheet select, #day-sheet .btn'); if (dsel) try { dsel.focus({ preventScroll: true }); } catch (x) { dsel.focus(); }
     } else if (a === 'day-close' || (a === 'day-close-bg' && e.target === btn)) {
       var od2 = ui.dayOpen; ui.dayOpen = null; renderUke(); focusEl('[data-action="day-open"][data-date="' + od2 + '"]');
@@ -6684,7 +6875,11 @@
     } else if (a === 'hs-slik') {
       // enkel: åpne husstand-siden
       location.hash = '#husstand';
+    } else if (a === 'edit-cancel') {
+      var ek = ui.editKey; ui.editKey = null; renderListSection();
+      focusEl('.item[data-key="' + (window.CSS && CSS.escape ? CSS.escape(ek || '') : ek) + '"] .item-text');
     } else if (a === 'add-toggle') {
+      ui.editKey = null;
       ui.addOpen = !ui.addOpen;
       renderListSection();
       var af = ui.addOpen ? document.getElementById('ai-name') : main.querySelector('[data-action="add-toggle"]');
@@ -6852,13 +7047,23 @@
     } else if (a === 'k17-navn') {
       openNameSheet();
     } else if (a === 'k17-banner-lagre') {
-      var bi = document.getElementById('k17-banner-in'); saveName(bi ? bi.value : 'Hjemme');
+      var bi = document.getElementById('k17-banner-in'); saveName(bi ? bi.value : 'Husstanden vår');
     } else if (a === 'k17-banner-senere') {
       if (hh) lsSet(NAME_LATER_KEY, hh.hid); renderHousehold();
     } else if (a === 'k17-hva') {
       answerKind(btn.getAttribute('data-v'));
+    } else if (a === 'k17-hva-senere') {   // v0.18.12 (S1)
+      lsDel(KIND_ASK_KEY); closeKindPanel(); var kb = document.querySelector('[data-testid="k17-hva"]'); if (kb) kb.parentNode.removeChild(kb);
     } else if (a === 'tema') {   // v0.18.1
       temaSet(btn.getAttribute('data-v')); renderHousehold();
+    } else if (a === 'pf-velg' || a === 'pf-auto') {   // 0.18.12
+      if (hh && Sync) {
+        var pm = {}, pid = btn.getAttribute('data-id'); Object.keys(K17.farger || {}).forEach(function (x) { if (PERS_ACC.indexOf(K17.farger[x]) >= 0) pm[x] = K17.farger[x]; });
+        if (a === 'pf-auto') delete pm[pid]; else pm[pid] = btn.getAttribute('data-a');
+        K17.farger = pm;
+        Sync.write.setPersonColors(hh.hid, pm).catch(function () { toast('Fikk ikke lagret fargen. Prøv igjen.'); });
+        renderHousehold();
+      }
     } else if (a === 'hjem-endre') {
       K17.hjemEdit = true; K17.hjemHits = []; renderHousehold(); var hi = main.querySelector('#hjem-sok'); if (hi) hi.focus();
     } else if (a === 'hjem-avbryt') {
@@ -7000,6 +7205,7 @@
     if (id === 'hent-lagre') return saveHentForm(e.target);
     if (id === 'recipe-form') saveRecipeForm(e.target);
     else if (id === 'oneoff-form') saveOneoffForm(e.target);
+    else if (id === 'item-edit') saveItemEdit(e.target);
     else if (id === 'item-add') {
       var name = document.getElementById('ai-name').value.trim();
       if (!name) { document.getElementById('ai-name').focus(); return; }
@@ -7044,7 +7250,7 @@
   });
 
   window.addEventListener('hashchange', function () {
-    ui.swap = null;
+    ui.swap = null; ui.editKey = null;
     if (!/^#liste\/faste/.test(location.hash || '')) { ui.fvOpenId = null; ui.fvOpenAisle = null; ui.fvQ = ''; }
     closeBasisDialog(false);
     closeSheet('fast-dialog', false);
@@ -7052,7 +7258,7 @@
     closeV9Sheet(false);
     connect.error = '';
     ui.error = '';
-    if (!/^#husstand/.test(location.hash)) ui.justCreated = false;
+    if (!/^#husstand/.test(location.hash)) { ui.justCreated = false; K17.pers = null; }   // 0.18.12: personlista hentes på nytt neste gang
     route(); window.scrollTo(0, 0);
     if (toastShowing()) placeToast();   // v0.6.2/v0.6.3: båndet over lagre-linja i skjemaene, ellers rett over fanelinja
   });
@@ -7105,8 +7311,9 @@
   /* ---------- v0.16: versjonsnummeret ved logoen og «Nytt i Knaggen» ----------
    * Trykk på «0.16» åpner arket. Etter en oppdatering åpnes det av seg selv én gang (ikke ved aller første åpning,
    * ikke på kjøkkenskjermen og ikke i automatiserte tester uten testkroken KNAGGEN_TEST_NYTT). */
-  var APP_VERSION = '0.18.11', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.18.12', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.18.12', ['Trykk på en vare i handlelista for å endre navn, mengde eller avdeling.', 'Søk i retter, både under Retter og når du velger middag for en dag.', 'Hver person kan velge sin egen farge under Husstand. Fargen er lik på alle telefonene.', 'Nye farger på Nå og kjøkkenskjermen.']],
     ['0.18.11', ['Når avgangene ikke kan hentes, står det «Avgangene er ikke tilgjengelige akkurat nå» med «Prøv igjen».', '«Endre» på «Nå» lar deg velge Hjemme eller Borte.', 'Retter med bare én variant viser også varianten i navnet, og invitasjonsarket lukkes når den andre blir med.']],
     ['0.18.10', ['Større knapper overalt (minst 48 px) og like skriftstørrelser og hjørner – også på kjøkkenskjermen.', 'Retter viser varianten i navnet, f.eks. «Kyllinggryte med sopp (halvferdig)», og telleren i Finn retter viser sist valgte.', 'Når avgangene ikke er tilgjengelige, står det nå på «Nå».']],
     ['0.18.9', ['Trykk på en rett for å se oppskriften – «Rediger» ligger inni.', 'Tid skrives likt overalt: «45 min (20 aktivt)».', 'Søk viser retten med akkurat det navnet først, og retter med flere varianter legges til med én gang.', '«Koble til» spør om du vil invitere noen eller har fått en invitasjon.', 'Kom i gang holder fast på stegnumrene, og «Nå» viser hvor du slapp.']],

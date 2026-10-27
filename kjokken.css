@@ -329,6 +329,7 @@ html[data-tema="lys"] .kj .k-sheet { --k-cal-1: #3f6e5a; --k-cal-2: #44617a; --k
 .na-short a { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius, 12px); color: var(--ink); text-decoration: none; }
 .na-short a span { font-size: .82rem; color: var(--muted); }
 .na-note { color: var(--muted); margin: 0; }
+.na-credit { font-size: var(--fs-14, 14px); color: var(--muted); margin: 16px 0 4px; text-align: center; }
 .na-dep-err { display: flex; align-items: center; gap: 12px; justify-content: space-between; margin: 6px 0 0; color: var(--ink); }
 .na-dep-err p { margin: 0; flex: 1; } .na-dep-err .btn { flex: none; min-height: var(--tap); padding: 6px 14px; border-radius: var(--radius); border: 1px solid var(--brand); color: var(--brand); background: transparent; font-weight: 600; }
 /* v0.18.5: navnet på husstanden, kortes med … */
@@ -363,3 +364,11 @@ html[data-tema="lys"] .kj .k-sheet { --k-cal-1: #3f6e5a; --k-cal-2: #44617a; --k
 body.k-phone .kj .k-ing button { min-height: var(--tap, 48px); }
 .na-dep-err .btn, .kj.k-na .na-dep-err .btn { min-height: var(--tap, 48px); }
 .na-fortsett { display: flex; align-items: center; min-height: var(--tap, 48px); padding: 0 14px; margin: 0 0 12px; background: var(--brand-soft); border: 1px solid var(--brand-soft-line); border-radius: var(--radius, 12px); color: var(--ink); font-weight: 650; text-decoration: none; }
+
+/* Farge v1: værsymbolet er eneste farge på kjøkkenskjermen og følger kjøkkenmodus (Dag/Kveld/Natt), ikke telefonens
+ * tema. Verdiene er Mons' --kj-*-tokens i palett.css. Tåke bruker sky, måne og sol bak sky bruker sol, sludd regn + snø.
+ * «Nå» på telefon (.k-na) følger appens tema og beholder --w-*. Kalenderprikkene er nøytrale. */
+.kj:not(.k-na)[data-fase="dag"] { --w-sol: var(--kj-dag-sol); --w-sky: var(--kj-dag-sky); --w-regn: var(--kj-dag-regn); --w-sno: var(--kj-dag-sno); --w-torden: var(--kj-dag-torden); }
+.kj:not(.k-na)[data-fase="kveld"] { --w-sol: var(--kj-kveld-sol); --w-sky: var(--kj-kveld-sky); --w-regn: var(--kj-kveld-regn); --w-sno: var(--kj-kveld-sno); --w-torden: var(--kj-kveld-torden); }
+.kj:not(.k-na)[data-fase="natt"] { --w-sol: var(--kj-natt-sol); --w-sky: var(--kj-natt-sky); --w-regn: var(--kj-natt-regn); --w-sno: var(--kj-natt-sno); --w-torden: var(--kj-natt-torden); }
+.kj .k-cal .dot.k-dot-n { background: var(--k-muted); }

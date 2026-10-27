@@ -1423,3 +1423,98 @@ body:has(.k188-panel) main { padding-bottom: 280px; }
   .k188-panel { left: auto; right: 12px; transform: none; width: 300px; }
 }
 .km-steps .sr { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ===== Hjemme-oppsett v5 (gren hjemme-v5, bak flagg) ===== */
+.v5 { position: fixed; inset: 56px 0 64px; z-index: 30; background: var(--bg); display: flex; flex-direction: column; padding: 16px; box-sizing: border-box; overflow: auto; }
+.v5.v5-ark { inset: auto 0 0; max-height: 88vh; border-radius: var(--radius) var(--radius) 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,.25); z-index: 60; }
+.v5-x { position: absolute; top: 8px; right: 8px; width: var(--tap); height: var(--tap); display: grid; place-items: center; font-size: var(--fs-24); color: var(--ink); text-decoration: none; }
+.v5-in { flex: 1; max-width: 560px; width: 100%; margin: 0 auto; position: relative; }
+.v5-in h2 { font-size: var(--fs-24); margin: 12px 0 6px; outline: none; }
+.v5-dots { display: flex; gap: 6px; }
+.v5-dots span { width: 8px; height: 8px; border-radius: var(--pill); background: var(--line-strong); }
+.v5-dots span.on { width: 20px; background: var(--brand); }
+.v5-dots span.done { background: var(--brand); }
+.v5-ticks { list-style: none; padding: 0; margin: 12px 0; }
+.v5-ticks li { padding: 8px 0 8px 28px; position: relative; }
+.v5-ticks li::before { content: "✓"; position: absolute; left: 4px; color: var(--brand); font-weight: 700; }
+.v5-field { display: block; margin: 16px 0 0; }
+.v5-field span { display: block; font-weight: 600; font-size: var(--fs-14); margin-bottom: 6px; }
+.v5-field input { width: 100%; box-sizing: border-box; min-height: var(--tap); padding: 10px 12px; font-size: var(--fs-16); border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--card); color: var(--ink); }
+.v5-hits { list-style: none; margin: 6px 0 0; padding: 0; }
+.v5-hit { display: block; width: 100%; min-height: var(--tap); text-align: left; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--line); background: var(--card); color: var(--ink); font-size: var(--fs-16); }
+.v5-ok { color: var(--muted); font-size: var(--fs-14); min-height: 1em; }
+.v5-fn { list-style: none; margin: 12px 0; padding: 0; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
+.v5-fn li + li { border-top: 1px solid var(--line); }
+.v5-fn label { display: flex; gap: 12px; align-items: center; min-height: var(--tap); padding: 10px 12px; cursor: pointer; }
+.v5-fn input { width: 24px; height: 24px; accent-color: var(--brand); flex: none; }
+.v5-fn small { display: block; color: var(--muted); font-size: var(--fs-14); }
+.v5-snart { display: inline-block; padding: 4px 10px; border-radius: var(--pill); background: var(--brand-soft); color: var(--ink); font-weight: 600; font-size: var(--fs-14); }
+.v5-acts { display: flex; gap: 8px; max-width: 560px; width: 100%; margin: 0 auto; }
+.v5-acts .btn { flex: 1 1 auto; min-height: var(--tap); display: inline-flex; align-items: center; justify-content: center; text-decoration: none; white-space: nowrap; padding-left: 14px; padding-right: 14px; }
+.v5-acts .btn.primary { flex: 1 1 50%; }
+.v5-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin: 0 0 12px; }
+.v5-card h3 { margin: 0 0 4px; font-size: var(--fs-18); }
+.v5-card .btn { margin-top: 10px; min-height: var(--tap); display: flex; align-items: center; justify-content: center; text-decoration: none; }
+.v5-card .btn.ghost { background: none; border-color: transparent; color: var(--ink); }
+.v5-hs { margin: 0 0 16px; }
+.v5-hs-t { margin: 8px 0 2px; font-size: var(--fs-18); }
+/* Nå før oppsettet: bare kortet, klokka og middag (ingen Hjemme/Borte eller holdeplass-oppfordring) */
+.v5-pre .na > :not(.v5-na):not(.na-clock):not(.na-date):not(.v5-mid):not(.na-din) { display: none !important; }
+/* Nå etter oppsettet: ingen intern forklaringslinje */
+.v5-on .na-why { display: none; }
+/* v5 erstatter «Fortsett oppsettet» fra 0.18.9 */
+.v5-on [data-testid="na-fortsett"] { display: none; }
+/* j-liste: trykk på varens tekst åpner «Endre vare» (samme skjema som «Legg til vare») */
+.item > .item-text { cursor: pointer; min-height: var(--tap); box-sizing: border-box; align-self: stretch; }
+.item > .item-text:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-s); }
+.edit-panel .edit-h { margin: 0 0 8px; font-size: var(--fs-16); }
+.edit-panel .form-actions { display: flex; gap: 8px; margin-top: 8px; }
+.edit-panel input:disabled, .edit-panel select:disabled { opacity: .6; }
+.day-search { margin: 0 0 8px; }
+/* Farge v1 (merkevare/farge-v1, til 0.18.12). Bare tokens fra palett.css og eksisterende variabler – ingen rå farger her.
+ * Kjøkkenskjermen (.kj utenom Nå på telefonen) får ingen av disse; der er det bare værsymbolet som har farge. */
+body { background-color: var(--bg); background-image: linear-gradient(180deg, var(--tone-top) 0, var(--bg) 300px); background-repeat: no-repeat; }
+/* Illustrasjoner i tomme tilstander (messing) */
+.f-ill { display: block; color: var(--a-messing); }
+.f-big-empty { display: flex; justify-content: center; padding: 28px 0 0; }
+.f-big-empty .f-ill { width: 96px; height: 96px; }
+.v11-empty .f-big-empty { padding-top: 8px; }
+.f-big-empty + .empty { text-align: center; margin-top: 8px; }
+/* Uke: «i dag» er salvie */
+.v11-day.today .dname { color: var(--a-salvie); }
+/* Handleliste: fargeprikk ved avdelingen (pynt, ingen informasjon alene) */
+.aisle.f-dept { display: flex; align-items: center; gap: 8px; }
+.f-dot { flex: none; width: 10px; height: 10px; border-radius: var(--pill); display: inline-block; background: var(--a-salvie); }
+.f-dot.f-mose { background: var(--a-mose); } .f-dot.f-fjord { background: var(--a-fjord); } .f-dot.f-lyng { background: var(--a-lyng); }
+.f-dot.f-messing { background: var(--a-messing); } .f-dot.f-rust { background: var(--a-rust); }
+/* Personer: navnebrikke i personens faste aksent (hash av person-id, lik på alle telefoner) */
+.f-chip { flex: none; margin-left: auto; font-size: var(--fs-13); font-weight: 600; padding: 3px 10px; border-radius: var(--pill); background: var(--a-salvie-soft); color: var(--a-salvie); }
+.na-card li > .f-chip { color: var(--a-salvie); }
+.f-chip.f-fjord, .na-card li > .f-chip.f-fjord { background: var(--a-fjord-soft); color: var(--a-fjord); }
+.f-chip.f-lyng, .na-card li > .f-chip.f-lyng { background: var(--a-lyng-soft); color: var(--a-lyng); }
+.f-chip.f-rust, .na-card li > .f-chip.f-rust { background: var(--a-rust-soft); color: var(--a-rust); }
+.f-chip.f-mose, .na-card li > .f-chip.f-mose { background: var(--a-mose-soft); color: var(--a-mose); }
+.f-chip.f-messing, .na-card li > .f-chip.f-messing { background: var(--a-messing-soft); color: var(--a-messing); }
+/* 0.18.12: personfarge under Husstand → Personer (felles i husstanden) */
+.k17-row.f-pfrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.f-pfrow .f-chip { margin-left: 0; }
+.f-pfrow > .t { flex: 1 1 100%; }
+.f-pf { display: flex; flex-wrap: wrap; gap: 6px; }
+.f-pf .f-sw { width: var(--tap); height: var(--tap); border-radius: var(--pill); border: 2px solid transparent; background: var(--a-salvie); cursor: pointer; }
+.f-pf .f-sw.f-fjord { background: var(--a-fjord); } .f-pf .f-sw.f-lyng { background: var(--a-lyng); } .f-pf .f-sw.f-rust { background: var(--a-rust); } .f-pf .f-sw.f-mose { background: var(--a-mose); }
+.f-pf .f-sw.on { border-color: var(--ink); box-shadow: inset 0 0 0 3px var(--card); }
+.f-pf-auto { min-height: var(--tap); }
+/* Nå: messingkort for dagens middag med tallerken */
+.kj.k-na .na-din.f-middag { display: flex; justify-content: flex-start; align-items: center; gap: 14px; border: 0; background: var(--tone-middag); box-shadow: 0 1px 2px var(--overlay); padding: 14px 16px; }
+.kj.k-na .na-din.f-middag .f-ill { width: 44px; height: 44px; flex: none; }
+.na-din.f-middag .f-mt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.na-din.f-middag .f-mt span { color: var(--muted); white-space: normal; }
+
+/* v0.18.12 (S1): «Det er kjøkkenskjermen» på egen linje, ikke brutt ved 360 px */
+.k17-banner .row { flex-wrap: wrap; }
+.k17-banner .row [data-testid="k17-hva-kjokken"] { flex: 1 1 100%; white-space: nowrap; }
+/* 0.18.12: påminnelsen på Nå med «Ikke nå» */
+.v5-minn-rad { display: flex; gap: 8px; align-items: stretch; margin: 0 0 12px; }
+.v5-minn-rad .na-fortsett { flex: 1; margin: 0; }
+.v5-minn-rad .v5-minn-x { flex: 0 0 auto; min-height: var(--tap, 48px); display: inline-flex; align-items: center; }
+.v5-on [data-testid="v5-minn"].na-fortsett { display: flex; }

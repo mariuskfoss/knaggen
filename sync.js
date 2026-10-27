@@ -346,6 +346,8 @@ const W = {
   updateDevice: (hid, uid, fields) => ctx.fs.updateDoc(ctx.fs.doc(...hh(hid, 'devices', uid)), fields),
   // v0.18.1: hjemmeadresse (felles i husstanden), lat/lon avrundet til 4 desimaler
   setHome: (hid, h) => ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'settings', 'hjem')), { adresse: String(h.adresse).slice(0, 200), lat: Math.round(h.lat * 1e4) / 1e4, lon: Math.round(h.lon * 1e4) / 1e4, updated_at: Date.now() }),
+  // 0.18.12: personfarger (ett felt, { kalender-id: aksent }); tom map = alle automatisk
+  setPersonColors: (hid, m) => ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'settings', 'personer')), { farger: m || {} }),
   removeHome: (hid) => ctx.fs.deleteDoc(ctx.fs.doc(...hh(hid, 'settings', 'hjem'))),
   setKitchenShared: (hid, k) => ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'settings', 'kjokken')), { stops: k.stops || [], lat: k.lat == null ? null : k.lat, lon: k.lon == null ? null : k.lon, updated_at: Date.now() }),
   // v0.17: fjern en annen enhet – medlemskapet og enhetsdokumentet i samme batch

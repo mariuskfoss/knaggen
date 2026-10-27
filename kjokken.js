@@ -168,27 +168,28 @@
     if (/thunder/.test(b)) return 'Torden';
     return WX_TXT[b] || WX_TXT[b.replace(/andthunder$/, '')] || '';
   }
-  // Egne, enkle ikoner tegnet med tokens (samme symbolkoder som MET).
+  // Farge v1: værsymboler i merkevarens strek (2.5, runde ender), farge fra palett.css (--w-*). Samme symbolkoder som MET.
+  // Eneste farge på kjøkkenskjermen; resten holdes mørk og nøytral.
   function wxIcon(sym) {
     var s = String(sym || ''), night = /_night$/.test(s), b = s.replace(/_(day|night|polartwilight)$/, '');
-    var sun = '<circle cx="34" cy="34" r="13" fill="var(--k-brass)"/><g stroke="var(--k-brass)" stroke-width="4" stroke-linecap="round"><path d="M34 9v6M34 53v6M9 34h6M53 34h6M16.3 16.3l4.2 4.2M47.5 47.5l4.2 4.2M16.3 51.7l4.2-4.2M47.5 20.5l4.2-4.2"/></g>';
-    var moon = '<path d="M44 14a20 20 0 1 0 14 30 16 16 0 1 1-14-30z" fill="var(--k-brass)"/>';
-    var cloud = '<path d="M30 76h44a15 15 0 0 0 0-30 21 21 0 0 0-40 4 13 13 0 0 0-4 26z" fill="var(--k-muted)"/>';
-    var bigCloud = '<path d="M24 66h50a17 17 0 0 0 0-34 24 24 0 0 0-46 5 15 15 0 0 0-4 29z" fill="var(--k-muted)"/>';
-    var drops = '<g stroke="var(--k-ink)" stroke-width="4" stroke-linecap="round"><path d="M36 74l-4 10M52 74l-4 10M68 74l-4 10"/></g>';
-    var flakes = '<g fill="var(--k-ink)"><circle cx="34" cy="80" r="3.5"/><circle cx="50" cy="84" r="3.5"/><circle cx="66" cy="80" r="3.5"/></g>';
-    var bolt = '<path d="M52 66l-10 14h8l-6 12 14-17h-8l6-9z" fill="var(--k-brass)"/>';
-    var fog = '<g stroke="var(--k-muted)" stroke-width="5" stroke-linecap="round"><path d="M18 40h60M24 54h52M18 68h60"/></g>';
-    var celestial = night ? moon : sun, inner;
-    if (b === 'clearsky') inner = '<g transform="translate(14 14)">' + celestial + '</g>';
-    else if (b === 'fair' || b === 'partlycloudy') inner = celestial + cloud;
+    var C = 'M14 34h20a8 8 0 0 0 0-16 11 11 0 0 0-21 3 6.5 6.5 0 0 0 1 13z', Cup = 'M14 28h20a8 8 0 0 0 0-16 11 11 0 0 0-21 3 6.5 6.5 0 0 0 1 13z';
+    var sky = function (d) { return '<path d="' + d + '" stroke="var(--w-sky)"/>'; };
+    var sun = '<circle cx="24" cy="24" r="8" stroke="var(--w-sol)" fill="var(--w-sol)" fill-opacity=".25"/><path stroke="var(--w-sol)" d="M24 6v4M24 38v4M6 24h4M38 24h4M11 11l3 3M34 34l3 3M11 37l3-3M34 14l3-3"/>';
+    var moon = '<path d="M30 9a15 15 0 1 0 9 24 12 12 0 1 1-9-24z" stroke="var(--w-sol)" fill="var(--w-sol)" fill-opacity=".25"/>';
+    var smallSun = night ? '<path d="M19 8a8 8 0 1 0 5 13 6.5 6.5 0 1 1-5-13z" stroke="var(--w-sol)" fill="var(--w-sol)" fill-opacity=".25"/>'
+      : '<circle cx="17" cy="16" r="6" stroke="var(--w-sol)" fill="var(--w-sol)" fill-opacity=".25"/><path stroke="var(--w-sol)" d="M17 5v2M6 16h2M9 8l1.5 1.5"/>';
+    var drops = '<path stroke="var(--w-regn)" d="M17 34l-2 5M25 34l-2 5M33 34l-2 5"/>';
+    var flakes = '<g stroke="var(--w-sno)"><path d="M17 33v6M14.5 36h5M25 35v6M22.5 38h5M33 33v6M30.5 36h5"/></g>';
+    var sleet = '<path stroke="var(--w-regn)" d="M17 34l-2 5M25 34l-2 5"/><g stroke="var(--w-sno)"><path d="M33 33v6M30.5 36h5"/></g>';
+    var bolt = '<path stroke="var(--w-torden)" fill="var(--w-torden)" fill-opacity=".3" d="M26 30l-5 8h6l-3 7"/>';
+    var fog = '<path stroke="var(--w-sky)" d="M8 18h32M12 26h26M8 34h32"/>';
+    var inner;
+    if (b === 'clearsky') inner = night ? moon : sun;
+    else if (b === 'fair' || b === 'partlycloudy') inner = smallSun + sky('M16 38h18a7 7 0 0 0 0-14 10 10 0 0 0-19 3 5.5 5.5 0 0 0 1 11z');
     else if (b === 'fog') inner = fog;
-    else if (b === 'cloudy') inner = bigCloud;
-    else {
-      inner = (/showers/.test(b) ? celestial.replace(/<(circle|path|g)/, '<$1') : '') + bigCloud;
-      inner += /thunder/.test(b) ? bolt : /snow/.test(b) ? flakes : /sleet/.test(b) ? drops.replace('M68 74l-4 10', '') + '<circle cx="66" cy="80" r="3.5" fill="var(--k-ink)"/>' : drops;
-    }
-    return '<svg viewBox="0 0 96 96" role="img" aria-label="' + esc(wxText(s) || 'Vær') + '" data-sym="' + esc(s) + '">' + inner + '</svg>';
+    else if (b === 'cloudy') inner = sky(C);
+    else inner = sky(Cup) + (/thunder/.test(b) ? bolt : /snow/.test(b) ? flakes : /sleet/.test(b) ? sleet : drops);
+    return '<svg viewBox="0 0 48 48" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="' + esc(wxText(s) || 'Vær') + '" data-sym="' + esc(s) + '">' + inner + '</svg>';
   }
   function loadWeather(force) {
     var s = settings(), A = api();
@@ -453,7 +454,7 @@
     kal.list.forEach(function (c) { cols[c.id] = c.color || 1; names[c.id] = c.name || ''; });
     function li(e, small, dayStart) {
       var tm = typeof e.s === 'string' ? 'Heldag' : (e.s < dayStart ? 'Før' : (function (x) { return two(x.getHours()) + ':' + two(x.getMinutes()); })(new Date(e.s)));
-      return '<li' + (small ? ' class="small"' : '') + ' data-testid="k-kal-hendelse"><span class="dot" style="background:var(--k-cal-' + (cols[e.c] || 1) + ')"></span><span class="tm">' + tm + '</span>' +
+      return '<li' + (small ? ' class="small"' : '') + ' data-testid="k-kal-hendelse"><span class="dot k-dot-n"></span><span class="tm">' + tm + '</span>' +
         '<span class="tt">' + esc(e.t) + '</span><span class="who">' + esc(names[e.c] || '') + '</span></li>';
     }
     function dayEvents(i) {
@@ -531,6 +532,8 @@
     if (auto) return { mode: auto, why: 'posisjon' };
     return { mode: 'hjemme', why: 'standard' };
   }
+  // Farge v1: illustrasjon i merkevarens strek (messing via CSS)
+  var ILL_PLATE = '<svg class="f-ill" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="24" cy="26" r="13"/><circle cx="24" cy="26" r="7" opacity=".5"/><path d="M7 10v10M10 10v10M7 15h3M8.5 20v18M41 10c-3 2-3 9 0 11v17"/></svg>';
   var naEdit = false;   // v0.18.7: «Endre» i statuslinja viser knappene (bare i minnet)
   function setNaMode(mode) { naEdit = false; lsSet(NA_MODE_KEY, { mode: mode, day: dayIso(now()), auto: posMode() }); render(); if (mode === 'borte') naPoll(); }
   function readPos() {
@@ -648,6 +651,17 @@
       '<button type="button" class="btn small" data-k="na-avg-igjen" data-testid="na-avg-igjen">Prøv igjen</button></div>';
     return '<p class="na-note" data-testid="na-avg-tom">Ingen holdeplass valgt. <a href="#kjokken/innstillinger/avg" data-k="na-endre" data-testid="na-avg-velg">Velg holdeplass</a></p>';
   }
+  // Farge v1: personfarge er fast og automatisk – hash (FNV-1a) av personens stabile id (kalender-id) mot
+  // personaksentene. Lik på alle telefoner, lagres ikke, kan ikke velges.
+  // 0.18.12: appen (KnaggenKitchenApi.personColor) legger på fargen som er valgt under Husstand (felles i Firestore).
+  var ACC = ['fjord', 'lyng', 'rust', 'mose'];
+  function personColor(id) {
+    var A = api(); if (A && A.personColor) { var c = A.personColor(id); if (ACC.indexOf(c) >= 0) return c; }
+    var h = 2166136261, x = String(id || '');
+    for (var i = 0; i < x.length; i++) { h ^= x.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    return ACC[h % ACC.length];
+  }
+  function chip(e) { return e.who ? '<span class="f-chip f-' + personColor(e.c) + '" data-testid="na-person" data-farge="' + personColor(e.c) + '">' + esc(e.who) + '</span>' : ''; }
   function minTxt(ms, t) { var m = Math.floor((ms - t) / 60000); return m < 1 ? 'nå' : m + ' min'; }
   function naEvents(t) {
     if (!kal.list || !kal.ev) return [];
@@ -656,7 +670,7 @@
     kal.list.forEach(function (c) { names[c.id] = c.name || ''; });
     return kal.ev.filter(function (e) { return evOn(e, iso, ds, de) && typeof e.s !== 'string' && e.e > t; })
       .sort(function (a, b) { return a.s - b.s; })
-      .map(function (e) { var x = new Date(Math.max(e.s, ds)); return { tm: e.s < ds ? 'Før' : two(x.getHours()) + ':' + two(x.getMinutes()), t: e.t, who: names[e.c] || '' }; });
+      .map(function (e) { var x = new Date(Math.max(e.s, ds)); return { tm: e.s < ds ? 'Før' : two(x.getHours()) + ':' + two(x.getMinutes()), t: e.t, who: names[e.c] || '', c: e.c }; });
   }
   function naHtml() {
     var t = now(), d = new Date(t), A = api(), mm = naMode(), home = mm.mode === 'hjemme';
@@ -666,7 +680,7 @@
       '<button type="button" data-k="na-borte" data-testid="na-borte" aria-pressed="' + !home + '"' + (!home ? ' class="on"' : '') + '>Borte</button></div>';
     var h = '<div class="na" data-testid="na" data-modus="' + mm.mode + '">';
     var sp = A.startProgress ? A.startProgress() : null;   // v0.18.9: oppsettet er ikke ferdig – vei tilbake til Kom i gang
-    if (sp) h += '<a class="na-fortsett" href="#uke" data-k="na-go" data-testid="na-fortsett">Fortsett oppsettet (steg ' + sp.step + ' av ' + sp.of + ') <i aria-hidden="true">›</i></a>';
+    if (sp) h += '<a class="na-fortsett" href="#uke" data-k="na-go" data-testid="na-fortsett">Fortsett oppsettet (steg ' + sp.step + ' av ' + sp.of + ')\u00a0<i aria-hidden="true">›</i></a>';
     if (auto && !naEdit) {
       // v0.18.7: posisjon er på og vi vet hvor hjemme er → rolig statuslinje i stedet for knapper
       var nm = placeName(), lbl;
@@ -689,10 +703,10 @@
       var w = wx && wx.d && Date.now() - wx.at < 3 * 3600e3 ? (wx.d.temp == null ? '' : wx.d.temp + '° ') + (wxText(wx.d.sym) || '').toLowerCase() : '';
       h += '<p class="na-clock" data-testid="na-klokke">' + clock + '</p><p class="na-date" data-testid="na-dato">' + esc(DAYS[d.getDay()] + ' ' + d.getDate() + '. ' + MONTHS[d.getMonth()] + (w ? ' · ' + w : '')) + '</p>';
       h += '<p class="na-lbl">Middag i dag</p>' + (m
-        ? '<button type="button" class="na-din" data-k="cook" data-testid="na-middag"><b>' + esc(m.mark === 'rester' ? 'Rester – ' + m.name : m.name) + '</b>' + (m.time ? '<span>' + esc(m.time) + '</span>' : '') + '</button>'
+        ? '<button type="button" class="na-din f-middag" data-k="cook" data-testid="na-middag">' + ILL_PLATE + '<span class="f-mt"><b>' + esc(m.mark === 'rester' ? 'Rester – ' + m.name : m.name) + '</b>' + (m.time ? '<span>' + esc(m.time) + '</span>' : '') + '</span></button>'
         : '<p class="na-din none" data-testid="na-middag-tom">Ingen middag valgt</p>');
       var ev = naEvents(t);
-      if (ev.length) h += '<p class="na-lbl">I kveld</p><ul class="na-card" data-testid="na-ikveld">' + ev.slice(0, 3).map(function (e) { return '<li><b>' + esc(e.tm + ' ' + e.t) + '</b>' + (e.who ? '<span>' + esc(e.who) + '</span>' : '') + '</li>'; }).join('') + '</ul>';
+      if (ev.length) h += '<p class="na-lbl">I kveld</p><ul class="na-card" data-testid="na-ikveld">' + ev.slice(0, 3).map(function (e) { return '<li><b>' + esc(e.tm + ' ' + e.t) + '</b>' + chip(e) + '</li>'; }).join('') + '</ul>';
       var a = homeStops();
       h += '<p class="na-lbl">Neste avganger</p>';
       if (a.loading) h += '<ul class="na-card na-dep" data-testid="na-avganger"><li class="note">' + (homeNear.err ? 'Fant ikke holdeplasser nær hjemmeadressen nå.' : 'Finner holdeplasser nær hjemme …') + '</li></ul>';
@@ -721,14 +735,15 @@
           buy.items.map(function (i) { return '<label class="na-cb"><input type="checkbox" data-na-key="' + esc(i.key) + '"' + (i.checked ? ' checked' : '') + ' data-testid="na-vare"><span>' + esc(i.name) + '</span></label>'; }).join('')) +
         '<a class="na-all" href="#liste" data-k="na-lista" data-testid="na-hele-lista"><b>Hele handlelista</b><span>' + buy.open + (buy.open === 1 ? ' vare' : ' varer') + '</span><i aria-hidden="true">›</i></a></div>';
       var ev2 = naEvents(t);
-      h += '<p class="na-lbl">Familiens ettermiddag</p><ul class="na-card" data-testid="na-ettermiddag">' + (ev2.length ? ev2.slice(0, 4).map(function (e) { return '<li><b>' + esc(e.tm + ' ' + e.t) + '</b>' + (e.who ? '<span>' + esc(e.who) + '</span>' : '') + '</li>'; }).join('') : '<li class="note">' + (kal.list && kal.list.length ? 'Ingenting mer i kalenderen i dag' : 'Ingen kalendere lagt til') + '</li>') +
+      h += '<p class="na-lbl">Familiens ettermiddag</p><ul class="na-card" data-testid="na-ettermiddag">' + (ev2.length ? ev2.slice(0, 4).map(function (e) { return '<li><b>' + esc(e.tm + ' ' + e.t) + '</b>' + chip(e) + '</li>'; }).join('') : '<li class="note">' + (kal.list && kal.list.length ? 'Ingenting mer i kalenderen i dag' : 'Ingen kalendere lagt til') + '</li>') +
         (m ? '<li><b>Middag</b><span>' + esc(m.name) + '</span></li>' : '') + '</ul>';
     }
     var c = A.naCounts ? A.naCounts() : { list: 0, week: A.isoWeek(d), recipes: 0 };
     h += '<div class="na-short" data-testid="na-snarveier">' +
       '<a href="#liste" data-k="na-go" data-testid="na-snarvei-liste"><b>Handleliste</b><span>' + (c.list ? c.list + ' igjen å handle' : 'Alt er handlet') + '</span></a>' +
       '<a href="#uke" data-k="na-go" data-testid="na-snarvei-uke"><b>Uke\u00a0' + c.week + '</b><span>' + (c.planned == null ? '' : c.planned + ' av 7 kvelder planlagt') + '</span></a>' +
-      '<a href="#retter" data-k="na-go" data-testid="na-snarvei-retter"><b>Retter</b><span>' + c.recipes + (c.recipes === 1 ? ' rett' : ' retter') + '</span></a></div></div>';
+      '<a href="#retter" data-k="na-go" data-testid="na-snarvei-retter"><b>Retter</b><span>' + c.recipes + (c.recipes === 1 ? ' rett' : ' retter') + '</span></a></div>' +
+      '<p class="na-credit" data-testid="na-kreditering">Data fra Entur og MET Norway</p></div>';   // v0.18.12: lisens (NLOD/CC BY), diskret nederst på Nå
     return h;
   }
   function naPlace() {
@@ -1018,7 +1033,8 @@
         '<span><b>' + esc(c.name) + '</b>' + (c.mine && c.mask ? '<br><span class="meta" data-testid="k-kal-maske">' + esc(c.mask) + '</span>' : '') +
         (bad ? '<br><span class="warnline" data-testid="k-kal-borte">Kalenderlenken virker ikke lenger – lim inn en ny</span>' : c.status === 'feil' ? '<br><span class="meta">Fikk ikke hentet sist</span>' : '') + '</span>' +
         '<span class="meta">' + (kal.at && c.status !== 'gone' ? 'hentet ' + two(new Date(kal.at).getHours()) + ':' + two(new Date(kal.at).getMinutes()) : '') + '</span>' +
-        '<button type="button" class="kb del" data-k="calrm" data-id="' + esc(c.id) + '" data-testid="k-kal-fjern"' + (sheet.rmBusy === c.id ? ' disabled' : '') + '>Fjern</button></div>';
+        '<button type="button" class="kb del" data-k="calrm" data-id="' + esc(c.id) + '" data-testid="k-kal-fjern"' + (sheet.rmBusy === c.id ? ' disabled' : '') + '>Fjern</button>' +
+        '</div>';
     }).join('');
     return '<p class="lead">Avtaler fra opptil 4 kalendere vises på kjøkkenskjermen: i dag og de to neste dagene. Hentes hvert 15. minutt. Gjelder hele husstanden.</p>' +
       (kal.busy && !kal.list ? '<p class="meta">Henter kalenderne …</p>' : '') + (kal.err && !kal.list ? '<p class="meta">Fikk ikke hentet kalenderne nå.</p>' : '') +
@@ -1252,5 +1268,5 @@
   window.addEventListener('hashchange', function () { dirty = false; });
 
   window.KnaggenKjokken = { show: show, hide: hide, sharedChanged: sharedChanged, isOpen: function () { return open; }, isNa: function () { return open && naOn(); }, narrow: function () { return isPhone(); }, phone: function () { return isPhone(); },
-    _test: { refresh: function () { render(); }, naMode: function () { return naMode(); }, posMode: function () { return posMode(); }, poll: function () { dep.fails = 0; dep.until = 0; pollDep(); }, loadCal: function () { loadCal(true); }, fit: function () { return fit.lvl; }, bedMs: bedMs, phaseAt: phaseAt, schedule: schedule, sunTimes: sunTimes, settings: settings, mixHex: mixHex, wxIcon: wxIcon, wxText: wxText } };
+    _test: { refresh: function () { render(); }, naMode: function () { return naMode(); }, posMode: function () { return posMode(); }, poll: function () { dep.fails = 0; dep.until = 0; pollDep(); }, loadCal: function () { loadCal(true); }, fit: function () { return fit.lvl; }, bedMs: bedMs, phaseAt: phaseAt, schedule: schedule, sunTimes: sunTimes, settings: settings, mixHex: mixHex, wxIcon: wxIcon, wxText: wxText, setKal: function (l, ev) { kal.list = l; kal.ev = ev; kal.at = Date.now(); render(); } } };
 })();
