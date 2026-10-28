@@ -4057,11 +4057,13 @@
     if (!vs.length) h += '<p class="empty" data-testid="liste-tom">Lista er tom.</p>';
     if (open.length) h += '<ul class="items gj-items" data-testid="liste-varer">' + open.map(li).join('') + '</ul>';
     if (done.length) h += '<h3 class="k17-lbl">Ferdig</h3><ul class="items gj-items" data-testid="liste-ferdig">' + done.map(li).join('') + '</ul><div class="done-row"><button type="button" class="linkbtn" data-gj="v-clear" data-testid="liste-fjern-ferdige">Fjern ferdige</button></div>';
-    h += '<div class="k17-grp gj-acts">' + (mine
+    var acts = mine
       ? '<button type="button" class="k17-row" data-gj="liste-hvem" data-testid="liste-hvem"><span class="t"><b>Hvem ser lista?</b><span>Navn og deling</span></span><span class="go" aria-hidden="true">›</span></button>' +
         '<button type="button" class="k17-row k17-danger" data-gj="liste-slett" data-testid="liste-slett"><span class="t"><b>Slett lista</b></span></button>'
       : l.deling === 'alle' ? ''   // 0.20.0: «Hele husstanden»-lister kan ikke forlates (reglene tillater det bare for «valgte»)
-      : '<button type="button" class="k17-row k17-danger" data-gj="liste-forlat" data-testid="liste-forlat"><span class="t"><b>Forlat lista</b><span>Du slutter å se den. De andre beholder den.</span></span></button>') + '</div></section>';
+      : '<button type="button" class="k17-row k17-danger" data-gj="liste-forlat" data-testid="liste-forlat"><span class="t"><b>Forlat lista</b><span>Du slutter å se den. De andre beholder den.</span></span></button>';
+    if (acts) h += '<div class="k17-grp gj-acts">' + acts + '</div>';   // 0.20.1: ingen tom knappegruppe (en 2 px strek) når det ikke er noen knapper
+    h += '</section>';
     main.innerHTML = h;
     gjBind();
   }
@@ -7985,7 +7987,7 @@
   /* ---------- v0.16: versjonsnummeret ved logoen og «Nytt i Knaggen» ----------
    * Trykk på «0.16» åpner arket. Etter en oppdatering åpnes det av seg selv én gang (ikke ved aller første åpning,
    * ikke på kjøkkenskjermen og ikke i automatiserte tester uten testkroken KNAGGEN_TEST_NYTT). */
-  var APP_VERSION = '0.20.0', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.20.1', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
     ['0.20.0', ['Logg inn med Google eller e-post under Husstand → Konto. Du logger inn én gang per enhet og blir stående innlogget.', 'Gjøremål er nå felles for husstanden, og du kan si hvem som gjør det.', 'Lag lister: for hele husstanden, bare for deg eller for noen få. Private lister krever innlogging.', 'Invitasjonen har fått QR-kode, så den andre kan skanne den med kameraet.']],
     ['0.19.0', ['Ny meny nederst: Nå, Uke og Mat. Handleliste og Retter ligger nå samlet under Mat.', 'Slettet du en vare på handlelista ved en feil, kan du trykke Angre.', 'Finn flere retter og Hent oppskrift står over rettene, og Mat husker om du sist var på Handleliste eller Retter.']],

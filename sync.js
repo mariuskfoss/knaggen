@@ -729,6 +729,21 @@ async function unassignMyTasks(hid) {
   const snap = await withTimeout(fs.getDocsFromServer(fs.query(fs.collection(...hh(hid, 'tasks')), fs.where('tildelt', '==', c.uid))), 20000, 'no-server');
   for (let i = 0; i < snap.docs.length; i += 400) { const b = fs.writeBatch(c.db); snap.docs.slice(i, i + 400).forEach(d => b.update(d.ref, { tildelt: null })); await b.commit(); }
 }
+// 0.20.1 (A): «Hele husstanden»-lister jeg eier gis videre til et annet medlem (det som har vært med lengst; personer foran kjøkkenskjermer)
+// før medlemskapet mitt fjernes. Er jeg siste medlem, kalles dette ikke (hele husstanden slettes). Uten publiserte regler: permission-denied.
+async function transferOwnedLists(hid, memberDocs) {
+  const c = await init(); const { fs } = c;
+  const others = memberDocs.filter(d => d.id !== c.uid);
+  if (!others.length) return;
+  let kitchen = {};
+  try { (await withTimeout(fs.getDocsFromServer(fs.collection(...hh(hid, 'devices'))), 20000, 'no-server')).forEach(d => { if (d.data().type === 'kjokken') kitchen[d.id] = true; }); } catch (e) { /* ukjent: regn alle som personer */ }
+  const ms = d => { const j = d.data().joined_at; return j && j.toMillis ? j.toMillis() : 0; };
+  const rank = others.slice().sort((a, b) => ((kitchen[a.id] ? 1 : 0) - (kitchen[b.id] ? 1 : 0)) || (ms(a) - ms(b)) || (a.id < b.id ? -1 : 1));
+  const heir = rank[0].id;
+  const snap = await withTimeout(fs.getDocsFromServer(fs.query(fs.collection(...hh(hid, 'flister')), fs.where('deling', '==', 'alle'))), 20000, 'no-server');
+  const mine = snap.docs.filter(d => d.data().eier === c.uid);
+  for (let i = 0; i < mine.length; i += 400) { const b = fs.writeBatch(c.db); mine.slice(i, i + 400).forEach(d => b.update(d.ref, { eier: heir })); await b.commit(); }
+}
 // Slett kontoen: reautentisering først (før noe er slettet). Er jeg siste medlem, slettes hele husstanden (ellers ville data blitt
 // liggende uten at noen kan lese dem). Ellers: private lister bort, mine gjøremål ufordelt, enhet og medlemskap bort.
 // Hele tiden er joinHousehold stengt, så ingenting kan melde meg inn igjen (ingen spøkelsesmedlemmer).
@@ -738,11 +753,11 @@ async function deleteAccount(hid) {
   closing = true;
   try {
     if (hid) {
-      let solo = false;
-      try { const m = await withTimeout(c.fs.getDocsFromServer(c.fs.collection(...hh(hid, 'members'))), 20000, 'no-server'); solo = m.size === 1 && m.docs[0].id === c.uid; } catch (e) { if (!(e && e.code === 'permission-denied')) throw e; }
+      let solo = false, mDocs = [];
+      try { const m = await withTimeout(c.fs.getDocsFromServer(c.fs.collection(...hh(hid, 'members'))), 20000, 'no-server'); mDocs = m.docs; solo = m.size === 1 && m.docs[0].id === c.uid; } catch (e) { if (!(e && e.code === 'permission-denied')) throw e; }
       if (solo) await deleteHousehold(hid);
       else {
-        try { await deleteMyLists(hid); await unassignMyTasks(hid); } catch (e) { if (!(e && e.code === 'permission-denied')) throw e; }   // reglene ikke publisert: ingenting å rydde
+        try { await transferOwnedLists(hid, mDocs); await deleteMyLists(hid); await unassignMyTasks(hid); } catch (e) { if (!(e && e.code === 'permission-denied')) throw e; }   // reglene ikke publisert: ingenting å rydde
         try { await c.fs.deleteDoc(c.fs.doc(...hh(hid, 'devices', c.uid))); } catch (e) { /* ignorer */ }
         await c.fs.deleteDoc(c.fs.doc(...hh(hid, 'members', c.uid)));
       }
@@ -773,6 +788,18 @@ function subscribeGj(hid, handlers) {
     return Object.keys(m).map(k => m[k]);
   }
   const tries = {};
+  // 0.20.1 (B): en «hele husstanden»-liste hvis eier ikke lenger er medlem (slettet konto, byttet anonym uid) overtas stille av meg.
+  //   Bare eier-feltet skrives. Feiler det (noen andre var først, eller reglene er ikke publisert), skjer ingenting.
+  let memberIds = null; const claimed = {};
+  function claimOrphans() {
+    if (!memberIds || memberIds.indexOf(uid) < 0) return;
+    lists.alle.forEach(d => {
+      const eier = d.eier;
+      if (d._pending || claimed[d.id] || d.deling !== 'alle' || !eier || memberIds.indexOf(eier) >= 0) return;
+      claimed[d.id] = true;
+      fs.updateDoc(fs.doc(...hh(hid, 'flister', d.id)), { eier: uid }).catch(() => { /* ingen overtakelse */ });
+    });
+  }
   function pushLists() {
     const all = merged(), ids = {};
     all.forEach(d => { ids[d.id] = true; });
@@ -791,6 +818,7 @@ function subscribeGj(hid, handlers) {
     Object.keys(vUn).forEach(k => { if (!ids[k]) { vUn[k](); delete vUn[k]; handlers.varer && handlers.varer(k, null); } });
     handlers.lists && handlers.lists(all);
   }
+  unsubs.push(fs.onSnapshot(fs.collection(...hh(hid, 'members')), snap => { memberIds = snap.docs.map(d => d.id); claimOrphans(); }, () => { /* ikke lov: ingen overtakelse */ }));
   unsubs.push(fs.onSnapshot(fs.collection(...hh(hid, 'tasks')), { includeMetadataChanges: true }, snap => {   // metadata: «fra serveren» må komme (persistent cache gir først en cache-visning)
     handlers.tasks && handlers.tasks(snap.docs.map(d => Object.assign({ id: d.id }, d.data())), snap.metadata);
   }, onErr('tasks')));
@@ -798,7 +826,7 @@ function subscribeGj(hid, handlers) {
     lists.mine = snap.docs.map(d => Object.assign({ id: d.id, _pending: d.metadata.hasPendingWrites }, d.data())); pushLists();
   }, onErr('flister')));
   unsubs.push(fs.onSnapshot(fs.query(fs.collection(...hh(hid, 'flister')), fs.where('deling', '==', 'alle')), { includeMetadataChanges: true }, snap => {
-    lists.alle = snap.docs.map(d => Object.assign({ id: d.id, _pending: d.metadata.hasPendingWrites }, d.data())); pushLists();
+    lists.alle = snap.docs.map(d => Object.assign({ id: d.id, _pending: d.metadata.hasPendingWrites }, d.data())); pushLists(); claimOrphans();
   }, onErr('flister')));
   return () => { unsubs.forEach(u => u()); Object.keys(vUn).forEach(k => vUn[k]()); };
 }
