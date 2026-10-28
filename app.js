@@ -85,7 +85,7 @@
     return a + (p ? ' ' + p : '');
   }
   // v0.18.8: kort tid med aktiv og total tid: «5 min aktiv · 55 min totalt» (uten passiv tid bare «15 min»)
-  function isDevHost() { var h = location.hostname; return h === 'localhost' || h === '127.0.0.1'; }
+  function isDevHost() { var h = location.hostname; return (h === 'localhost' || h === '127.0.0.1') && lsGet('knaggen:dev') === '1'; }   // 0.19.0: utviklerverktøy (Tilbakestill testdata) krever også localStorage knaggen:dev=1, aldri synlig for vanlige brukere
   function timeShort(r) {
     if (!r || !r.minutes) return '';
     return timeText(r);   // v0.18.9: samme format som overalt
@@ -1555,6 +1555,22 @@
     var ls = document.querySelectorAll('.tabs a');
     for (var i = 0; i < ls.length; i++) { var on = ls[i].getAttribute('data-tab') === t; ls[i].classList.toggle('active', on); if (on) ls[i].setAttribute('aria-current', 'page'); else ls[i].removeAttribute('aria-current'); }
   }
+  // 0.19.0: fire faner – Nå (telefon), Uke, Mat (Handleliste + Retter) og Gjøremål. Gjøremål-fanen er skjult til oppgaver har regler
+  // (firestore.rules har ingen sti for dem): flagget slås på med ?gjoremal=1 (lagres lokalt; ?gjoremal=0 slår av) eller window.KNAGGEN_GJOREMAL.
+  var GJ_KEY = 'knaggen:gjoremal', MAT_SUB_KEY = 'knaggen:mat-sub';
+  function gjoremalOn() {
+    try { var q = /[?&]gjoremal=([01])\b/.exec(location.search || ''); if (q) lsSet(GJ_KEY, q[1]); } catch (e) { }
+    return window.KNAGGEN_GJOREMAL === true || lsGet(GJ_KEY) === '1';
+  }
+  function matSub() { return lsGet(MAT_SUB_KEY) === 'retter' ? 'retter' : 'liste'; }   // Mat husker Handleliste eller Retter (per telefon)
+  function navTab(t) { return t === 'liste' || t === 'retter' ? 'mat' : t; }
+  function syncTabs() {
+    var g = document.querySelector('.tabs a[data-tab="gjoremal"]'), m = document.querySelector('.tabs a[data-tab="mat"]');
+    if (g) g.hidden = !gjoremalOn();
+    if (m) m.setAttribute('href', '#' + matSub());
+    var n = document.querySelectorAll('.tabs a:not([hidden])').length;
+    document.body.setAttribute('data-faner', String(n));
+  }
   function route() {
     var raw = location.hash || '';
     if (NEW_HOME) return renderMovePage();   // v0.9: den gamle adressen viser bare flyttesiden
@@ -1563,6 +1579,8 @@
     var tab = parts[0];
     var K = window.KnaggenKjokken;
     markPhone();
+    document.body.classList.remove('v3');
+    syncTabs();
     try { renderSyncStatus(); } catch (e) { }   // v0.18.5: «Koble til» også uten husstand
     if (tab === 'kjokken' && K && K.narrow && K.narrow() && !parts[1]) { tabActive('na'); setTabsHidden(false); document.body.classList.add('k-open'); document.body.classList.add('k-na-open'); main.innerHTML = ''; K.show(''); return; }   // v0.18: «Nå» – fanelinja blir stående
     document.body.classList.remove('k-na-open');
@@ -1576,10 +1594,14 @@
     var special = join || inn || flytt || connectFirst || intro || tab === 'husstand' || tab === 'koble';
     if (!intro) document.body.classList.remove('v9-intro');
     setTabsHidden(!!(join || inn || flytt || connectFirst || intro || introConnect));
-    if (!special && ['retter', 'uke', 'liste'].indexOf(tab) < 0) tab = 'uke';
+    if (!special && ['retter', 'uke', 'liste', 'gjoremal'].indexOf(tab) < 0) tab = 'uke';
+    if (tab === 'gjoremal' && !gjoremalOn()) tab = 'uke';
+    var matRoute = !special && (tab === 'liste' || tab === 'retter');
+    if (matRoute) { lsSet(MAT_SUB_KEY, tab); syncTabs(); }
+    document.body.classList.toggle('v3', matRoute);   // 0.19.0: Mat v3 (mat.css) gjelder bare under Mat
     var links = document.querySelectorAll('.tabs a');
     for (var i = 0; i < links.length; i++) {
-      var on = !special && links[i].getAttribute('data-tab') === tab;
+      var on = !special && links[i].getAttribute('data-tab') === navTab(tab);
       links[i].classList.toggle('active', on);
       if (on) links[i].setAttribute('aria-current', 'page'); else links[i].removeAttribute('aria-current');
     }
@@ -1603,7 +1625,8 @@
     if (introConnect) return renderConnect('intro');
     if (tab === 'koble') return renderConnect(true);
     if (tab === 'husstand') return renderHousehold();
-    if (tab === 'retter') {
+    if (tab === 'gjoremal') renderGjoremal();
+    else if (tab === 'retter') {
       if (parts[1] === 'ny') renderRecipeForm(null);
       else if (parts[1] === 'finn') renderFinn();   // v0.11
       else if (parts[1] === 'hent') { if (parts[2] === 'sjekk' && imp.result) renderHentForm(); else renderHent(); }   // v0.12
@@ -1633,7 +1656,7 @@
       '<input class="ing-qty" type="text" inputmode="decimal" placeholder="Mengde" aria-label="Mengde" value="' + esc(formatQty(ing.qty)) + '">' +
       '<select class="ing-unit" aria-label="Enhet">' + unitOptions(ing.unit) + '</select>' +
       '<select class="ing-aisle" aria-label="Avdeling">' + aisleOptions(ing.name ? itemAisle(ing.name, ing.aisle) : ing.aisle) + '</select>' +
-      '<button type="button" class="icon-btn ing-fjern" data-action="remove-ing" aria-label="Fjern ingrediens">Fjern</button>' +
+      '<button type="button" class="icon-btn ing-fjern" data-action="remove-ing" aria-label="Fjern ingrediens" data-testid="ing-fjern">' + ICON_TRASH + '</button>' +
       '</div></div>';
   }
   function ingredientsFieldset(ings) {
@@ -1888,10 +1911,20 @@
     });
     return h;
   }
+  // 0.19.0: Mat-hodet – «Mat» og valget Handleliste | Retter øverst på begge rotsidene (Mat v3)
+  function matHead(sub) {
+    function a(id, label) { return '<a href="#' + id + '" data-testid="mat-' + id + '"' + (sub === id ? ' aria-current="page"' : '') + '>' + label + '</a>'; }
+    return '<div class="page-head mat-head"><h2>Mat</h2></div>' +
+      '<div class="k17-seg mat-seg" role="group" aria-label="Mat" data-testid="mat-valg">' + a('liste', 'Handleliste') + a('retter', 'Retter') + '</div>';
+  }
+  function retterTeller(rs) {
+    var n = rs.length, hits = ui.retterQ && ui.retterQ.trim() ? searchRecipes(rs, ui.retterQ).length : n;
+    return hits === n ? '<span class="count">' + n + '</span> ' + (n === 1 ? 'rett' : 'retter') : '<span class="count">' + hits + '</span> av ' + n + ' retter';
+  }
   function renderRetter() {
     var rs = sortedRecipes();
-    var h = '<section class="page" data-page="retter">';
-    h += '<div class="page-head"><h2>Retter <span class="count">' + rs.length + '</span></h2>' +
+    var h = '<section class="page" data-page="retter">' + matHead('retter');   // 0.19.0: «Mat» + Handleliste | Retter
+    if (V010_LAYOUT) h += '<div class="page-head"><h2>Retter <span class="count">' + rs.length + '</span></h2>' +
       '<a class="btn primary" href="#retter/ny" data-testid="ny-rett">+ Ny rett</a></div>';
     if (V010_LAYOUT) {   // testkroken: v0.10-lista med forslagsboksen (eldre testsuiter), kopiert uendret fra 0.10.0
       h += renderSuggestions();
@@ -1912,11 +1945,14 @@
     } else if (!rs.length) {
       h += '<div class="v11-empty" data-testid="retter-tom"><div class="f-big-empty">' + ILL_POT + '</div><p>Ingen retter ennå. Velg rettene familien liker fra en lang liste – ett trykk per rett.</p>' +
         '<a class="btn primary" href="#retter/finn" data-testid="finn-retter">Finn retter</a>' +
-        '<a class="linkbtn" href="#retter/hent" data-testid="hent-inngang">Hent oppskrift fra nettet</a></div>';
+        '<a class="linkbtn" href="#retter/hent" data-testid="hent-inngang">Hent oppskrift fra nettet</a>' +
+        '<a class="linkbtn" href="#retter/ny" data-testid="ny-rett">+ Ny rett</a></div>';
     } else {
-      h += '<ul class="v11-rows" data-testid="finn-inngang"><li><a class="v11-row" href="#retter/finn" data-testid="finn-flere"><span class="t"><b>Finn flere retter</b></span><span class="go" aria-hidden="true">›</span></a></li>' +
-        '<li><a class="v11-row" href="#retter/hent" data-testid="hent-inngang"><span class="t"><b>Hent oppskrift fra nettet</b><span class="s">Lim inn eller del en lenke</span></span><span class="go" aria-hidden="true">›</span></a></li></ul>';
+      // 0.19.0 (Mat v3): søk, så Finn flere retter / Hent oppskrift over lista, så «N retter» med «+ Ny rett» og selve lista
       h += '<label class="v11-search"><span class="sr">Søk etter rett</span><input id="retter-q" type="search" placeholder="Søk etter rett" value="' + esc(ui.retterQ) + '" autocomplete="off" data-testid="retter-sok"></label>';
+      h += '<ul class="v11-rows v3-finn" data-testid="finn-inngang"><li><a class="v11-row" href="#retter/finn" data-testid="finn-flere"><span class="t"><b>Finn flere retter</b></span><span class="go" aria-hidden="true">›</span></a></li>' +
+        '<li><a class="v11-row" href="#retter/hent" data-testid="hent-inngang"><span class="t"><b>Hent oppskrift fra nettet</b><span class="s">Lim inn eller del en lenke</span></span><span class="go" aria-hidden="true">›</span></a></li></ul>';
+      h += '<div class="v3-listhead"><h2 class="v3-count" data-testid="retter-teller">' + retterTeller(rs) + '</h2><a class="v3-new" href="#retter/ny" data-testid="ny-rett">+ Ny rett</a></div>';
       h += '<ul class="v11-rows cards" data-testid="retter-liste">' + retterListHtml(rs) + '</ul>';
     }
     h += '<div class="footer-tools">';
@@ -2217,7 +2253,7 @@
     h += '<form id="hent-form" novalidate>';
     h += '<label class="field"><span>Lenke til oppskriften</span><input id="h-url" type="text" inputmode="url" enterkeyhint="go" autocomplete="off" autocapitalize="off" spellcheck="false" required value="' +
       esc(imp.url) + '" placeholder="https://…" data-testid="hent-lenke" aria-describedby="h-url-hint"></label>';
-    h += '<p class="field-hint" id="h-url-hint">På Android: trykk Del i Chrome og velg Knaggen. På iPhone: kopier lenka i Safari og lim den inn her.</p>';
+    h += '<p class="field-hint" id="h-url-hint">Lim inn lenka, eller del den hit fra nettleseren.</p>';
     h += '<p class="form-error" id="form-error"' + (imp.error ? '' : ' hidden') + '>' + esc(imp.error) + '</p>';
     h += '<div class="form-actions"><button type="submit" class="btn primary" data-testid="hent-videre">Fortsett</button><a class="btn" href="#retter">Avbryt</a></div>';
     h += '</form></section>';
@@ -3590,14 +3626,14 @@
     d.innerHTML = '<div class="sheet basis-sheet" role="dialog" aria-modal="true" aria-labelledby="basis-h" aria-describedby="basis-hint" data-week="' + week + '">' +
       '<div class="sheet-head"><h3 id="basis-h">Basisvarer</h3>' +
       '<button type="button" class="icon-btn" data-basis="close" aria-label="Lukk">✕</button></div>' +
-      '<p class="hint" id="basis-hint">Brukes i middagene på lista. Kryss av det dere må kjøpe – resten legges ikke på lista.</p>' +
+      '<p class="hint" id="basis-hint">Kryss av det dere må kjøpe.</p>' +
       '<ul class="basis-rows">' + rows + '</ul>' +
       '<div class="basis-actions"><button type="button" class="btn primary" data-basis="save" data-testid="basis-lagre">Ferdig</button></div>' +
-      '<p class="hint" data-testid="basis-igjen">Vi spør igjen neste uke, og når nye basisvarer dukker opp.</p></div>';
+      '<p class="hint" data-testid="basis-igjen">Vi spør igjen neste uke.</p></div>';
     document.body.appendChild(d);
     function label() {
       var n = d.querySelectorAll('.basis-rows input:checked').length;
-      d.querySelector('[data-basis="save"]').textContent = n ? 'Ferdig – legg ' + n + ' på lista' : 'Ferdig';   // v0.18.9: én knapp
+      d.querySelector('[data-basis="save"]').textContent = n ? 'Ferdig – legg ' + n + ' på handlelista' : 'Ferdig';   // v0.18.9: én knapp
     }
     label();
     d.addEventListener('change', label);
@@ -3684,7 +3720,7 @@
         if (!n || (built.legacyStaples && !anyExplicit)) {
           body += '<p class="hint" id="fast-hint">' + (built.legacyStaples && !anyExplicit
             ? 'Denne uka var de faste varene med fra før. Fjern haken for det dere ikke trenger.'
-            : 'Kryss av det dere trenger. Ingenting kommer på lista før dere trykker på knappen nederst.') + '</p>';
+            : 'Kryss av det dere trenger.') + '</p>';
         }
         body += '<div class="fv-search">' + ICON_SEARCH +
           '<input type="search" id="uv-q" placeholder="Søk …" aria-label="Søk i faste varer" value="' + esc(q) + '" autocomplete="off" data-testid="faste-uke-sok"></div>';
@@ -3729,7 +3765,7 @@
       }
       var foot = total ? ('<div class="fv-foot"><span class="sub" data-testid="faste-teller">' + n + ' av ' + total + '</span>' +
         '<button type="button" class="btn primary" data-fast="save" data-testid="faste-lagre">' +
-        (n ? 'Legg ' + n + ' på lista' : 'Lagre – ingen på lista') + '</button></div>') : '';
+        (n ? 'Legg ' + n + ' på handlelista' : 'Ferdig') + '</button></div>') : '';
       d.innerHTML = '<div class="sheet basis-sheet uv-sheet" role="dialog" aria-modal="true" aria-labelledby="fast-h" data-week="' + week + '">' +
         '<div class="uv-body">' + body + '</div>' + foot + '</div>';
       if (keepScroll) {
@@ -3879,8 +3915,74 @@
 
   function renderListe() {
     // v0.7: «Faste husvarer»-regnearket nederst er erstattet av siden #liste/faste.
-    main.innerHTML = '<section class="page" data-page="liste"><div id="list-section"></div></section>';
+    main.innerHTML = '<section class="page" data-page="liste">' + matHead('liste') + '<div id="list-section"></div></section>';   // 0.19.0: Mat-hode + valg
     renderListSection();
+  }
+
+  /* ---------- Gjøremål (0.19.0, bak flagg) ----------
+   * firestore.rules har ingen sti for oppgaver, så fanen viser bare det som virker uten nye regler: en enkel liste som ligger
+   * lokalt på denne telefonen (nøkkelen knaggen:gjoremal-lokal). Ingenting sendes til husstanden. Tildeling («Hvem gjør det?»),
+   * frie lister og deling krever nye regler (se tests/e2e-v0190.js og leveringen). */
+  var GJ_DATA_KEY = 'knaggen:gjoremal-lokal';
+  function gjLoad() {
+    try {
+      var a = JSON.parse(lsGet(GJ_DATA_KEY) || '[]');
+      return Array.isArray(a) ? a.filter(function (x) { return x && typeof x.id === 'string' && typeof x.t === 'string' && x.t; }) : [];
+    } catch (e) { return []; }
+  }
+  function gjSave(a) { lsSet(GJ_DATA_KEY, JSON.stringify(a)); }
+  function renderGjoremal() {
+    var a = gjLoad(), open = a.filter(function (x) { return !x.done; }), done = a.filter(function (x) { return x.done; });
+    function li(x) {
+      return '<li class="item gj-item' + (x.done ? ' checked' : '') + '" data-id="' + esc(x.id) + '" data-testid="gjoremal-rad">' +
+        '<label class="gj-lab"><input type="checkbox" data-gj="toggle"' + (x.done ? ' checked' : '') + ' aria-label="' + esc(x.t) + '">' +
+        '<span class="item-text"><span class="item-name">' + esc(x.t) + '</span></span></label>' +   // 0.19.0: avkrysning tett ved teksten, hele feltet er trykkflate
+        '<div class="qty-ctl"><button type="button" class="qbtn" data-gj="del" aria-label="Fjern ' + esc(x.t) + '" data-testid="gjoremal-fjern">' + ICON_TRASH + '</button></div></li>';
+    }
+    var h = '<section class="page gj-page" data-page="gjoremal"><div class="page-head"><h2>Gjøremål</h2></div>' +
+      '<form id="gj-add" class="gj-add" novalidate aria-label="Nytt gjøremål"><input type="text" id="gj-ny" placeholder="Legg til" aria-label="Nytt gjøremål" maxlength="120" autocomplete="off" data-testid="gjoremal-ny">' +
+      '<button type="submit" class="btn primary" data-testid="gjoremal-legg-til">Legg til</button></form>';
+    if (!a.length) h += '<p class="empty" data-testid="gjoremal-tom">Ingen gjøremål ennå.</p>';
+    if (open.length) h += '<ul class="items gj-items" data-testid="gjoremal-liste">' + open.map(li).join('') + '</ul>';
+    if (done.length) h += '<h3 class="k17-lbl">Ferdig</h3><ul class="items gj-items" data-testid="gjoremal-ferdig">' + done.map(li).join('') + '</ul>' +
+      '<div class="done-row"><button type="button" class="linkbtn" data-gj="clear" data-testid="gjoremal-fjern-ferdige">Fjern ferdige</button></div>';
+    h += '<p class="gj-note" data-testid="gjoremal-lokal">Gjøremålene ligger bare på denne telefonen.</p></section>';
+    main.innerHTML = h;
+    var form = document.getElementById('gj-add');
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var inp = document.getElementById('gj-ny'), t = inp.value.trim().replace(/\s+/g, ' ').slice(0, 120);
+      if (!t) { inp.focus(); return; }
+      var all = gjLoad(); all.push({ id: uid('g'), t: t, done: false, at: Date.now() }); gjSave(all);
+      renderGjoremal(); var n = document.getElementById('gj-ny'); if (n) n.focus();
+    });
+    main.querySelector('.gj-page').addEventListener('click', function (ev) {
+      var b = ev.target.closest && ev.target.closest('[data-gj]'); if (!b || b.type === 'checkbox') return;
+      var k = b.getAttribute('data-gj'), all = gjLoad();
+      if (k === 'del') {
+        var id = b.closest('li').getAttribute('data-id'), idx = -1;
+        all.forEach(function (x, i) { if (x.id === id) idx = i; });
+        if (idx < 0) return;
+        var gone = all.splice(idx, 1)[0]; gjSave(all); renderGjoremal();
+        toast(cap(gone.t) + ' er fjernet', UNDO_MS, { label: 'Angre', run: function () {
+          var cur = gjLoad(); cur.splice(Math.min(idx, cur.length), 0, gone); gjSave(cur);
+          if (/^#gjoremal/.test(location.hash || '')) renderGjoremal();
+        } });
+      } else if (k === 'clear') {
+        var removed = all.filter(function (x) { return x.done; });
+        if (!removed.length) return;
+        gjSave(all.filter(function (x) { return !x.done; })); renderGjoremal();
+        toast(removed.length + (removed.length === 1 ? ' ferdig gjøremål fjernet' : ' ferdige gjøremål fjernet'), UNDO_MS, { label: 'Angre', run: function () {
+          gjSave(gjLoad().concat(removed)); if (/^#gjoremal/.test(location.hash || '')) renderGjoremal();
+        } });
+      }
+    });
+    main.querySelector('.gj-page').addEventListener('change', function (ev) {
+      var c = ev.target; if (!c.matches || !c.matches('input[data-gj="toggle"]')) return;
+      var id = c.closest('li').getAttribute('data-id'), all = gjLoad();
+      all.forEach(function (x) { if (x.id === id) x.done = c.checked; });
+      gjSave(all); renderGjoremal();
+    });
   }
 
   // v0.6.2: skjemaet åpnes med «＋» i verktøylinja (ingen <details> lenger) og står rett under den.
@@ -3980,8 +4082,8 @@
     var nOda = hh ? delLines(delItems()).length : 0;
     var rows = row('copy-text', 'kopier', 'Kopier som tekst', '') +
       (nOda ? row('del-open', 'del-inngang', 'Del lista til Oda', nOda + (nOda === 1 ? ' vare' : ' varer'), ' aria-haspopup="dialog"') : '') +
-      row('fast-open', 'fra-faste', 'Faste varer – velg for denne uka', state.staples.length ? nFast + ' av ' + state.staples.length + ' på lista' : 'ingen ennå', ' aria-haspopup="dialog"') +
-      (bs.length ? row('basis-open', 'basis-meny', 'Basisvarer', (und ? und + ' ikke valgt' : added + ' av ' + bs.length + ' lagt til') + ' · ting dere ofte har hjemme (mel, krydder)', ' aria-haspopup="dialog"') : '') +
+      row('fast-open', 'fra-faste', 'Faste varer – velg for denne uka', state.staples.length ? nFast + ' av ' + state.staples.length + ' på handlelista' : 'ingen ennå', ' aria-haspopup="dialog"') +
+      (bs.length ? row('basis-open', 'basis-meny', 'Basisvarer', (und ? und + ' ikke valgt' : added + ' av ' + bs.length + ' lagt til'), ' aria-haspopup="dialog"') : '') +
       (nChecked ? row('uncheck-all', 'fjern-avkrysning', 'Fjern avkrysning …', nChecked + ' krysset av') : '');
     var d = document.createElement('div');
     d.id = 'list-menu';
@@ -4317,7 +4419,7 @@
     var doneBtn = nDone ? '<button type="button" class="linkbtn show-done" data-action="show-done" aria-expanded="' + (ui.showDone ? 'true' : 'false') + '" data-testid="vis-handlet">' +
       (ui.showDone ? 'Skjul handlet' : 'Vis ' + nDone + ' handlet') + '</button>' : '';
     if (!built.items.length || (!shown.length && !nDone)) {
-      h += '<div class="f-big-empty" data-testid="liste-tom-ill">' + ILL_BAG + '</div><p class="empty">Lista er tom. Velg middager under <a href="#uke">Uke</a>, eller legg til varer.</p>';
+      h += '<div class="f-big-empty" data-testid="liste-tom-ill">' + ILL_BAG + '</div><p class="empty">Handlelista er tom. <a href="#uke">Velg middager</a></p>';
       el.innerHTML = h;
       return;
     }
@@ -4513,7 +4615,7 @@
     if (e.target && e.target.id === 'hjem-sok') { var qv = e.target.value; clearTimeout(hjemTimer); hjemTimer = setTimeout(function () { hjemSearch(qv); }, 300); return; }
     var t = e.target;
     if (t.id === 'finn-q') { finn.q = t.value; renderFinnList(); return; }   // v0.11
-    if (t.id === 'retter-q') { ui.retterQ = t.value; var rl = main.querySelector('[data-testid="retter-liste"]'); if (rl) rl.innerHTML = retterListHtml(sortedRecipes()); return; }
+    if (t.id === 'retter-q') { ui.retterQ = t.value; var rl = main.querySelector('[data-testid="retter-liste"]'); if (rl) rl.innerHTML = retterListHtml(sortedRecipes()); var rt = main.querySelector('[data-testid="retter-teller"]'); if (rt) rt.innerHTML = retterTeller(sortedRecipes()); return; }
     if (t.id === 'day-q') { ui.dayQ = t.value; var dp = t.selectionStart; renderUke(); var dq = document.getElementById('day-q'); if (dq) { dq.focus(); try { dq.setSelectionRange(dp, dp); } catch (x) { } } return; }
     if (t.id === 'fv-q') {
       ui.fvQ = t.value;
@@ -4626,7 +4728,7 @@
     }
     var groups = staplesGrouped(filtered, aisleOf);
     var h = '<section class="page fv-page" data-page="liste" data-testid="faste-side">';
-    h += '<div class="fv-top"><a class="icon-btn" href="#liste" aria-label="Tilbake til lista" data-testid="faste-tilbake">‹</a>';
+    h += '<div class="v3-backrow"><a class="back" href="#liste" data-testid="faste-tilbake">‹ Handleliste</a></div><div class="fv-top">';
     h += '<div class="t"><h2>Faste varer</h2><span class="sub">' +
       (state.staples.length ? state.staples.length + (state.staples.length === 1 ? ' vare' : ' varer') + ' · i butikkens rekkefølge' : 'Ingen faste varer ennå') +
       '</span></div></div>';
@@ -6949,10 +7051,19 @@
       if (!it) return;
       // «Kilde»: ✕ fjerner bare egne varer på denne raden (data-extras); «Butikk»: hele den rene egen-linja.
       var ids = btn.hasAttribute('data-extras') ? btn.getAttribute('data-extras').split(',').filter(Boolean) : it.extra_ids.slice();
+      // 0.19.0: sletting av egen vare kan angres (8 s), som avkrysning og fast vare: varene og et eventuelt +/- kommer tilbake
+      var gone = state.list_extras.filter(function (x) { return ids.indexOf(x.id) >= 0; }).map(function (x) { return JSON.parse(JSON.stringify(x)); });
+      var goneName = it.name, adjWas = (state.list_adjust[it.week] || {})[key], adjCleared = false;
       ops.removeExtras(ids);
       var pure = it.sources.length === 1 && it.sources[0] === 'extra';
-      if (it.adjust && pure && it.extra_ids.every(function (x) { return ids.indexOf(x) >= 0; })) ops.clearAdjust(it.week, key);
+      if (it.adjust && pure && it.extra_ids.every(function (x) { return ids.indexOf(x) >= 0; })) { ops.clearAdjust(it.week, key); adjCleared = adjWas != null; }
       renderListSection();
+      if (gone.length) toast(cap(goneName) + ' er slettet', UNDO_MS, { label: 'Angre', run: function () {
+        gone.forEach(function (x) { ops.addExtra(x); });
+        if (adjCleared) { var am = {}; am[key] = adjWas; ops.setAdjustRaw(it.week, am); }
+        toast(cap(goneName) + ' er tilbake');
+        if (document.getElementById('list-section')) renderListSection();
+      } });
     } else if (a === 'fv-toggle') {
       var id = btn.getAttribute('data-id');
       if (ui.fvOpenId === id) fvCloseOpen();
@@ -7345,8 +7456,9 @@
   /* ---------- v0.16: versjonsnummeret ved logoen og «Nytt i Knaggen» ----------
    * Trykk på «0.16» åpner arket. Etter en oppdatering åpnes det av seg selv én gang (ikke ved aller første åpning,
    * ikke på kjøkkenskjermen og ikke i automatiserte tester uten testkroken KNAGGEN_TEST_NYTT). */
-  var APP_VERSION = '0.18.13', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.19.0', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.19.0', ['Ny meny nederst: Nå, Uke og Mat. Handleliste og Retter ligger nå samlet under Mat.', 'Slettet du en vare på handlelista ved en feil, kan du trykke Angre.', 'Finn flere retter og Hent oppskrift står over rettene, og Mat husker om du sist var på Handleliste eller Retter.']],
     ['0.18.13', ['Velg aksentfarge for hele appen under Husstand → Utseende. Valget gjelder bare denne telefonen.', 'Fargene på kjøkkenskjermen følger døgnet.', 'Når posisjonen er delt, velger Knaggen Hjemme eller Borte selv. Under står «Endre» hvis du vil bytte.', 'Versjonsinfoen vises igjen når du trykker på versjonsnummeret.', 'Søk i Finn retter.']],
     ['0.18.12', ['Trykk på en vare i handlelista for å endre navn, mengde eller avdeling.', 'Søk i retter, både under Retter og når du velger middag for en dag.', 'Hver person kan velge sin egen farge under Husstand. Fargen er lik på alle telefonene.', 'Nye farger på Nå og kjøkkenskjermen.']],
     ['0.18.11', ['Når avgangene ikke kan hentes, står det «Avgangene er ikke tilgjengelige akkurat nå» med «Prøv igjen».', '«Endre» på «Nå» lar deg velge Hjemme eller Borte.', 'Retter med bare én variant viser også varianten i navnet, og invitasjonsarket lukkes når den andre blir med.']],

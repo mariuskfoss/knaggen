@@ -392,7 +392,7 @@ select option:disabled { color: var(--line-strong); }
 .sync-status.off::before { background: var(--accent); }
 .form-actions.plain { position: static; margin: 12px 0; padding: 0; border: 0; background: none; align-items: center; }
 [data-page="husstand"] p, [data-page="join"] p { margin: 0 0 12px; }
-#share-link { font-size: var(--fs-14); color: var(--muted); }
+#share-link { font-size: var(--fs-16); color: var(--muted); }   /* 0.19.0: ≥16 px, ellers zoomer iOS inn ved fokus */
 .footer-tools .linkbtn { display: inline-flex; align-items: center; min-height: var(--tap); }   /* v0.6.1: 44 px */
 
 /* v0.4.2 */
@@ -804,7 +804,7 @@ select option:disabled { color: var(--line-strong); }
 /* Husstand-siden */
 .hs-h { font-size: var(--fs-13); font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--muted); margin: 18px 2px 6px; }
 .hs-h:first-of-type { margin-top: 4px; }
-.hs-switch { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 8px 12px; margin-top: 10px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; }
+.hs-switch { width: 100%; box-sizing: border-box; text-align: left; font: inherit; color: inherit; display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 8px 12px; margin-top: 10px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; }
 .hs-switch .t { flex: 1; min-width: 0; }
 .hs-switch .t b { display: block; font-weight: 600; }
 .hs-switch .t span { display: block; font-size: var(--fs-13); color: var(--muted); }
@@ -1400,7 +1400,7 @@ body.k-phone .tabs .tab-na { display: flex; }
 .k188-panel .k17-banner { margin: 0; border: 0; background: transparent; }
 .k188-panel .row { flex-wrap: wrap; gap: 8px; }
 .k188-panel .k17-btn { min-height: var(--tap); }
-.k188-panel .k17-btn.txt { color: var(--ink); border-color: var(--line-strong); }   /* 0.18.13: «Senere» er en nøytral knapp, ikke rød */
+.k188-panel .k17-btn.txt, .k188-ny .k17-btn.txt { color: var(--ink); border-color: var(--line-strong); }   /* 0.18.13: «Senere» er en nøytral knapp, ikke rød */
 .k188-panel .k17-field { margin: 8px 0; }
 
 /* ===== v0.18.9 «polish» ===== */
@@ -1561,3 +1561,6 @@ html[data-tema="lys"] .aks-rad .aks-dot { background: var(--sw-lys); color: var(
 
 /* 0.18.13: «Vis N handlet» er en trykkflate på minst 48 px */
 .show-done { display: inline-flex; align-items: center; min-height: var(--tap, 48px); min-width: var(--tap, 48px); padding-top: 0; padding-bottom: 0; }
+
+/* 0.19.0 (Trude): navnet på husstanden er en trykkflate på minst 48 px */
+.k17-name { min-height: 48px; }

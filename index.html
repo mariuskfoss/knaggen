@@ -27,10 +27,11 @@
   <link rel="manifest" href="manifest.webmanifest">
   <script>/* v0.18.2: tema per enhet før CSS-en tegnes */try{var t=JSON.parse(localStorage.getItem("knaggen:tema")||"null");if(t==="lys"||t==="mork")document.documentElement.setAttribute("data-tema",t)}catch(e){}</script>
   <script>/* 0.18.13: aksentfarge per enhet før CSS-en tegnes (salvie = standard, ingen attributt) */try{var a=JSON.parse(localStorage.getItem("knaggen:aksent")||"null");if(["messing","rav","fjord","lyng","rust","mose"].indexOf(a)>=0)document.documentElement.setAttribute("data-aksent",a)}catch(e){}</script>
-  <link rel="stylesheet" href="palett.css?v=0.18.13">
-  <link rel="stylesheet" href="style.css?v=0.18.13">
-  <link rel="stylesheet" href="aksent-app.css?v=0.18.13">
-  <link rel="stylesheet" href="kjokken.css?v=0.18.13">
+  <link rel="stylesheet" href="palett.css?v=0.19.0">
+  <link rel="stylesheet" href="style.css?v=0.19.0">
+  <link rel="stylesheet" href="aksent-app.css?v=0.19.0">
+  <link rel="stylesheet" href="kjokken.css?v=0.19.0">
+  <link rel="stylesheet" href="mat.css?v=0.19.0">
 </head>
 <body>
   <header class="topbar">
@@ -38,25 +39,25 @@
     <a id="sync-link" class="sync-link" href="#husstand/del" data-testid="delt" hidden><span id="sync-status" class="sync-status" role="status" aria-live="polite" hidden></span></a>
   </header>
   <main id="main" tabindex="-1"></main>
-  <!-- v0.6.2 (spec v0.6.2 punkt 3): egne faneikoner fra Merkevare (SVG inline, arver farge; teksten er fortsatt lenkenavnet) -->
+  <!-- 0.19.0: fire faner (Nå på telefon, Uke, Mat, Gjøremål bak flagg). v0.6.2 (spec v0.6.2 punkt 3): egne faneikoner fra Merkevare (SVG inline, arver farge; teksten er fortsatt lenkenavnet) -->
   <nav class="tabs" aria-label="Hovedmeny">
     <a href="#kjokken" data-tab="na" class="tab-na" data-testid="fane-na"><svg class="ico" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.25"/><path d="M12 7.5V12L15 14"/><circle class="ball" fill="currentColor" cx="12" cy="12" r="1.6" stroke="none"/></svg>Nå</a>
-    <a href="#retter" data-tab="retter"><svg class="ico" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5.5 13.25V16.5A3.5 3.5 0 0 0 9 20H15A3.5 3.5 0 0 0 18.5 16.5V13.25"/><path d="M3.75 10.25H20.25M2.75 14.25H5.5M18.5 14.25H21.25"/><circle class="ball" fill="currentColor" cx="12" cy="6.4" r="2.1" stroke="none"/></svg>Retter</a>
-    <a href="#uke" data-tab="uke"><svg class="ico" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.75" y="5.25" width="16.5" height="15" rx="3.5"/><path d="M3.75 10.25H20.25M8.5 3.25V6.75M15.5 3.25V6.75"/><circle class="ball" fill="currentColor" cx="15.25" cy="15.25" r="2.1" stroke="none"/></svg>Uke</a>
-    <a href="#liste" data-tab="liste"><svg class="ico" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M10 6.5H20M10 12H20M10 17.5H16.5"/><circle class="ball" fill="currentColor" cx="5" cy="6.5" r="2.1" stroke="none"/><circle cx="5" cy="12" r="1.9" fill="currentColor" stroke="none"/><circle cx="5" cy="17.5" r="1.9" fill="currentColor" stroke="none"/></svg>Handleliste</a>
+    <a href="#uke" data-tab="uke" data-testid="fane-uke"><svg class="ico" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.75" y="5.25" width="16.5" height="15" rx="3.5"/><path d="M3.75 10.25H20.25M8.5 3.25V6.75M15.5 3.25V6.75"/><circle class="ball" fill="currentColor" cx="15.25" cy="15.25" r="2.1" stroke="none"/></svg>Uke</a>
+    <a href="#liste" data-tab="mat" data-testid="fane-mat"><svg class="ico" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5.5 13.25V16.5A3.5 3.5 0 0 0 9 20H15A3.5 3.5 0 0 0 18.5 16.5V13.25"/><path d="M3.75 10.25H20.25M2.75 14.25H5.5M18.5 14.25H21.25"/><circle class="ball" fill="currentColor" cx="12" cy="6.4" r="2.1" stroke="none"/></svg>Mat</a>
+    <a href="#gjoremal" data-tab="gjoremal" class="tab-gjore" data-testid="fane-gjoremal" hidden><svg class="ico" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.75" y="3.75" width="16.5" height="16.5" rx="3.5"/><path d="M8 12.25L11 15.25L16.25 9"/></svg>Gjøremål</a>
   </nav>
   <!-- v0.6.3 (spec v0.6.3 punkt 1): toastbåndet – en ugjennomsiktig stripe nederst (som fanelinja) som toasten ligger i mens
        den vises. Innholdet kan ikke ligge synlig eller trykkbart under toasten; bunnpolstring lar alt rulles fram over båndet. -->
   <div id="toast-dock" class="toast-dock" aria-hidden="true"></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="firebase-config.js?v=0.18.13"></script>
-  <script src="seed.js?v=0.18.13"></script>
-  <script src="library.js?v=0.18.13"></script>
-  <script src="units.js?v=0.18.13"></script>
-  <script src="delelinje.js?v=0.18.13"></script>
-  <script type="module" src="sync.js?v=0.18.13"></script>
-  <script src="scale.js?v=0.18.13"></script>
-  <script src="kjokken.js?v=0.18.13"></script>
-  <script src="hjemme5.js?v=0.18.13"></script>
-  <script type="module" src="app.js?v=0.18.13"></script></body>
+  <script src="firebase-config.js?v=0.19.0"></script>
+  <script src="seed.js?v=0.19.0"></script>
+  <script src="library.js?v=0.19.0"></script>
+  <script src="units.js?v=0.19.0"></script>
+  <script src="delelinje.js?v=0.19.0"></script>
+  <script type="module" src="sync.js?v=0.19.0"></script>
+  <script src="scale.js?v=0.19.0"></script>
+  <script src="kjokken.js?v=0.19.0"></script>
+  <script src="hjemme5.js?v=0.19.0"></script>
+  <script type="module" src="app.js?v=0.19.0"></script></body>
 </html>

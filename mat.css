@@ -1,0 +1,148 @@
+/* Knaggen 0.19.0 – ny navigasjon (Nå · Uke · Mat · Gjøremål) og Mat v3.
+ * Reglene fra «.v3» under er tatt uendret fra merkevare/v020-navigasjon/v3/_bygg/v3.css (Mons) og gjelder bare når
+ * body har klassen v3, som app.js setter under Mat (#liste og #retter med undersider). Bare tokens fra appen. */
+/* Mat v3 – Handleliste og Retter med full funksjon fra 0.18.12, i det rolige uttrykket fra v2.
+ * Legges over appens style.css + palett.css (+ v020.css fra v2). Bare tokens fra appen: --bg --card --card-2 --line --line-strong
+ * --ink --muted --brand --brand-ink --brand-soft --danger. Ingen nye farger. */
+body { --v3-r: 14px; }
+/* ---- Mat-hode og valg (som v2) */
+.v3 .page-head h2 { font-size: 28px; }
+.v3 .k17-seg.v20-sub { margin: 0 0 16px; }
+.v3 .k17-seg button { min-height: 48px; }
+.v3 .k17-seg button.on { color: var(--ink); }
+/* ---- Handleliste: topp */
+.v3 .week-nav.list-nav { margin: 0 0 10px; align-items: center; }
+.v3 .list-nav .week-title h2 { display: none; }
+.v3 .list-nav .week-title .sub { font-size: 14px; color: var(--muted); }
+.v3 .list-nav .week-title .sub .left { color: var(--ink); font-weight: 600; }
+.v3 .v11-tools { gap: 4px; }
+.v3 .tool-btn { background: none; border: 0; color: var(--ink); min-width: 48px; min-height: 48px; border-radius: 12px; }
+.v3 .tool-btn[data-action="add-toggle"] { background: var(--brand-soft); color: var(--brand); }
+.v3 .tool-btn[aria-expanded="true"] { background: var(--brand-soft); border: 0; color: var(--brand); }
+.v3 .tool-btn.more { font-weight: 600; color: var(--ink); }
+.v3 .v11-devs { margin: 0 0 12px; }
+.v3 .v11-devs .dev-tag { min-height: 36px; font-size: 14px; background: var(--card-2); border: 0; }
+.v3 .ikke-med { margin: 0 0 12px; }
+.v3 .basis-strip { border-radius: var(--v3-r); margin: 0 0 6px; }
+/* ---- avdelinger og varer */
+.v3 .aisle.f-dept { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 20px 4px 8px; }
+.v3 .items { border-radius: var(--v3-r); }
+.v3 .item { min-height: 56px; }
+.v3 .item + .item { border-top: 1px solid var(--line); }
+.v3 .item-name { font-weight: 600; }
+.v3 .item-qty { color: var(--muted); font-weight: 400; margin-left: 2px; }
+.v3 .item.checked .item-name, .v3 .item.checked .item-qty { color: var(--muted); }
+.v3 .item .item-src, .v3 .item.src-staple .item-src { font-style: normal; font-size: 13px; color: var(--muted); }
+.v3 .item > .item-text { padding: 12px 8px 12px 2px; }
+/* avkryssing: rund firkant som i v2 (grafikk ≥3:1 mot kortet) */
+.v3 .item input[type=checkbox] { -webkit-appearance: none; appearance: none; width: 24px; height: 24px; margin: 0; border: 2px solid var(--muted); border-radius: 6px; background: none; display: grid; place-content: center; accent-color: initial; }
+.v3 .item input[type=checkbox]:checked { background: var(--brand); border-color: var(--brand); }
+.v3 .item input[type=checkbox]:checked::after { content: "✓"; color: var(--brand-ink); font-size: 15px; font-weight: 800; line-height: 1; }
+.v3 .item input[type=checkbox]:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+/* mengde: − og + i én rolig pille, og fjern (søppel) på egne varer i samme pille */
+.v3 .qty-ctl { gap: 0; padding: 0; margin-right: 10px; background: var(--card-2); border-radius: 12px; overflow: hidden; }
+.v3 .qbtn { width: 48px; height: 48px; border: 0; border-radius: 0; background: none; color: var(--ink); font-size: 22px; }
+.v3 .qbtn + .qbtn { border-left: 1px solid var(--line-strong); }
+.v3 .qbtn svg { width: 20px; height: 20px; }
+.v3 .qbtn[data-action="remove-extra"] { color: var(--muted); }
+.v3 .qbtn:disabled { opacity: 1; color: var(--muted); }
+.v3 .done-row .linkbtn { color: var(--ink); font-weight: 600; min-height: 48px; }
+.v3 .empty, .v3 p.empty { color: var(--muted); }
+/* ---- skjema (Legg til / Endre vare / Ny rett) */
+.v3 .add-panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--v3-r); padding: 14px; margin: 0 0 8px; }
+.v3 .edit-h { font-size: 18px; margin: 0 0 10px; }
+.v3 input[type=text], .v3 input[type=number], .v3 input[type=search], .v3 select, .v3 textarea { border-radius: 10px; min-height: 48px; }
+.v3 .add-panel .btn, .v3 .form-actions .btn, .v3 .sheet .btn, .v3 .fv-ed-acts .btn { min-height: 48px; border-radius: 10px; font-weight: 600; }
+.v3 .hint, .v3 .field-hint { color: var(--muted); }
+/* ---- ark (Sortering, Mer, Faste varer, Basisvarer, bekreftelser) */
+.v3 .sheet { border-radius: 18px 18px 0 0; padding-top: 22px; position: relative; }
+.v3 .sheet::before { content: ""; position: absolute; top: 8px; left: 50%; width: 40px; height: 4px; margin-left: -20px; border-radius: 2px; background: var(--line-strong); }
+.v3 .sheet-head h3, .v3 .uv-head h3 { font-size: 20px; }
+.v3 .icon-btn { background: var(--card-2); border: 0; border-radius: 22px; min-width: 48px; min-height: 48px; }
+.v3 .menu-rows { border-radius: var(--v3-r); overflow: hidden; }
+.v3 .menu-row { min-height: 52px; flex-wrap: wrap; row-gap: 0; }
+.v3 .menu-row .mr-meta { flex: 1 1 auto; text-align: right; font-weight: 500; }
+.v3 .uv-rows, .v3 .fv-rows, .v3 .basis-rows { border-radius: var(--v3-r); }
+.v3 .uv-row input, .v3 .basis-row input[type=checkbox] { -webkit-appearance: none; appearance: none; width: 24px; height: 24px; margin: 0; border: 2px solid var(--muted); border-radius: 6px; background: none; display: grid; place-content: center; }
+.v3 .uv-row input:checked, .v3 .basis-row input[type=checkbox]:checked { background: var(--brand); border-color: var(--brand); }
+.v3 .uv-row input:checked::after, .v3 .basis-row input[type=checkbox]:checked::after { content: "✓"; color: var(--brand-ink); font-size: 15px; font-weight: 800; line-height: 1; }
+/* ---- faste varer (side) */
+.v3 .fv-top .icon-btn { border-radius: 22px; }
+.v3 .fv-group-h { font-size: 12px; font-weight: 700; letter-spacing: .06em; }
+.v3 .fv-page .fv-rows { border-radius: var(--v3-r); }
+.v3 .fv-chip { min-height: 48px; }
+.v3 .fv-del { color: var(--danger); font-weight: 600; min-height: 48px; }
+/* ---- Retter */
+.v3 .v3-listhead { display: flex; align-items: center; justify-content: space-between; margin: 14px 0 8px; }
+.v3 .v3-count { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-left: 4px; }
+.v3 .v3-new { display: inline-flex; align-items: center; min-height: 48px; padding: 0 12px; margin-right: -8px; border-radius: 12px; color: var(--brand); font-weight: 700; text-decoration: none; }
+.v3 .v11-search { display: block; margin: 0; }
+.v3 .v11-search input { width: 100%; box-sizing: border-box; min-height: 48px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--card); padding: 10px 12px; font-size: 16px; }
+.v3 .v11-rows { border-radius: var(--v3-r); overflow: hidden; }
+.v3 .v11-row { min-height: 56px; }
+.v3 .k17-lbl { margin: 20px 4px 8px; }
+.v3 .v11-empty .btn.primary { min-height: 48px; border-radius: 10px; }
+.v3 .rv-meta { color: var(--muted); }
+.v3 .section-title { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 20px 4px 8px; }
+.v3 .rv-ing { border-radius: var(--v3-r); }
+.v3 .ing-row { border-radius: var(--v3-r); }
+.v3 .v11-chips .fv-chip { min-height: 48px; }
+.v3 .v11-add { min-width: 48px; min-height: 48px; border-radius: 12px; }
+.v3 .back { color: var(--brand); }
+.v3 .page-head .btn { min-height: 48px; border-radius: 12px; border: 0; background: var(--card-2); }
+
+/* ---- underordnede sider: ‹ forrige side øverst til venstre, tittel under */
+.v3 .page-head { flex-wrap: wrap; row-gap: 0; align-items: center; }
+.v3 .page-head .back { flex: 1 1 auto; order: -2; display: flex; align-items: center; min-height: 48px; margin: 0 0 2px -4px; font-weight: 600; text-decoration: none; }
+.v3 .v3-backrow { margin: 0 0 4px; } .v3 .v3-backrow .back { display: flex; align-items: center; min-height: 48px; margin-left: -4px; font-weight: 600; text-decoration: none; }
+.v3 .page-head h2 { text-align: left; flex: 0 0 100%; order: 2; min-width: 0; margin: 0 0 4px; }
+.v3 .page-head .btn { order: -1; margin-left: auto; }
+/* ingrediensrad: fjern som ikon, Basis som avkryssing */
+.v3 .ing-sub { grid-template-columns: 64px 1fr 1.3fr 44px; }
+.v3 .ing-fjern { font-size: 0; display: grid; place-items: center; width: 48px; min-height: 48px; min-width: 0; padding: 0; border-radius: 12px; background: none; border: 0; color: var(--muted); }
+.v3 .ing-basis input { -webkit-appearance: none; appearance: none; width: 24px; height: 24px; margin: 0 6px 0 0; border: 2px solid var(--muted); border-radius: 6px; background: none; display: inline-grid; place-content: center; vertical-align: middle; }
+.v3 .ing-basis input:checked { background: var(--brand); border-color: var(--brand); }
+.v3 .ing-basis input:checked::after { content: "✓"; color: var(--brand-ink); font-size: 15px; font-weight: 800; line-height: 1; }
+.v3 .v3-dng { background: var(--danger-fill); border-color: var(--danger-fill); color: var(--on-danger); }
+.v3 .v11-chips { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); }
+.v3 [data-testid="retter-liste"] > li:not(:has(.v11-row)), .v3 [data-testid="retter-liste"] > .empty { padding: 4px 14px; color: var(--muted); }
+
+/* ---- fanelinja: Nå (bare telefon), Uke, Mat, Gjøremål (bak flagg). Like brede faner, uansett hvor mange som vises. */
+.tabs { display: flex; }
+.tabs a { flex: 1 1 0; min-width: 0; }
+.tabs a[hidden] { display: none; }
+body.k-phone .tabs { display: flex; }
+
+/* ---- Mat: hode og valg Handleliste | Retter (a-lenker i stedet for knapper) */
+.mat-seg { margin: 0 0 16px; }
+.mat-seg a { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 48px; border-radius: var(--radius-s); color: var(--ink); font-weight: 600; font-size: var(--fs-16); text-decoration: none; }
+.mat-seg a[aria-current="page"] { background: var(--card); box-shadow: 0 0 0 1px var(--line-strong); }
+.mat-seg a:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.mat-head { margin: 4px 0 12px; }
+.mat-head h2 { font-size: 28px; }
+.v3 .mat-intro { margin: 0; }
+/* Retter: søk, Finn/Hent, så teller + Ny rett og lista */
+.v3 .v3-retter-top { display: flex; flex-direction: column; }
+.v3 .v11-rows.v3-finn { margin: 12px 0 0; }
+.v3 h2.v3-count { font-size: 12px; margin: 0 0 0 4px; }
+.v3 .v3-count .count { background: none; padding: 0; min-width: 0; font: inherit; color: inherit; }
+/* Handleliste: kjøpte varer ligger nederst i sin avdeling (som før), grå og gjennomstreket */
+/* ---- Gjøremål (lokal liste, bak flagg) */
+.gj-add { display: flex; gap: 8px; margin: 0 0 12px; }
+.gj-add input { flex: 1; min-width: 0; min-height: 48px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--card); color: var(--ink); font: inherit; font-size: 16px; padding: 10px 12px; }
+.gj-add .btn { min-height: 48px; border-radius: 10px; font-weight: 600; }
+.gj-page .items { border-radius: 14px; }
+.gj-page .item { min-height: 56px; align-items: center; }
+.gj-page .item-name { font-weight: 600; }
+.gj-page .item .gj-lab { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 6px 4px 6px 14px; margin: 0; cursor: pointer; }
+.gj-page .item input[type=checkbox] { -webkit-appearance: none; appearance: none; width: 24px; height: 24px; margin: 0; border: 2px solid var(--muted); border-radius: 6px; background: none; display: grid; place-content: center; }
+.gj-page .item input[type=checkbox]:checked { background: var(--brand); border-color: var(--brand); }
+.gj-page .item input[type=checkbox]:checked::after { content: "✓"; color: var(--brand-ink); font-size: 15px; font-weight: 800; line-height: 1; }
+.gj-page .item input[type=checkbox]:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+.gj-page .qty-ctl { gap: 0; padding: 0; margin-right: 10px; background: var(--card-2); border-radius: 12px; overflow: hidden; }
+.gj-page .qbtn { width: 48px; height: 48px; border: 0; border-radius: 0; background: none; color: var(--muted); }
+.gj-page .qbtn svg { width: 20px; height: 20px; }
+.gj-note { color: var(--muted); font-size: var(--fs-14); margin: 16px 4px 0; line-height: 1.4; }
+
+/* 0.19.0: «Fjern» på ingrediensrader er søppelikon (klippet til «Fje» på 360 px) */
+.v3 .ing-fjern { width: 48px; min-width: 48px; min-height: 48px; padding: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }

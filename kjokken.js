@@ -726,10 +726,10 @@
     var h = '<div class="na" data-testid="na" data-modus="' + mm.mode + '">';
     var sp = A.startProgress ? A.startProgress() : null;   // v0.18.9: oppsettet er ikke ferdig – vei tilbake til Kom i gang
     if (sp) h += '<a class="na-fortsett" href="#uke" data-k="na-go" data-testid="na-fortsett">Fortsett oppsettet (steg ' + sp.step + ' av ' + sp.of + ')\u00a0<i aria-hidden="true">›</i></a>';
-    // 0.18.13 (D): delt posisjon som ikke er funnet ennå (og ikke avslått/feilet): aldri vis Hjemme/Borte-valget mens vi venter. Rolig linje med siste kjente modus.
+    // 0.18.13 (D): delt posisjon som ikke er funnet ennå (og ikke avslått/feilet): aldri vis Hjemme/Borte-valget mens vi venter. Tom, reservert linje (0.19.0: ingen tekst).
     var venter = pw && !pos.err && (pos.lat == null || !!(A.homePending && A.homePending()));   // + hjemmeadressen er ikke lest ennå (posMode() ville gitt null → valget glimtet)
     if (venter && !naEdit) {
-      h += '<p class="na-status na-venter" data-testid="na-status-venter" aria-live="polite"><span data-testid="na-status-tekst">' + (home ? '⌂ Hjemme' : 'Borte') + '</span></p>';
+      h += '<p class="na-status na-venter" data-testid="na-status-venter" aria-live="polite" aria-hidden="true"></p>';   // 0.19.0 (Trude): ingenting vises før posisjon og hjemmeadresse er klare (ingen «⌂ Hjemme»/«Borte»-blink); plassen er reservert
     } else if (auto && !naEdit) {
       // v0.18.7: posisjon er på og vi vet hvor hjemme er → rolig statuslinje i stedet for knapper
       var nm = placeName(), lbl;
@@ -737,7 +737,10 @@
       else if (auto === 'hjemme') lbl = 'Borte';
       else lbl = nm ? '📍 ' + nm : 'Borte';
       if (mm.mode === 'borte' && auto === 'borte' && nm === undefined) loadPlace();
-      h += '<p class="na-status" data-testid="na-status"><span data-testid="na-status-tekst">' + esc(lbl) + '</span>' +
+      // 0.19.0 (Trude): én status – mens stedsnavnet hentes vises ingenting (ikke «Borte» som så blir «📍 Storo»)
+      var navnVenter = mm.mode === 'borte' && auto === 'borte' && nm === undefined && !gateBlocked('reverse') && navigator.onLine !== false;
+      if (navnVenter) h += '<p class="na-status na-venter" data-testid="na-status-venter" aria-live="polite" aria-hidden="true"></p>';
+      else h += '<p class="na-status" data-testid="na-status"><span data-testid="na-status-tekst">' + esc(lbl) + '</span>' +
         (mm.why === 'manuell' ? '<small data-testid="na-status-manuell">valgt av deg til midnatt</small>' : '') +
         '<button type="button" class="na-status-endre" data-k="na-modus-endre" data-testid="na-modus-endre">Endre</button></p>';
     } else {
