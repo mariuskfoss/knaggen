@@ -146,3 +146,18 @@ body.k-phone .tabs { display: flex; }
 
 /* 0.19.0: «Fjern» på ingrediensrader er søppelikon (klippet til «Fje» på 360 px) */
 .v3 .ing-fjern { width: 48px; min-width: 48px; min-height: 48px; padding: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
+
+/* 0.20.0: delte gjøremål, lister, innlogging og QR */
+.gj-page .gj-who { flex: none; min-height: 48px; max-width: 38%; margin: 0 6px 0 0; padding: 4px 12px; border: 1px solid var(--line-strong); border-radius: 999px; background: none; color: var(--muted); font: inherit; font-size: var(--fs-14); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.gj-page .gj-who.on { color: var(--brand); border-color: var(--brand); font-weight: 600; }
+.gj-page .gj-who:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.gj-sub { color: var(--muted); font-size: var(--fs-14); margin: -6px 4px 12px; }
+.gj-page .gj-acts { margin-top: 20px; }
+.inv-qr { width: 192px; max-width: 60%; margin: 14px auto 4px; padding: 6px; background: #fff; border-radius: 12px; line-height: 0; }
+.inv-qr svg { display: block; width: 100%; height: auto; }
+.qr-note { text-align: center; margin-top: 4px; }
+.xs-opts, .xs-people { margin: 8px 0 12px; }
+.xs-opt[aria-checked="true"] b { color: var(--brand); }
+
+/* 0.20.0: e-postfeltet i innloggingsarket: 16 px (iOS zoomer ikke) og 48 px høyt */
+#xs-epost { font-size: 16px; min-height: 48px; box-sizing: border-box; }

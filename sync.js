@@ -46,7 +46,13 @@ async function init() {
         import(SDK + 'firebase-app.js'), import(SDK + 'firebase-auth.js'), import(SDK + 'firebase-firestore.js')
       ]);
       const app = appMod.initializeApp(m === 'emulator' ? EMULATOR_CONFIG : prodConfig(), 'ukeshandel');
-      const auth = au.getAuth(app);
+      // v0.20: innloggingen ligger varig på enheten (IndexedDB, reserve localStorage): man logger inn ÉN gang per ny enhet
+      // og blir stående innlogget – aldri innlogging ved hver åpning. Anonym innlogging (uten spørsmål) som før.
+      let auth;
+      try {
+        auth = au.initializeAuth(app, { persistence: [au.indexedDBLocalPersistence, au.browserLocalPersistence], popupRedirectResolver: au.browserPopupRedirectResolver });
+      } catch (e) { auth = au.getAuth(app); }
+      try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) { /* ignorer */ }
       let db;
       try {
         db = fs.initializeFirestore(app, {
@@ -234,11 +240,18 @@ async function isMember(hid) {
   }
 }
 
+let closing = false;   // 0.20: under kontosletting skal ingenting melde enheten inn i husstanden igjen
 async function joinHousehold(hid, secret) {
+  if (closing) { const e = new Error('closing'); e.code = 'konto/sletter'; throw e; }
   const c = await init();
   const m = await isMember(hid);
   if (m) return true;
-  await withTimeout(c.fs.setDoc(c.fs.doc(...hh(hid, 'members', c.uid)), { secret, joined_at: c.fs.serverTimestamp() }), 20000, 'no-server');
+  try { await withTimeout(c.fs.setDoc(c.fs.doc(...hh(hid, 'members', c.uid)), { secret, joined_at: c.fs.serverTimestamp() }), 20000, 'no-server'); }
+  catch (e) {
+    // to faner kan melde inn samme uid samtidig (andre gang er et «update», som reglene nekter): da er jeg allerede medlem
+    if (e && e.code === 'permission-denied' && await isMember(hid)) return true;
+    throw e;
+  }
   return true;
 }
 
@@ -367,6 +380,9 @@ const W = {
 function leaveHousehold(hid) {
   // v0.17: eget enhetsdokument først (egen uid er alltid lov); feiler det (eldre regler), går Forlat videre
   ctx.fs.deleteDoc(ctx.fs.doc(...hh(hid, 'devices', ctx.uid))).catch(() => {});
+  // v0.20: kontoens peker slettes bare hvis den peker på husstanden man forlater (aldri ved bytte til kontoens husstand)
+  const uref = ctx.fs.doc(ctx.db, 'users', ctx.uid);
+  ctx.fs.getDoc(uref).then(s => { if (s.exists() && s.data().hid === hid) return ctx.fs.deleteDoc(uref); }).catch(() => {});
   return ctx.fs.deleteDoc(ctx.fs.doc(...hh(hid, 'members', ctx.uid)));
 }
 // Slett: alt innhold i biter, så til slutt kjernen i én batch: invitasjonskodene, invite/current, de andre medlemmene,
@@ -379,6 +395,8 @@ async function deleteHousehold(hid) {
   // v0.14: de delte listene slettes av funksjonen (krever medlemskap, så før kjernen slettes). Feiler det, går slettingen
   // videre: lenkene utløper uansett etter 7 døgn og ryddes av TTL.
   try { await deleteShareLists(hid); } catch (e) { /* ignorer */ }
+  // v0.20: gjøremål og egne lister med varer ryddes bort (andres private lister kan ikke leses og blir uleselige rester)
+  try { await gjDeleteAll(hid); } catch (e) { /* ignorer */ }
   // v0.16: kjøkkenskjermens kalenderadresser slettes også (krever medlemskap)
   try { await calendar(hid, 'slettAlle'); } catch (e) { /* ignorer */ }
   // Varsel til de andre 0.10-telefonene (de lytter på den felles lista); dokumentet slettes selv sammen med resten.
@@ -412,6 +430,7 @@ async function deleteHousehold(hid) {
   b.delete(fs.doc(...hh(hid, 'private', 'join')));
   b.delete(fs.doc(...hh(hid)));
   b.delete(fs.doc(...hh(hid, 'members', c.uid)));
+  b.delete(fs.doc(db, 'users', c.uid));   // v0.20: kontoens peker til husstanden (finnes ikke for anonyme – sletting av ikke-eksisterende er greit)
   await withTimeout(b.commit(), 30000, 'no-server');
   return true;
 }
@@ -511,6 +530,349 @@ function fetchWeather(hid, lat, lon) { return callFn('hentVaer', { hid, lat, lon
 // v0.16: kjøkkenskjermens kalendere (liste | legg | fjern | hendelser | slettAlle) – adressene ligger kryptert på serveren
 function calendar(hid, op, data) { return callFn('kalender', Object.assign({}, data || {}, { op, hid }), op === 'legg' || op === 'hendelser' ? 40000 : 15000); }
 
+/* ---------- v0.20: personlig innlogging (oppgradering av den anonyme innloggingen) ----------
+ * Appen logger fortsatt inn anonymt i bakgrunnen. Oppgradering = linkWithCredential på SAMME uid (Google, Apple, e-postlenke), så
+ * medlemskap og alt som er lagret under uid-en består. Sesjonen er varig (IndexedDB, se init). På en ny enhet logger man inn én gang
+ * med samme konto: da får enheten den kjente uid-en, og users/{uid} sier hvilken husstand den hører til.
+ */
+const EMAIL_KEY = 'knaggen:epost-for-lenke';
+function isPersonalUser(u) { return !!u && (!u.isAnonymous || (u.providerData || []).length > 0); }
+function accountInfo() {
+  const u = ctx && ctx.auth && ctx.auth.currentUser;
+  if (!u) return null;
+  const pd = (u.providerData || []);
+  const kinds = pd.map(p => p.providerId === 'google.com' ? 'google' : p.providerId === 'apple.com' ? 'apple' : p.providerId === 'password' || p.providerId === 'emailLink' ? 'epost' : p.providerId);
+  const email = u.email || (pd.find(p => p.email) || {}).email || null;
+  return { uid: u.uid, personal: isPersonalUser(u), kinds, email, name: u.displayName || (pd.find(p => p.displayName) || {}).displayName || null };
+}
+// Nytt tokenet så reglene ser personlig innlogging (sign_in_provider/identities) – før noe skrives som krever det.
+async function refreshToken() {
+  const u = ctx.auth.currentUser;
+  if (u) {
+    try {
+      await withTimeout(u.getIdToken(true), 15000, 'no-server');
+      // Åpne Firestore-strømmene på nytt: en strøm som allerede er åpen har det gamle (anonyme) tokenet, og reglene ville avvist
+      // skriving som krever personlig innlogging helt til strømmen lukkes av seg selv.
+      await ctx.fs.disableNetwork(ctx.db); await ctx.fs.enableNetwork(ctx.db);
+    } catch (e) { /* frakoblet: reglene ser det neste gang */ }
+  }
+}
+function authErr(e) {
+  const code = (e && e.code) || '';
+  const m = /popup-closed|cancelled-popup|user-cancelled|popup-blocked|operation-not-supported|network|unauthorized|invalid-action-code|expired-action-code|invalid-email|too-many|account-exists|provider-already-linked|operation-not-allowed|requires-recent-login/.exec(code);
+  const er = new Error(code || (e && e.message) || 'auth-failed');
+  er.code = m ? 'auth/' + m[0] : (code || 'auth-failed');
+  er.original = e;
+  return er;
+}
+// Etter linkWithPopup/linkWithCredential: samme uid (switched:false), eller – hvis kontoen allerede finnes (ny enhet / ny telefon) –
+// innlogging som den kjente uid-en (switched:true). Da må appen laste på nytt (uid-en byttet).
+async function linkOrSwitch(doLink, credFromError, cred, direct) {
+  const c = await init();
+  const { au, auth } = c;
+  const before = auth.currentUser && auth.currentUser.uid;
+  try {
+    await doLink();   // direct: e-postlenke = innlogging (engangslenke), aldri linkWithCredential
+  } catch (e) {
+    const code = e && e.code;
+    if (!direct && (code === 'auth/credential-already-in-use' || code === 'auth/email-already-in-use')) {
+      const k = cred || (credFromError ? credFromError(e) : null);
+      if (!k) throw authErr(e);
+      try { await au.signInWithCredential(auth, k); } catch (e2) { throw authErr(e2); }
+    } else throw authErr(e);
+  }
+  const u = auth.currentUser;
+  const switched = !!u && u.uid !== before;
+  if (switched) { ctx = null; initPromise = null; }   // uid-en byttet: ny init leser den nye (appen laster på nytt)
+  else await refreshToken();
+  return { switched, uid: u && u.uid };
+}
+// kind: 'google' | 'apple'. Popup via Firebase (authDomain handleliste-8f568.firebaseapp.com).
+async function linkProvider(kind) {
+  const c = await init();
+  const { au, auth } = c;
+  // Bare emulator og tester: falske token (emulatoren godtar usignerte JSON-token) i stedet for popup. Aldri i produksjon.
+  if (mode() === 'emulator' && window.KNAGGEN_TEST_LOGIN) {
+    const t = JSON.stringify(Object.assign({ email_verified: true }, window.KNAGGEN_TEST_LOGIN));
+    const cred = kind === 'apple' ? new au.OAuthProvider('apple.com').credential({ idToken: t, rawNonce: 'test' }) : au.GoogleAuthProvider.credential(t);
+    return linkCredential(cred);
+  }
+  let prov, fromErr;
+  if (kind === 'apple') { prov = new au.OAuthProvider('apple.com'); prov.addScope('email'); prov.addScope('name'); fromErr = e => au.OAuthProvider.credentialFromError(e); }
+  else { prov = new au.GoogleAuthProvider(); prov.setCustomParameters({ prompt: 'select_account' }); fromErr = e => au.GoogleAuthProvider.credentialFromError(e); }
+  return linkOrSwitch(() => au.linkWithPopup(auth.currentUser, prov), fromErr, null);
+}
+// Samme, men med ferdig legitimasjon (e-postlenke; i emulatoren også falske Google-/Apple-token i testene).
+async function linkCredential(cred) {
+  const c = await init();
+  return linkOrSwitch(() => c.au.linkWithCredential(c.auth.currentUser, cred), null, cred);
+}
+// E-postlenke (reserve): lenka åpnes i nettleseren som ba om den. continueUrl må være et godkjent domene i Firebase.
+async function sendEmailLink(email) {
+  const c = await init();
+  try {
+    await c.au.sendSignInLinkToEmail(c.auth, email, { url: location.origin + location.pathname + '?konto=epost', handleCodeInApp: true });
+  } catch (e) { throw authErr(e); }
+  try { localStorage.setItem(EMAIL_KEY, email); } catch (e) { /* ignorer */ }
+}
+async function isEmailLink(href) { const c = await init(); return c.au.isSignInWithEmailLink(c.auth, href); }
+function savedEmail() { try { return localStorage.getItem(EMAIL_KEY) || ''; } catch (e) { return ''; } }
+async function completeEmailLink(href, email) {
+  const c = await init();
+  const cred = c.au.EmailAuthProvider.credentialWithLink(email, href);
+  // Alltid innlogging med lenka (den kan bare brukes én gang, og med e-post-enumereringsvern kan vi ikke vite om kontoen finnes).
+  // Ny konto → ny uid, og kjent konto → kontoens uid: appen tar med seg husstand, enhet og gjøremål (adoptHousehold).
+  const r = await linkOrSwitch(() => c.au.signInWithCredential(c.auth, cred), null, null, true);
+  try { localStorage.removeItem(EMAIL_KEY); } catch (e) { /* ignorer */ }
+  return r;
+}
+// Etter et uid-bytte (ny uid = kontoen): meld den nye uid-en inn i enhetens husstand med den lokale hemmeligheten, ta over enheten
+// (navn/eier) og gjøremål tildelt den gamle uid-en, og fjern den gamle anonyme uid-ens medlemskap og enhet.
+// opts.pointer: skriv users/{uid}-pekeren (kontoen hadde ingen). Alt unntatt innmeldingen er «best effort».
+async function adoptHousehold(hid, secret, oldUid, opts) {
+  const c = await init(); const { fs, db } = c;
+  // rett etter innlogging kan Firestore et øyeblikk fortsatt bruke den gamle brukerens token (permission-denied): hent ferskt token og prøv igjen
+  try { await c.auth.currentUser.getIdToken(true); } catch (e) { /* ignorer */ }
+  for (let i = 0; ; i++) {
+    try { await joinHousehold(hid, secret); break; }
+    catch (e) { if (i >= 3 || !e || e.code !== 'permission-denied') throw e; await new Promise(r => setTimeout(r, 500)); }
+  }
+  const old = oldUid;
+  if (old && old !== c.uid) {
+    try {
+      const od = await withTimeout(fs.getDocFromServer(fs.doc(...hh(hid, 'devices', old))), 15000, 'no-server');
+      const nd = await withTimeout(fs.getDocFromServer(fs.doc(...hh(hid, 'devices', c.uid))), 15000, 'no-server');
+      if (od.exists() && !nd.exists()) await fs.setDoc(fs.doc(...hh(hid, 'devices', c.uid)), od.data());
+    } catch (e) { /* ignorer */ }
+    try {
+      const t = await withTimeout(fs.getDocsFromServer(fs.query(fs.collection(...hh(hid, 'tasks')), fs.where('tildelt', '==', old))), 15000, 'no-server');
+      for (let i = 0; i < t.docs.length; i += 400) { const b = fs.writeBatch(db); t.docs.slice(i, i + 400).forEach(d => b.update(d.ref, { tildelt: c.uid })); await b.commit(); }
+    } catch (e) { /* ignorer */ }
+  }
+  if (opts && opts.pointer) { try { await saveAccountHousehold(hid); } catch (e) { /* ignorer */ } }
+  if (old && old !== c.uid) { try { await W.removeDevice(hid, old); } catch (e) { /* ignorer */ } }
+}
+// users/{uid}: hvilken husstand kontoen hører til (skrives når kontoen er personlig og telefonen er med i husstanden)
+async function saveAccountHousehold(hid) {
+  const c = await init();
+  if (!isPersonalUser(c.auth.currentUser)) return false;
+  await c.fs.setDoc(c.fs.doc(c.db, 'users', c.uid), { hid, updated_at: c.fs.serverTimestamp() });
+  return true;
+}
+// Ny enhet etter innlogging: { hid, secret } hvis kontoen er medlem av en husstand, ellers null. Leser bare egne dokumenter.
+async function accountHousehold() {
+  const c = await init();
+  try {
+    const u = await withTimeout(c.fs.getDocFromServer(c.fs.doc(c.db, 'users', c.uid)), 15000, 'no-server');
+    if (!u.exists() || !u.data().hid) return null;
+    const hid = u.data().hid;
+    const m = await withTimeout(c.fs.getDocFromServer(c.fs.doc(...hh(hid, 'members', c.uid))), 15000, 'no-server');
+    if (!m.exists() || !m.data().secret) return null;
+    return { hid, secret: m.data().secret };
+  } catch (e) {
+    if (e && e.code === 'permission-denied') return null;
+    throw e;
+  }
+}
+async function forgetAccountHousehold() {
+  const c = await init();
+  try { await c.fs.deleteDoc(c.fs.doc(c.db, 'users', c.uid)); } catch (e) { /* ignorer */ }
+}
+// Logg ut av denne enheten (kontoen og husstanden berøres ikke). Etterpå lager neste oppstart en ny anonym bruker.
+async function signOutAccount() {
+  const c = await init();
+  await c.au.signOut(c.auth);
+  ctx = null; initPromise = null;
+}
+// 0.20.0: «Slett kontoen min». Egne private lister (+ varer) og users-pekeren slettes, enheten forlater husstanden, så slettes Auth-brukeren.
+// Delte «hele husstanden»-lister og gjøremål blir i husstanden. Krever nylig innlogging: Google/Apple spør på nytt (popup),
+// e-post må logge ut og inn igjen (feilkode 'konto/ny-innlogging'). Reautentiseringen skjer FØR noe slettes.
+async function reauthIfNeeded(force) {
+  const c = await init(); const { au, auth } = c; const u = auth.currentUser;
+  if (!u) throw new Error('no-user');
+  let fresh = false;
+  if (force || (mode() === 'emulator' && window.KNAGGEN_TEST_REAUTH)) { /* gammel innlogging */ } else try { const t = await u.getIdTokenResult(); fresh = Date.now() - (Number(t.claims.auth_time) * 1000) < 4 * 60 * 1000; } catch (e) { /* regn som gammel */ }
+  if (fresh) return;
+  const pd = u.providerData || [];
+  const g = pd.find(p => p.providerId === 'google.com'), ap = pd.find(p => p.providerId === 'apple.com');
+  if (mode() === 'emulator' && window.KNAGGEN_TEST_LOGIN && (g || ap)) {
+    const t = JSON.stringify(Object.assign({ email_verified: true }, window.KNAGGEN_TEST_LOGIN));
+    const cred = ap ? new au.OAuthProvider('apple.com').credential({ idToken: t, rawNonce: 'test' }) : au.GoogleAuthProvider.credential(t);
+    try { await au.reauthenticateWithCredential(u, cred); } catch (e) { throw authErr(e); }
+    return;
+  }
+  if (g || ap) {
+    let prov;
+    if (ap) { prov = new au.OAuthProvider('apple.com'); prov.addScope('email'); }
+    else { prov = new au.GoogleAuthProvider(); prov.setCustomParameters({ prompt: 'select_account' }); }
+    try { await au.reauthenticateWithPopup(u, prov); } catch (e) { throw authErr(e); }
+    return;
+  }
+  const er = new Error('konto/ny-innlogging'); er.code = 'konto/ny-innlogging'; throw er;
+}
+// Bare PRIVATE lister (deling 'valgte' og eieren er eneste i synligFor) med varer. Lister delt med andre blir igjen hos dem.
+async function deleteMyLists(hid) {
+  const c = await init(); const { fs } = c;
+  const refs = [];
+  const snap = await withTimeout(fs.getDocsFromServer(fs.query(fs.collection(...hh(hid, 'flister')), fs.where('synligFor', 'array-contains', c.uid))), 20000, 'no-server');
+  for (const d of snap.docs) {
+    const x = d.data(), sf = x.synligFor || [];
+    if (x.eier !== c.uid || x.deling !== 'valgte' || sf.length !== 1 || sf[0] !== c.uid) continue;
+    (await withTimeout(fs.getDocsFromServer(fs.collection(...hh(hid, 'flister', d.id, 'varer'))), 20000, 'no-server')).forEach(v => refs.push(v.ref));
+    refs.push(d.ref);
+  }
+  for (let i = 0; i < refs.length; i += 400) { const b = fs.writeBatch(c.db); refs.slice(i, i + 400).forEach(r => b.delete(r)); await b.commit(); }
+}
+// Gjøremål tildelt meg blir ufordelt (en slettet person kan ikke stå som tildelt: reglene krever at tildelt er medlem)
+async function unassignMyTasks(hid) {
+  const c = await init(); const { fs } = c;
+  const snap = await withTimeout(fs.getDocsFromServer(fs.query(fs.collection(...hh(hid, 'tasks')), fs.where('tildelt', '==', c.uid))), 20000, 'no-server');
+  for (let i = 0; i < snap.docs.length; i += 400) { const b = fs.writeBatch(c.db); snap.docs.slice(i, i + 400).forEach(d => b.update(d.ref, { tildelt: null })); await b.commit(); }
+}
+// Slett kontoen: reautentisering først (før noe er slettet). Er jeg siste medlem, slettes hele husstanden (ellers ville data blitt
+// liggende uten at noen kan lese dem). Ellers: private lister bort, mine gjøremål ufordelt, enhet og medlemskap bort.
+// Hele tiden er joinHousehold stengt, så ingenting kan melde meg inn igjen (ingen spøkelsesmedlemmer).
+async function deleteAccount(hid) {
+  await reauthIfNeeded();
+  const c = await init();
+  closing = true;
+  try {
+    if (hid) {
+      let solo = false;
+      try { const m = await withTimeout(c.fs.getDocsFromServer(c.fs.collection(...hh(hid, 'members'))), 20000, 'no-server'); solo = m.size === 1 && m.docs[0].id === c.uid; } catch (e) { if (!(e && e.code === 'permission-denied')) throw e; }
+      if (solo) await deleteHousehold(hid);
+      else {
+        try { await deleteMyLists(hid); await unassignMyTasks(hid); } catch (e) { if (!(e && e.code === 'permission-denied')) throw e; }   // reglene ikke publisert: ingenting å rydde
+        try { await c.fs.deleteDoc(c.fs.doc(...hh(hid, 'devices', c.uid))); } catch (e) { /* ignorer */ }
+        await c.fs.deleteDoc(c.fs.doc(...hh(hid, 'members', c.uid)));
+      }
+    }
+    try { await c.fs.deleteDoc(c.fs.doc(c.db, 'users', c.uid)); } catch (e) { /* ignorer */ }
+    await c.fs.waitForPendingWrites(c.db).catch(() => {});
+    try { await c.au.deleteUser(c.auth.currentUser); } catch (e) {
+      if (e && e.code === 'auth/requires-recent-login') {   // innloggingen ble for gammel underveis: spør på nytt og prøv én gang til
+        await reauthIfNeeded(true);
+        try { await c.au.deleteUser(c.auth.currentUser); } catch (e2) { throw authErr(e2); }
+      } else throw authErr(e);
+    }
+  } catch (e) { closing = false; throw e; }
+  closing = false; ctx = null; initPromise = null;   // neste init lager en ny anonym bruker
+}
+function onAuthChange(cb) { return ctx ? ctx.au.onAuthStateChanged(ctx.auth, cb) : () => {}; }
+
+/* ---------- v0.20: delte gjøremål (tasks) og private/delte lister (flister + varer) ---------- */
+// Lytter på gjøremål, listene jeg ser (egne + utvalgte: array-contains uid, hele husstanden: deling == 'alle') og varene i dem.
+// handlers: tasks(docs), lists(docs), varer(lid, docs|null), error(err, navn)
+function subscribeGj(hid, handlers) {
+  const { fs, db, uid } = ctx;
+  const unsubs = [], vUn = {}, lists = { mine: [], alle: [] };
+  const onErr = name => err => { handlers.error && handlers.error(err, name); };
+  function merged() {
+    const m = {};
+    lists.alle.concat(lists.mine).forEach(d => { m[d.id] = d; });
+    return Object.keys(m).map(k => m[k]);
+  }
+  const tries = {};
+  function pushLists() {
+    const all = merged(), ids = {};
+    all.forEach(d => { ids[d.id] = true; });
+    all.forEach(d => {
+      // En liste som ennå ikke er bekreftet av serveren kan ikke leses av varer-regelen (get() på forelderen): vent til den er lagret.
+      if (vUn[d.id] || d._pending) return;
+      vUn[d.id] = fs.onSnapshot(fs.collection(...hh(hid, 'flister', d.id, 'varer')), snap => {
+        handlers.varer && handlers.varer(d.id, snap.docs.map(x => Object.assign({ id: x.id }, x.data())), snap.metadata);
+      }, err => {
+        delete vUn[d.id];
+        tries[d.id] = (tries[d.id] || 0) + 1;
+        if (tries[d.id] <= 3) setTimeout(pushLists, 1200 * tries[d.id]);   // forbigående (lista nettopp laget/delt): prøv igjen
+        else handlers.error && handlers.error(err, 'varer');
+      });
+    });
+    Object.keys(vUn).forEach(k => { if (!ids[k]) { vUn[k](); delete vUn[k]; handlers.varer && handlers.varer(k, null); } });
+    handlers.lists && handlers.lists(all);
+  }
+  unsubs.push(fs.onSnapshot(fs.collection(...hh(hid, 'tasks')), { includeMetadataChanges: true }, snap => {   // metadata: «fra serveren» må komme (persistent cache gir først en cache-visning)
+    handlers.tasks && handlers.tasks(snap.docs.map(d => Object.assign({ id: d.id }, d.data())), snap.metadata);
+  }, onErr('tasks')));
+  unsubs.push(fs.onSnapshot(fs.query(fs.collection(...hh(hid, 'flister')), fs.where('synligFor', 'array-contains', uid)), { includeMetadataChanges: true }, snap => {
+    lists.mine = snap.docs.map(d => Object.assign({ id: d.id, _pending: d.metadata.hasPendingWrites }, d.data())); pushLists();
+  }, onErr('flister')));
+  unsubs.push(fs.onSnapshot(fs.query(fs.collection(...hh(hid, 'flister')), fs.where('deling', '==', 'alle')), { includeMetadataChanges: true }, snap => {
+    lists.alle = snap.docs.map(d => Object.assign({ id: d.id, _pending: d.metadata.hasPendingWrites }, d.data())); pushLists();
+  }, onErr('flister')));
+  return () => { unsubs.forEach(u => u()); Object.keys(vUn).forEach(k => vUn[k]()); };
+}
+const taskDoc = (t, uid) => {
+  const o = { tittel: String(t.tittel).slice(0, 200), ferdig: !!t.ferdig, tildelt: t.tildelt || null, skapt_av: t.skapt_av || uid, endret: Date.now() };
+  o.opprettet = t.opprettet || Date.now();
+  return o;
+};
+const listDoc = (l, uid) => {
+  const o = { navn: String(l.navn).slice(0, 60), eier: l.eier || uid, deling: l.deling === 'alle' ? 'alle' : 'valgte', opprettet: l.opprettet || Date.now(), endret: Date.now() };
+  if (o.deling === 'valgte') {
+    const set = []; (l.synligFor || []).concat([o.eier]).forEach(x => { if (x && set.indexOf(x) < 0) set.push(x); });
+    o.synligFor = set.slice(0, 9);
+    if (o.synligFor.indexOf(o.eier) < 0) o.synligFor[0] = o.eier;
+  }
+  return o;
+};
+const vareDoc = (v) => {
+  const o = { tekst: String(v.tekst).slice(0, 200), ferdig: !!v.ferdig, endret: Date.now(), opprettet: v.opprettet || Date.now() };
+  if (v.merknad) o.merknad = String(v.merknad).slice(0, 500);
+  if (typeof v.rekkefolge === 'number') o.rekkefolge = v.rekkefolge;
+  return o;
+};
+const G = {
+  setTask: (hid, t) => ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'tasks', t.id)), taskDoc(t, ctx.uid)),
+  setTasks: (hid, arr) => { const b = ctx.fs.writeBatch(ctx.db); arr.forEach(t => b.set(ctx.fs.doc(...hh(hid, 'tasks', t.id)), taskDoc(t, ctx.uid))); return b.commit(); },
+  deleteTask: (hid, id) => ctx.fs.deleteDoc(ctx.fs.doc(...hh(hid, 'tasks', id))),
+  deleteTasks: (hid, ids) => { const b = ctx.fs.writeBatch(ctx.db); ids.forEach(id => b.delete(ctx.fs.doc(...hh(hid, 'tasks', id)))); return b.commit(); },
+  setList: (hid, l) => ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'flister', l.id)), listDoc(l, ctx.uid)),
+  // Eierens endring av navn og deling. deleField på synligFor når den blir «hele husstanden».
+  updateList: (hid, id, f) => {
+    const o = { endret: Date.now() };
+    if (f.navn != null) o.navn = String(f.navn).slice(0, 60);
+    if (f.deling === 'alle') { o.deling = 'alle'; o.synligFor = ctx.fs.deleteField(); }
+    else if (f.deling === 'valgte') { o.deling = 'valgte'; o.synligFor = listDoc({ navn: 'x', eier: ctx.uid, deling: 'valgte', synligFor: f.synligFor }, ctx.uid).synligFor; }
+    return ctx.fs.updateDoc(ctx.fs.doc(...hh(hid, 'flister', id)), o);
+  },
+  // «Forlat lista»: bare egen uid fjernes fra synligFor (reglene tillater ingenting annet)
+  leaveList: (hid, id, current) => ctx.fs.updateDoc(ctx.fs.doc(...hh(hid, 'flister', id)), { synligFor: (current || []).filter(x => x !== ctx.uid) }),
+  // Slett lista: varene og lista i samme batch (reglene slår opp lista mens den fortsatt finnes)
+  deleteList: (hid, id, vareIds) => {
+    const b = ctx.fs.writeBatch(ctx.db);
+    (vareIds || []).forEach(v => b.delete(ctx.fs.doc(...hh(hid, 'flister', id, 'varer', v))));
+    b.delete(ctx.fs.doc(...hh(hid, 'flister', id)));
+    return b.commit();
+  },
+  setVare: (hid, lid, v) => ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'flister', lid, 'varer', v.id)), vareDoc(v)),
+  deleteVare: (hid, lid, vid) => ctx.fs.deleteDoc(ctx.fs.doc(...hh(hid, 'flister', lid, 'varer', vid))),
+  deleteVarer: (hid, lid, ids) => { const b = ctx.fs.writeBatch(ctx.db); ids.forEach(id => b.delete(ctx.fs.doc(...hh(hid, 'flister', lid, 'varer', id)))); return b.commit(); }
+};
+// «Slett husstanden»: egne lister (med varer) og alle gjøremål ryddes bort. Andres private lister kan ikke leses her og blir liggende (uleselige).
+async function gjDeleteAll(hid) {
+  const c = await init();
+  const { fs, db } = c;
+  const refs = [];
+  try { (await withTimeout(fs.getDocsFromServer(fs.collection(...hh(hid, 'tasks'))), 20000, 'no-server')).forEach(d => refs.push(d.ref)); } catch (e) { if (!(e && e.code === 'permission-denied')) throw e; }
+  for (const q of [fs.query(fs.collection(...hh(hid, 'flister')), fs.where('synligFor', 'array-contains', c.uid)), fs.query(fs.collection(...hh(hid, 'flister')), fs.where('deling', '==', 'alle'))]) {
+    let snap; try { snap = await withTimeout(fs.getDocsFromServer(q), 20000, 'no-server'); } catch (e) { if (e && e.code === 'permission-denied') continue; throw e; }
+    for (const d of snap.docs) {
+      if (d.data().eier !== c.uid) continue;   // bare eieren kan slette lista
+      try { (await withTimeout(fs.getDocsFromServer(fs.collection(...hh(hid, 'flister', d.id, 'varer'))), 20000, 'no-server')).forEach(v => refs.push(v.ref)); } catch (e) { /* ignorer */ }
+      refs.push(d.ref);
+    }
+  }
+  for (let i = 0; i < refs.length; i += 450) {
+    const b = fs.writeBatch(db);
+    refs.slice(i, i + 450).forEach(r => b.delete(r));
+    await withTimeout(b.commit(), 30000, 'no-server');
+  }
+}
+
 window.UkeshandelSync = { fetchRecipe, makeShareList, deleteShareLists, fetchWeather, calendar, mode, init, randomCode, createHousehold, joinHousehold, isMember, subscribe, write: W, uid: () => ctx && ctx.uid,
-  inviteCode, createInvite, getInvite, leaveHousehold, deleteHousehold, stillMember, myDeviceExists };
+  inviteCode, createInvite, getInvite, leaveHousehold, deleteHousehold, stillMember, myDeviceExists,
+  // v0.20
+  accountInfo, linkProvider, linkCredential, sendEmailLink, isEmailLink, savedEmail, completeEmailLink, adoptHousehold, saveAccountHousehold, accountHousehold,
+  forgetAccountHousehold, signOutAccount, deleteAccount, onAuthChange, subscribeGj, gj: G, gjDeleteAll };
 window.dispatchEvent(new Event('ukeshandel-sync-ready'));
