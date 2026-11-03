@@ -1,0 +1,35 @@
+/* Dashbord (0.21.0): bruker appens farger og skrift fra style.css/palett.css. */
+body.dash { padding: 0; min-height: 100vh; }
+.dash-main { max-width: 760px; margin: 0 auto; padding: 16px 16px calc(32px + env(safe-area-inset-bottom, 0px)); }
+.dash-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.dash-top h1 { font-size: 1.25rem; margin: 0; }
+.dash-kort { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin: 0 0 14px; }
+.dash-kort h2 { margin: 0 0 8px; font-size: 1.05rem; }
+.dash-tall { font-size: 3rem; font-weight: 700; line-height: 1.1; color: var(--brand); font-variant-numeric: tabular-nums; }
+.dash-under, .dash-note, .dash-hvem { color: var(--muted); font-size: .9rem; margin: 6px 0; }
+.dash-feil { color: var(--danger); margin: 10px 0 0; }
+.dash-rad { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.dash-rad .btn.on { background: var(--brand-soft); border-color: var(--brand); color: var(--ink); }
+.dash a.btn { display: inline-flex; align-items: center; text-decoration: none; }
+.dash-graf { width: 100%; overflow-x: auto; }
+.dash-graf svg { width: 100%; height: auto; display: block; }
+.dash-graf .sk { fill: var(--brand); }
+.dash-graf .lin { fill: none; stroke: var(--accent-ink); stroke-width: 2; }
+.dash-graf text { fill: var(--muted); font-size: 11px; font-family: inherit; }
+.dash-graf .rutenett { stroke: var(--line); stroke-width: 1; }
+.dash-tre { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 6px 0 4px; }
+.dash-tre .dash-tall { font-size: 2.2rem; }
+.dash-etikett { color: var(--muted); font-size: .85rem; }
+.dash-sted { margin: 6px 0; }
+.dash-sted .fylkerad { display: grid; grid-template-columns: minmax(7.5rem, 11rem) 1fr auto; align-items: center; gap: 8px; padding: 3px 0; font-size: .95rem; }
+.dash-sted .stolpe { height: 10px; border-radius: 5px; background: var(--brand-soft); overflow: hidden; }
+.dash-sted .stolpe > i { display: block; height: 100%; background: var(--brand); }
+.dash-sted .tall { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.dash-advarsel { margin: 0 0 12px; }
+.dash-obs, .dash-merk { border-radius: var(--radius, 12px); padding: 10px 14px; margin: 0 0 8px; color: var(--ink); background: var(--card); }
+.dash-obs { border: 1px solid var(--danger); }
+.dash-obs b { color: var(--danger); }
+.dash-merk { border: 1px solid var(--line); }
+.dash-merk b { color: var(--muted); }
+.dash-advarsel ul { margin: 6px 0 0; padding-left: 1.2em; }

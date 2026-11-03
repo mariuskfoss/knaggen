@@ -6,6 +6,14 @@ Ukeplan for middager + handleliste for én husstand. Ren statisk side (HTML/CSS/
 Fra v0.2 deles dataene i husstanden via Firebase (Firestore + anonym innlogging, SDK lastes som ES-moduler fra gstatic).
 Uten husstand (eller uten Firebase-oppsett) lagres alt lokalt i nettleseren som før (`localStorage`, nøkkel `ukeshandel:v1`).
 
+## v0.21.0 «Dashbord»
+- Ingen Google Analytics og ingen samtykkespørsmål. Alt er egne, anonyme tellere i Firebase, uten tredjepart.
+- Husstandsteller: `stats/husstander` (`antall`, `per_dag`, `oppdatert`), +1 etter at en ny husstand er laget (`sync.js` `countNewHousehold`). Krever regelforslaget `REGELFORSLAG-v0210-teller.md` (Marius har sagt ja; ikke publisert).
+- Aktive husstander: én gang per døgn (UTC) melder appen at husstanden er i bruk (`sync.js` `reportActive`, `app.js` `maybeReportActive`). Tall per dag i `statsdag/{dato}` = `{ idag, sist, sted: { fylkesnummer: n }, oppdatert }`, uten id; husstandens eget `settings/aktiv = { dag, sted }` hindrer dobbelttelling. Telles på nytt når UTC-datoen har skiftet: ved nye serverdata, når siden blir synlig igjen (`visibilitychange`), når nettet kommer tilbake (`online`) og hver time; mislykket sending prøves tidligst etter 30 min (alltid ved `online`). Fylke kan ikke rettes samme dag (reglene tillater bare +1 på `idag`, `sist` og ett fylke), så de første 3 minuttene i økten venter appen på stedet (hjemmeadresse/kjøkken) før en husstand uten sted telles som `00`. Siste medlem som trykker «Forlat» sletter `settings/aktiv` først (`leaveHousehold(hid, { last })`); «Slett husstanden» rydder den som før. Mens meldingen sendes, er Firestore-SDK-ens advarsler av, så husstands-id-en ikke havner i konsollen når reglene ikke er publisert. Krever regelforslaget `REGELFORSLAG-v0210-aktive-sted.md` (egen, ikke publisert). Husstand → Personvern lenker til knaggen.no/personvern. Dashbordet viser en advarsel når tallene ikke henger sammen (aktive > laget, negative tall, «sist» > «idag», fylker som ikke summerer, enkeltdag med mange ganger flere enn resten).
+- Fylket regnes ut på telefonen av `sted.js` (innebygd, forenklet tabell fra Kartverkets fylkesgrenser, CC BY 4.0) fra hjemmeadressen, ellers kjøkkenets sted, ellers stedet for været på telefonen. Ingen nettoppslag, ingen IP, koordinater lagres og logges aldri.
+- `dashbord.html` (+ `.js`, `.css`): Google-innlogging, viser husstander laget, aktive i dag / 7 / 30 dager og fordeling på fylke. Leser bare `stats/husstander` og `statsdag`, aldri husstandsdokumenter. Bare e-poster med `statsadmin/{e-post}` får tilgang. Oppsett i `DASHBORD-OPPSETT.md`.
+- Tester: `tests/e2e-v0210.js` (T teller, A aktivitet, D dashbord, P personvern, V versjon), `tests/rules-teller.test.mjs`, `tests/rules-aktive.test.mjs`, `tests/sted.test.mjs`.
+
 ## Kjøre lokalt
 
 ```sh

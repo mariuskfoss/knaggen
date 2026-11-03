@@ -171,6 +171,7 @@ async function createHousehold(local, existing) {
     b.set(fs.doc(...hh(hid, 'members', c.uid)), { secret, joined_at: fs.serverTimestamp() });
     if (local.onCore) local.onCore({ hid, secret });
     await withTimeout(b.commit(), 20000, 'no-server');
+    countNewHousehold(c);   // 0.21.0: anonym teller (bare en ny husstand; aldri awaited, feil ignoreres)
   }
   if (local.onCoreDone) local.onCoreDone({ hid, secret });
   // Data i biter (maks 500 skriv per batch)
@@ -208,6 +209,49 @@ async function createHousehold(local, existing) {
     await withTimeout(b.commit(), 30000, 'no-server');
   }
   return { hid, secret };
+}
+
+// 0.21.0: anonym husstandsteller til dashbordet: stats/husstander { antall, per_dag, oppdatert } får +1 (og +1 på dagens UTC-dato).
+// Sendes ETTER at husstanden er laget, ikke i samme batch: feiler det (regler ikke publisert, frakoblet, feil dato på telefonen),
+// påvirker det ikke husstanden. Ingen id-er, navn eller innhold skrives. Tellingen er upresis ved feil: den er til å se utviklingen.
+function countNewHousehold(c) {
+  try {
+    const fs = c.fs, d = new Date().toISOString().slice(0, 10);
+    withTimeout(fs.setDoc(fs.doc(c.db, 'stats', 'husstander'), { antall: fs.increment(1), per_dag: { [d]: fs.increment(1) }, oppdatert: fs.serverTimestamp() }, { merge: true }), 15000, 'no-server').catch(() => { /* ignorer */ });
+  } catch (e) { /* ignorer */ }
+}
+
+// 0.21.0: anonym aktivitet. Husstanden melder «sett i dag» høyst én gang per døgn (UTC-dato): husstandens eget dokument settings/aktiv { dag, sted }
+// husker forrige dag og fylke, så telleren kan flytte husstanden fra gammel dag til i dag (tall per «sist sett»-dag) uten at noen id eller koordinat
+// havner i statistikken. statsdag/{dato} = { idag, sist, sted: { fylkesnummer: n }, oppdatert }. Alt skjer i én transaksjon (alt eller ingenting).
+// Feiler det (regler ikke publisert, frakoblet, feil klokke), skjer ingenting og appen merker det ikke. Aldri logg av sted eller koordinater.
+const STED_KODER = ['00', '03', '11', '15', '18', '31', '32', '33', '34', '39', '40', '42', '46', '50', '55', '56', 'ut'];
+const dagDiff = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 864e5);
+async function reportActive(hid, sted, dag) {
+  if (!/^\d{4}-\d\d-\d\d$/.test(dag || '') || STED_KODER.indexOf(sted) < 0) return false;
+  const c = await init(), fs = c.fs, db = c.db;
+  const me = fs.doc(...hh(hid, 'settings', 'aktiv'));
+  // Vanlige brukere kan ikke lese statistikken, så den gamle dagen minskes uten å leses først. Går det galt (dokumentet er slettet for hånd),
+  // prøves det én gang til uten å minske, så husstanden aldri blir sittende fast.
+  const forsok = (medMinus) => withTimeout(fs.runTransaction(db, async tx => {
+    const s = await tx.get(me), o = s.exists() ? s.data() : null;
+    if (o && typeof o.dag === 'string' && o.dag >= dag) return o.dag === dag;   // allerede meldt i dag (eller klokka går feil)
+    const ok = o && /^\d{4}-\d\d-\d\d$/.test(o.dag || '') && STED_KODER.indexOf(o.sted) >= 0 && dagDiff(o.dag, dag) <= 35;
+    const k = sted === '00' && o && STED_KODER.indexOf(o.sted) > 0 ? o.sted : sted;   // et kjent fylke nedgraderes ikke til «ukjent»
+    const na = fs.serverTimestamp();
+    tx.set(me, { dag, sted: k });
+    tx.set(fs.doc(db, 'statsdag', dag), { idag: fs.increment(1), sist: fs.increment(1), sted: { [k]: fs.increment(1) }, oppdatert: na }, { merge: true });
+    if (ok && medMinus) tx.update(fs.doc(db, 'statsdag', o.dag), { sist: fs.increment(-1), ['sted.' + o.sted]: fs.increment(-1), oppdatert: na });
+    return true;
+  }), 20000, 'no-server').then(r => r === true);
+  // SDK-en logger mislykkede commits som advarsel med dokumentstien (households/<id>/settings/aktiv). Husstands-id-en skal ikke stå i konsollen
+  // når reglene ikke er publisert, så SDK-ens advarsler (ikke feil) er av mens denne ene meldingen sendes.
+  const lyd = lv => { try { fs.setLogLevel(lv); } catch (e) { /* ignorer */ } };
+  lyd('error');
+  try {
+    try { return await forsok(true); } catch (e) { /* prøv uten å minske */ }
+    try { return await forsok(false); } catch (e) { return false; }
+  } finally { lyd('warn'); }
 }
 
 // v0.10: fortsatt medlem ifølge serveren? (false også når husstanden er slettet og lesingen nektes)
@@ -377,7 +421,10 @@ const W = {
 
 /* ---------- v0.10: Forlat og Slett husstanden ---------- */
 // Forlat: sletter bare eget medlemskap (tillatt også med v0.9-reglene). Køes frakoblet.
-function leaveHousehold(hid) {
+function leaveHousehold(hid, opts) {
+  // 0.21.0: siste medlem som forlater husstanden tar med «sist sett»-markøren (dato + fylke); medlemskapet slettes rett etterpå.
+  // Egen skriving: nektes den (regler ikke publisert), skjer ingenting og Forlat går videre som før.
+  if (opts && opts.last) ctx.fs.deleteDoc(ctx.fs.doc(...hh(hid, 'settings', 'aktiv'))).catch(() => {});
   // v0.17: eget enhetsdokument først (egen uid er alltid lov); feiler det (eldre regler), går Forlat videre
   ctx.fs.deleteDoc(ctx.fs.doc(...hh(hid, 'devices', ctx.uid))).catch(() => {});
   // v0.20: kontoens peker slettes bare hvis den peker på husstanden man forlater (aldri ved bytte til kontoens husstand)
@@ -898,7 +945,7 @@ async function gjDeleteAll(hid) {
   }
 }
 
-window.UkeshandelSync = { fetchRecipe, makeShareList, deleteShareLists, fetchWeather, calendar, mode, init, randomCode, createHousehold, joinHousehold, isMember, subscribe, write: W, uid: () => ctx && ctx.uid,
+window.UkeshandelSync = { fetchRecipe, makeShareList, deleteShareLists, fetchWeather, calendar, mode, init, randomCode, createHousehold, reportActive, joinHousehold, isMember, subscribe, write: W, uid: () => ctx && ctx.uid,
   inviteCode, createInvite, getInvite, leaveHousehold, deleteHousehold, stillMember, myDeviceExists,
   // v0.20
   accountInfo, linkProvider, linkCredential, sendEmailLink, isEmailLink, savedEmail, completeEmailLink, adoptHousehold, saveAccountHousehold, accountHousehold,

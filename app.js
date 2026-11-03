@@ -6662,6 +6662,7 @@
     if (K17.hjem || !(meta && meta.fromCache)) K17.hjemSeen = true;   // 0.18.13: adressen finnes, eller serveren har svart at den ikke finnes
     // hjemme-v5: adresse lagt inn i oppsettet før telefonen var med i en husstand → deles når husstanden ikke har en
     if (meta && !meta.fromCache && hh && Sync) { var pend5 = v5PendingHome(); if (pend5) { lsDel(V5_HOME_KEY); if (!K17.hjem) { K17.hjem = pend5; Sync.write.setHome(hh.hid, pend5).catch(function () { }); } } }
+    if (meta && !meta.fromCache && hh) setTimeout(maybeReportActive, 4000);   // 0.21.0: anonym aktivitet, maks én gang per døgn
     // Migrering (spec §9): første skjerm med lokalt oppsett kopierer holdeplassene til husstanden hvis feltet er tomt.
     if (meta && !meta.fromCache && hh && !K17.kitchenSeen) {
       K17.kitchenSeen = true;
@@ -6858,6 +6859,89 @@
     });
   }
   function closeKindPanel() { var pn = document.getElementById('k188-ny'); if (pn) pn.parentNode.removeChild(pn); }
+  /* ---------- 0.21.0: anonym aktivitet («sist sett») ----------
+   * Én gang per døgn (UTC-dato) og husstand sender appen at husstanden er i bruk, og i hvilket fylke den omtrent er. Det går inn i tellere
+   * (statsdag/{dato}): ingen husstands-id, ingen navn, ingen koordinater, ingen IP-adresse, ingen tredjepart. Fylket regnes ut LOKALT på telefonen
+   * (sted.js, innebygd tabell) fra stedet husstanden allerede har lagt inn: hjemmeadressen, ellers kjøkkenets søkepunkt, ellers stedet for
+   * været på denne skjermen (aldri standardstedet Oslo sentrum). Koordinatene forlater ikke telefonen i denne sammenhengen og logges aldri.
+   * Dobbelttelling hindres av to ting: en lokal «sist rapportert»-dato på telefonen og husstandens eget dokument settings/aktiv {dag, sted}. */
+  var PERSONVERN_URL = 'https://knaggen.no/personvern';
+  var aktBusy = false, aktNext = 0, aktGraceT = 0, AKT_START = Date.now(), AKT_GRACE = window.KNAGGEN_AKT_GRACE != null ? +window.KNAGGEN_AKT_GRACE : 180000;
+  function aktDag() { return new Date().toISOString().slice(0, 10); }
+  function aktKey() { return hh ? 'knaggen:aktiv:' + hh.hid : null; }
+  function aktPunkt() {
+    var c = [K17.hjem, K17.kitchen && K17.kitchen.lat != null ? K17.kitchen : null, lsGetJson('knaggen:kjokken')];
+    for (var i = 0; i < c.length; i++) {
+      var x = c[i];
+      if (!x || x.lat == null || x.lon == null || !isFinite(x.lat) || !isFinite(x.lon)) continue;
+      if (Math.abs(+x.lat - 59.91) < 1e-6 && Math.abs(+x.lon - 10.75) < 1e-6) continue;   // standardstedet i kjøkkenoppsettet = ikke valgt
+      return { lat: +x.lat, lon: +x.lon };
+    }
+    return null;
+  }
+  function lsGetJson(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }
+  function aktSted(cb) {
+    var p = aktPunkt();
+    if (!p) return cb('00');
+    function ut() { try { cb(window.KnaggenSted.fylke(p.lat, p.lon)); } catch (e) { cb('00'); } }
+    if (window.KnaggenSted) return ut();
+    var sc = document.createElement('script'); sc.src = 'sted.js?v=0.21.0'; sc.onload = ut; sc.onerror = function () { cb('00'); };
+    document.head.appendChild(sc);
+  }
+  // Telles på nytt når UTC-datoen har skiftet: ved nye serverdata, når siden blir synlig igjen, når nettet kommer tilbake og hver time.
+  // aktBusy hindrer to sendinger samtidig. Mislykket sending (f.eks. reglene er ikke publisert) prøves igjen tidligst etter 30 min, men alltid når nettet kommer tilbake.
+  // Ventetid på sted, summert over økter: tiden appen har vært åpen i dag (UTC) for denne husstanden ligger i localStorage (bare dato og millisekunder, ingen id-er
+  // utover husstandsnøkkelen som allerede brukes for «sist rapportert»). Da telles også husstander uten sted som bare åpner appen kort (flere økter på under 3 minutter).
+  var aktSess = null, AKT_VKEY = 'knaggen:aktvent:';
+  function aktVentet() {
+    var d = aktDag(), k = hh ? AKT_VKEY + hh.hid : null;
+    if (!k) return 0;
+    if (!aktSess || aktSess.k !== k || aktSess.dag !== d) {
+      var o = lsGetJson(k);
+      aktSess = { k: k, dag: d, start: Date.now(), base: o && o.dag === d && isFinite(+o.ms) ? Math.max(0, +o.ms) : 0 };
+    }
+    return aktSess.base + (Date.now() - aktSess.start);
+  }
+  function aktLagreVent() {
+    if (!hh || !aktKey() || lsGet(aktKey()) === aktDag() || AKT_GRACE <= 0) return;
+    var ms = aktVentet();
+    if (ms < AKT_GRACE + 60000) lsSet(AKT_VKEY + hh.hid, JSON.stringify({ dag: aktDag(), ms: Math.round(ms) }));   // ingen vits i å telle forbi grensen
+  }
+  // Etter at en husstand er talt som forlatt av siste medlem samme dag (Start på nytt / Ta med til ny husstand), telles ikke den nye husstanden på nytt samme dag:
+  // det er samme familie. (Uten regelendring kan ikke gårsdagens tall rettes, så dette er en lokal markør på telefonen: bare datoen.)
+  var AKT_IGJEN = 'knaggen:aktiv-igjen';
+  function aktMerkForlatt(hid) { if (hid && lsGet('knaggen:aktiv:' + hid) === aktDag()) lsSet(AKT_IGJEN, aktDag()); }
+  function maybeReportActive(force) {
+    if (aktBusy || !hh || !Sync || !Sync.reportActive || NEW_HOME || navigator.onLine === false) return;
+    if (!force && Date.now() < aktNext) return;
+    var key = aktKey(), dag = aktDag(), hid = hh.hid;
+    if (!key || lsGet(key) === dag) return;
+    if (lsGet(AKT_IGJEN) === dag) { lsSet(key, dag); return; }   // samme familie har allerede vært talt i dag
+    aktBusy = true;
+    aktSted(function (sted) {
+      // Stedet er ofte ikke lagt inn ennå når husstanden er ny. Sted kan ikke rettes samme dag, så de første minuttene (summert over økter) venter vi på det.
+      // Ved slutten av døgnet (30 s før UTC-midnatt) telles husstanden uten sted i stedet for aldri.
+      var rest = AKT_GRACE - aktVentet();
+      if (sted === '00' && rest > 0 && force !== 'sen') {
+        var tilMidnatt = 864e5 - (Date.now() % 864e5);
+        aktBusy = false; clearTimeout(aktGraceT);
+        aktLagreVent();
+        aktGraceT = setTimeout(function () { maybeReportActive('sen'); }, Math.min(rest, Math.max(tilMidnatt - 30000, 1000)) + 500);
+        return;
+      }
+      Sync.reportActive(hid, sted, dag).then(function (ok) {
+        aktBusy = false;
+        if (ok) { lsSet(key, dag); lsDel(AKT_VKEY + hid); } else aktNext = Date.now() + 30 * 60000;
+      }, function () { aktBusy = false; aktNext = Date.now() + 30 * 60000; });
+    });
+  }
+  // Ventetiden lagres jevnlig og når siden skjules eller lukkes, så korte økter summeres
+  setInterval(aktLagreVent, 15000);
+  window.addEventListener('pagehide', aktLagreVent);
+  document.addEventListener('visibilitychange', function () { if (document.hidden) aktLagreVent(); });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) setTimeout(maybeReportActive, 1500); });
+  window.addEventListener('online', function () { setTimeout(function () { maybeReportActive(true); }, 2500); });
+  setInterval(maybeReportActive, 3600000);
   function answerKind(v) {
     var ni = document.getElementById('k17-hva-navn'), oi = document.getElementById('k17-hva-eier');
     var nm = ni ? ni.value.trim().slice(0, 40) : '', ow = oi ? oi.value.trim().slice(0, 40) : '';
@@ -6972,6 +7056,8 @@
       (envInfo.phone && !isStandalone() ? '<button type="button" class="k17-row" data-action="inst-open" data-testid="hs-hjemskjerm"><span class="t"><b>Legg på hjemskjermen</b><span>Slik gjør du det</span></span><span class="go" aria-hidden="true">›</span></button>' : '') +
       '<a class="k17-row" href="#koble" data-testid="hs-koble"><span class="t"><b>Bytt husstand</b><span>Koble til med lenke eller kode</span></span><span class="go" aria-hidden="true">›</span></a>' +
       '<button type="button" class="k17-row k17-danger" data-action="hs-forlat" data-testid="hs-forlat"><span class="t"><b>Forlat ' + esc(name || 'husstanden') + '</b></span></button></div>';
+    // 0.21.0: Personvern (åpner teksten på knaggen.no)
+    h += lbl('Om Knaggen') + '<div class="k17-grp"><a class="k17-row" href="' + PERSONVERN_URL + '" target="_blank" rel="noopener noreferrer" data-testid="hs-personvern"><span class="t"><b>Personvern</b><span>Hva Knaggen lagrer og teller</span></span><span class="go" aria-hidden="true">↗</span></a></div>';
     // 6. Avansert (lukket)
     var inv = validInvite();
     var b6 = '<div id="hs-deling"><ul class="hs-group">' +
@@ -7032,6 +7118,7 @@
     // v0.14: «Slett delte lenker» – lenkene fra «Del lista til Oda» slutter å virke med en gang
     if (hh) h += '<li><button type="button" class="hs-row" data-action="hs-slett-lenker" data-testid="hs-slett-lenker"><span class="t"><b>Slett delte lenker</b><span>Lenker fra «Del lista til Oda» slutter å virke.</span></span><span class="go" aria-hidden="true">›</span></button></li>';
     if (hh) h += '<li><button type="button" class="hs-row" data-action="hs-forlat" data-testid="hs-forlat"><span class="t"><b>Forlat husstanden</b><span>De andre beholder husstanden.</span></span><span class="go" aria-hidden="true">›</span></button></li>';
+    h += '<li><a class="hs-row" href="' + PERSONVERN_URL + '" target="_blank" rel="noopener noreferrer" data-testid="hs-personvern"><span class="t"><b>Personvern</b><span>Hva Knaggen lagrer og teller</span></span><span class="go" aria-hidden="true">↗</span></a></li>';
     return h + '</ul>';
   }
   function deleteShareLinks() {
@@ -7131,8 +7218,9 @@
   }
   // A. Start på nytt: medlemskapet slettes (tallet går ned), alt lokalt om husstanden slettes, og telefonen går til introen.
   function leaveStartOver() {
-    var hid = hh.hid, ready = syncReady;
-    if (ready) ready.then(function (S) { return S.leaveHousehold(hid); }).catch(function () { /* frakoblet: sendes senere */ });
+    var hid = hh.hid, ready = syncReady, last = ui.members === 1;   // 0.21.0: siste medlem rydder «sist sett»-markøren
+    if (last) aktMerkForlatt(hid);
+    if (ready) ready.then(function (S) { return S.leaveHousehold(hid, { last: last }); }).catch(function () { /* frakoblet: sendes senere */ });
     dropHousehold();
     addLeft(hid);
     resetToIntro('');
@@ -7162,7 +7250,8 @@
   }
   function leaveTakeAlong() {
     if (ui.busy || !hh) return;
-    var oldHid = hh.hid, ready = syncReady, copy = takeAlongCopy();
+    var oldHid = hh.hid, ready = syncReady, copy = takeAlongCopy(), lastOld = ui.members === 1;
+    if (lastOld) aktMerkForlatt(oldHid);
     ui.busy = true;
     toast('Lager ny husstand …', 20000);
     Sync.init().then(function () {
@@ -7173,7 +7262,7 @@
       }, null);
     }).then(function (v) {
       ui.busy = false;
-      if (ready) ready.then(function (S) { return S.leaveHousehold(oldHid); }).catch(function () { /* ignorer */ });
+      if (ready) ready.then(function (S) { return S.leaveHousehold(oldHid, { last: lastOld }); }).catch(function () { /* ignorer */ });
       dropHousehold();
       var info = { hid: v.hid, secret: v.secret, core_done: true, migrated: true };
       writeHH(info);
@@ -7987,8 +8076,9 @@
   /* ---------- v0.16: versjonsnummeret ved logoen og «Nytt i Knaggen» ----------
    * Trykk på «0.16» åpner arket. Etter en oppdatering åpnes det av seg selv én gang (ikke ved aller første åpning,
    * ikke på kjøkkenskjermen og ikke i automatiserte tester uten testkroken KNAGGEN_TEST_NYTT). */
-  var APP_VERSION = '0.20.1', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.21.0', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.21.0', ['Knaggen teller nå anonymt hvor mange husstander som er i bruk, og omtrent hvilket fylke de er i. Tallene inneholder ingen id, navn, adresse eller posisjon, og ingenting går til andre. Les mer under Husstand → Personvern.']],
     ['0.20.0', ['Logg inn med Google eller e-post under Husstand → Konto. Du logger inn én gang per enhet og blir stående innlogget.', 'Gjøremål er nå felles for husstanden, og du kan si hvem som gjør det.', 'Lag lister: for hele husstanden, bare for deg eller for noen få. Private lister krever innlogging.', 'Invitasjonen har fått QR-kode, så den andre kan skanne den med kameraet.']],
     ['0.19.0', ['Ny meny nederst: Nå, Uke og Mat. Handleliste og Retter ligger nå samlet under Mat.', 'Slettet du en vare på handlelista ved en feil, kan du trykke Angre.', 'Finn flere retter og Hent oppskrift står over rettene, og Mat husker om du sist var på Handleliste eller Retter.']],
     ['0.18.13', ['Velg aksentfarge for hele appen under Husstand → Utseende. Valget gjelder bare denne telefonen.', 'Fargene på kjøkkenskjermen følger døgnet.', 'Når posisjonen er delt, velger Knaggen Hjemme eller Borte selv. Under står «Endre» hvis du vil bytte.', 'Versjonsinfoen vises igjen når du trykker på versjonsnummeret.', 'Søk i Finn retter.']],
@@ -8026,7 +8116,7 @@
   function newsHtml() {
     return '<div class="sheet-head"><h3 id="nytt-h">Nytt i Knaggen</h3><span class="nytt-ver">Versjon ' + APP_VERSION + '</span></div>' +
       '<div class="nytt-body">' + NEWS.map(function (n, i) {
-        return '<section class="nytt-v"><h4>' + (i === 0 ? 'Nå i ' : '') + n[0] + '</h4><ul>' + n[1].map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ul></section>';
+        return '<section class="nytt-v"><h4>' + (i === 0 ? 'Nå i ' : '') + n[0] + '</h4><ul>' + n[1].map(function (t) { return '<li>' + esc(t).replace('Husstand → Personvern', '<a href="' + PERSONVERN_URL + '" target="_blank" rel="noopener noreferrer" data-testid="nytt-personvern">Husstand → Personvern</a>') + '</li>'; }).join('') + '</ul></section>';
       }).join('') + '</div>' +
       '<button type="button" class="btn primary block" data-v9="nytt-lukk" data-testid="nytt-lukk">Fint</button>';
   }

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="nb">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="color-scheme" content="dark light">
+  <title>Dashbord – Knaggen</title>
+  <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+  <script>try{var t=JSON.parse(localStorage.getItem("knaggen:tema")||"null");if(t==="lys"||t==="mork")document.documentElement.setAttribute("data-tema",t)}catch(e){}</script>
+  <link rel="stylesheet" href="palett.css?v=0.21.0">
+  <link rel="stylesheet" href="style.css?v=0.21.0">
+  <link rel="stylesheet" href="dashbord.css?v=0.21.0">
+</head>
+<body class="dash">
+  <main class="dash-main" id="dash">
+    <header class="dash-top"><h1>Knaggen · dashbord</h1><button type="button" class="btn" id="dash-ut" data-testid="dash-ut" hidden>Logg ut</button></header>
+    <section id="dash-logginn" class="dash-kort" data-testid="dash-logginn">
+      <p>Dette dashbordet er bare for dem som er satt opp som statistikkadmin. Det viser anonyme tall: antall husstander, hvor mange som er aktive og omtrent hvilket fylke de er i. Ingen husstandsdata vises.</p>
+      <button type="button" class="btn primary" id="dash-google" data-testid="dash-google">Logg inn med Google</button>
+      <p class="dash-feil" id="dash-feil" role="alert" data-testid="dash-feil" hidden></p>
+    </section>
+    <div id="dash-innhold" hidden>
+      <p class="dash-hvem" id="dash-hvem" data-testid="dash-hvem"></p>
+      <section class="dash-kort" aria-labelledby="h-hus">
+        <h2 id="h-hus">Husstander</h2>
+        <div class="dash-tall" id="dash-total" data-testid="dash-total">–</div>
+        <p class="dash-under" id="dash-under" data-testid="dash-under"></p>
+        <div class="dash-rad" role="group" aria-label="Periode">
+          <button type="button" class="btn small on" data-dager="30" data-testid="dash-p30">30 dager</button>
+          <button type="button" class="btn small" data-dager="90" data-testid="dash-p90">90 dager</button>
+          <button type="button" class="btn small" data-dager="365" data-testid="dash-p365">1 år</button>
+          <button type="button" class="btn small" data-dager="0" data-testid="dash-pall">Alt</button>
+        </div>
+        <div id="dash-graf" class="dash-graf" data-testid="dash-graf" role="img" aria-label="Nye husstander per dag og samlet antall"></div>
+        <p class="dash-note">Søylene er nye husstander per dag (UTC-dato), linja er samlet antall. Tallet er anonymt og telles av appen når en husstand lages, så det er til å se utviklingen, ikke et regnskap.</p>
+      </section>
+      <div class="dash-advarsel" id="dash-advarsel" data-testid="dash-advarsel" hidden></div>
+      <section class="dash-kort" aria-labelledby="h-akt">
+        <h2 id="h-akt">Aktive husstander</h2>
+        <div class="dash-tre" role="group" aria-label="Aktive husstander">
+          <div><div class="dash-tall" id="dash-akt-1" data-testid="dash-akt-1">–</div><div class="dash-etikett">I dag</div></div>
+          <div><div class="dash-tall" id="dash-akt-7" data-testid="dash-akt-7">–</div><div class="dash-etikett">Siste 7 dager</div></div>
+          <div><div class="dash-tall" id="dash-akt-30" data-testid="dash-akt-30">–</div><div class="dash-etikett">Siste 30 dager</div></div>
+        </div>
+        <p class="dash-under" id="dash-akt-under" data-testid="dash-akt-under"></p>
+        <div id="dash-akt-graf" class="dash-graf" data-testid="dash-akt-graf" role="img" aria-label="Aktive husstander per dag, siste 30 dager"></div>
+        <p class="dash-note">En husstand er aktiv når appen har vært åpnet med nett på en av telefonene deres. Hver husstand telles én gang per dag, og i «siste 7/30 dager» telles den bare én gang, uansett hvor mange dager den har vært åpnet. Tallene er anonyme og kan ikke kobles til en bestemt husstand. Dagene er UTC-dato, og tallene kan i prinsippet manipuleres, så de er til å se utviklingen.</p>
+      </section>
+      <section class="dash-kort" aria-labelledby="h-sted">
+        <h2 id="h-sted">Fylker</h2>
+        <div class="dash-rad" role="group" aria-label="Periode for fylker">
+          <button type="button" class="btn small" data-sted-dager="1" data-testid="dash-s1">I dag</button>
+          <button type="button" class="btn small" data-sted-dager="7" data-testid="dash-s7">7 dager</button>
+          <button type="button" class="btn small on" data-sted-dager="30" data-testid="dash-s30">30 dager</button>
+        </div>
+        <div id="dash-sted" class="dash-sted" data-testid="dash-sted"></div>
+        <p class="dash-note">Aktive husstander fordelt på fylke. Fylket regnes ut på telefonen fra stedet husstanden har lagt inn (hjemmeadressen, ellers kjøkkenets sted eller stedet for været). Det sendes bare et fylkesnummer, aldri adresse eller posisjon. «Ukjent» er husstander uten sted.</p>
+      </section>
+    </div>
+  </main>
+  <script src="firebase-config.js?v=0.21.0"></script>
+  <script type="module" src="dashbord.js?v=0.21.0"></script>
+</body>
+</html>
