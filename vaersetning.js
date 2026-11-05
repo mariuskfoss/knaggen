@@ -63,6 +63,34 @@
     }
     return null;
   }
-  var api = { setning: setning, deg: deg, base: base, isWet: isWet, wetWord: wetWord };
+  /* v0.23 «I morgen»: én setning for et helt døgn (serieImorgen fra hentVaer). Ser på timene kl. 07–22 lokal tid.
+   * Regler: nedbør hele dagen · opphold først, nedbør fra ca. kl. X · nedbør først, opphold fra ca. kl. X · byger innimellom ·
+   * tørt: kaldere/mildere utover dagen (≥ 5°) eller «Oppholdsvær hele dagen». Færre enn seks timer → null (bare spenn og symbol). */
+  function setningDag(series) {
+    if (!Array.isArray(series)) return null;
+    var d = series.filter(function (e) { return e && isFinite(e.t) && hour(e.t) >= 7 && hour(e.t) <= 22; }).sort(function (a, b) { return a.t - b.t; });
+    if (d.length < 6) return null;
+    var wet = d.map(function (e) { return isWet(e.sym); }), nWet = wet.filter(Boolean).length;
+    var firstWet = -1, i;
+    for (i = 0; i < d.length; i++) if (wet[i] && (isShower(d[i].sym) || wet[i + 1])) { firstWet = i; break; }
+    if (nWet >= d.length - 1) { var ww = d.filter(function (e) { return isWet(e.sym); })[0].sym; return { rule: 3, text: cap(wetWord(ww)) + ' hele dagen' }; }
+    if (firstWet > 0 && wet.slice(firstWet).filter(Boolean).length >= wet.slice(firstWet).length - 1) return { rule: 1, text: 'Opphold først, ' + wetWord(d[firstWet].sym) + ' fra ca. kl. ' + hour(d[firstWet].t) };
+    if (firstWet === 0) {
+      for (i = 1; i < d.length; i++) if (!wet[i] && wet.slice(i).every(function (x) { return !x; })) return { rule: 2, text: cap(wetWord(d[0].sym)) + ' om morgenen, opphold fra ca. kl. ' + hour(d[i].t) };
+    }
+    if (firstWet >= 0) {
+      var sh = d.filter(function (e) { return isWet(e.sym); })[0].sym;
+      return { rule: 5, text: isShower(sh) ? 'Byger innimellom' : cap(wetWord(sh)) + ' innimellom' };
+    }
+    var tp = d.filter(function (e) { return typeof e.temp === 'number'; });
+    if (tp.length >= 2) {
+      var a = tp[0].temp, lo = Math.min.apply(null, tp.map(function (e) { return e.temp; })), hi = Math.max.apply(null, tp.map(function (e) { return e.temp; }));
+      var last = tp[tp.length - 1].temp;
+      if (hi - a >= 5 && hi - last < 5) return { rule: 4, text: 'Mildere utover dagen, opp mot ' + deg(hi) };
+      if (a - last >= 5) return { rule: 4, text: 'Kaldere utover dagen, ned mot ' + deg(lo) };
+    }
+    return { rule: 3, text: 'Oppholdsvær hele dagen' };
+  }
+  var api = { setning: setning, setningDag: setningDag, deg: deg, base: base, isWet: isWet, wetWord: wetWord };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.KnaggenVaerSetning = api;
 })(typeof self !== 'undefined' ? self : this);

@@ -6,6 +6,16 @@ Ukeplan for middager + handleliste for én husstand. Ren statisk side (HTML/CSS/
 Fra v0.2 deles dataene i husstanden via Firebase (Firestore + anonym innlogging, SDK lastes som ES-moduler fra gstatic).
 Uten husstand (eller uten Firebase-oppsett) lagres alt lokalt i nettleseren som før (`localStorage`, nøkkel `ukeshandel:v1`).
 
+## v0.23.0 «I dag | I morgen» på Nå
+- Nå på telefon har fanene **I dag** og **I morgen** (klikk, sveip eller piltaster). I morgen viser morgendagens vær, middag, avtaler og gjøremål (uten klokke, nå-temp eller avganger). Åpner alltid på I dag.
+- `hentVaer` svarer også med `serieImorgen` og `imorgen` (hi/lo/sym for i morgen, Oslo-tid). **Functions må deployes** før I morgen-været kommer – ellers «Værvarselet er ikke klart». Bakoverkompatibelt.
+- «Nytt i Knaggen» åpnes ikke automatisk etter oppdatering; trykk versjonsnummeret ved logoen. Fanelinja respekterer safe-area/dvh under «Sett opp hjemmet».
+- Tom «Gjøremål»-seksjon på I morgen skjules til forfallsdato finnes i data. Dagsfaner minst 48 px brede. Defensiv Media Session-nullstilling (ingen tilsiktet Android-varsel).
+- Ingen nye Firestore-regler. Tester: `tests/e2e-v0230.js`, `tests/vaersetning.test.js`.
+
+## v0.22.2
+- Fanelinja legges ikke under hjemme-oppsett (safe-area/dvh). «Nytt i Knaggen» auto-åpnes ikke lenger ved versjonsbump.
+
 ## v0.22.1 «auth.knaggen.no + del.knaggen.no»
 - `authDomain` er `auth.knaggen.no` (Firebase Hosting Connected 2026-11-05). Popup-innlogging viser knaggen.no i stedet for firebaseapp.com.
 - Nye Oda-dellinker: `https://del.knaggen.no/del/<id>` via Hosting-rewrite `/del/**` → `visDeleliste` (europe-west1) på samme Hosting-site som auth (`handleliste-8f568`). Emulator beholder lokal `…/visDeleliste/<id>`.

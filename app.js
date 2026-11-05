@@ -1337,6 +1337,13 @@
     },
     naCounts: function () { var b = buildList(true); return { list: b.items.filter(isOpen).length, week: isoWeek(new Date()), recipes: state.recipes.length, planned: weekCount(weekDates(0)) }; },
     startProgress: function () { try { return startProgress(); } catch (e) { return null; } },   // v0.18.9
+    // v0.23 «I morgen»: åpne gjøremål med forfallsdato (felt `forfall`, «ÅÅÅÅ-MM-DD») lik iso. Uten forfallsdato vises ikke.
+    // Gjøremål har ingen forfallsdato ennå (taskOk i reglene tillater ikke feltet), så lista er tom til det kommer.
+    naTasks: function (iso) {
+      var src = GJ.tasks || (hh ? [] : gjLoad());
+      return src.filter(function (x) { return x && !x.ferdig && typeof x.forfall === 'string' && x.forfall === iso && (x.tittel || x.t); })
+        .map(function (x) { return { t: String(x.tittel || x.t), who: x.tildelt ? gjName(x.tildelt) : '', c: x.tildelt || '' }; });
+    },
     isoDate: isoDate, isoWeek: isoWeek,
     hid: function () { return hh ? hh.hid : null; },
     // v0.17: felles kjøkkenoppsett (null = ikke lest / finnes ikke / eldre regler)
@@ -6885,7 +6892,7 @@
     if (!p) return cb('00');
     function ut() { try { cb(window.KnaggenSted.fylke(p.lat, p.lon)); } catch (e) { cb('00'); } }
     if (window.KnaggenSted) return ut();
-    var sc = document.createElement('script'); sc.src = 'sted.js?v=0.22.1'; sc.onload = ut; sc.onerror = function () { cb('00'); };
+    var sc = document.createElement('script'); sc.src = 'sted.js?v=0.23.0'; sc.onload = ut; sc.onerror = function () { cb('00'); };
     document.head.appendChild(sc);
   }
   // Telles på nytt når UTC-datoen har skiftet: ved nye serverdata, når siden blir synlig igjen, når nettet kommer tilbake og hver time.
@@ -8074,10 +8081,13 @@
   if (!NEW_HOME && hh) setTimeout(function () { if (!/^#husstand/.test(location.hash)) showKindBanner(); }, 800);   // v0.18.8: navn/eier ikke besvart ennå   // v0.18.8: beskjeden om frakobling til den er lest
 
   /* ---------- v0.16: versjonsnummeret ved logoen og «Nytt i Knaggen» ----------
-   * Trykk på «0.16» åpner arket. Etter en oppdatering åpnes det av seg selv én gang (ikke ved aller første åpning,
-   * ikke på kjøkkenskjermen og ikke i automatiserte tester uten testkroken KNAGGEN_TEST_NYTT). */
-  var APP_VERSION = '0.22.1', SEEN_VER_KEY = 'knaggen:sett-versjon';
+   * Trykk på versjonsnummeret åpner arket; det åpnes ikke lenger av seg selv etter oppdatering. */
+  // 0.23.0: Knaggen spiller aldri lyd/video og bruker ikke Media Session. Defensiv nullstilling ved start, så Android ikke
+  // viser en tom «Knaggen»-medievarsling. (Wake Lock i oppskriftsvisningen lager ingen varsling.)
+  try { if (navigator.mediaSession) { navigator.mediaSession.metadata = null; navigator.mediaSession.playbackState = 'none'; } } catch (e) { }
+  var APP_VERSION = '0.23.0', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.23.0', ['Nå har fått «I dag | I morgen». Trykk på I morgen eller sveip til venstre for å se morgendagens vær, middag, avtaler og gjøremål. Nå åpner alltid på I dag.', '«Nytt i Knaggen» dukker ikke lenger opp av seg selv etter en oppdatering. Trykk på versjonsnummeret ved logoen når du vil se hva som er nytt.', 'Fanelinja nederst skjules ikke lenger under «Sett opp hjemmet» på nye telefoner.']],
     ['0.22.1', ['Innloggingen skjer nå på auth.knaggen.no (samme knaggen.no-familie som appen).', 'Når du deler lista til Oda, får du en kortere lenke på del.knaggen.no.']],
     ['0.22.0', ['«Nå» på telefonen viser nå været øverst i stedet for den store klokka: temperatur og én kort setning om hvordan dagen blir. Kjøkkenskjermen har fortsatt klokka.']],
     ['0.21.0', ['Knaggen teller nå anonymt hvor mange husstander som er i bruk, og omtrent hvilket fylke de er i. Tallene inneholder ingen id, navn, adresse eller posisjon, og ingenting går til andre. Les mer under Husstand → Personvern.']],
@@ -8138,21 +8148,8 @@
       h1.insertAdjacentElement('afterend', b);
       b.addEventListener('click', openNews);
     }
-    var seen = lsGet(SEEN_VER_KEY);
-    if (seen === APP_VERSION) return;
-    var used = USED_BEFORE;
-    var auto = navigator.webdriver ? !!window.KNAGGEN_TEST_NYTT : true;
-    if (!seen && !used) { lsSet(SEEN_VER_KEY, APP_VERSION); return; }   // aller første åpning: ikke vis
-    if (!auto) return;
-    function tryOpen() {
-      if (/^#kjokken/.test(location.hash) || v9Sheet() || askOpen || document.querySelector('.overlay')) return false;
-      openNews(); return true;
-    }
-    setTimeout(function () {
-      if (tryOpen()) return;
-      var onHash = function () { setTimeout(function () { if (lsGet(SEEN_VER_KEY) === APP_VERSION || tryOpen()) window.removeEventListener('hashchange', onHash); }, 400); };
-      window.addEventListener('hashchange', onHash);
-    }, 600);
+    // Markér versjonen som sett uten å åpne arket (første åpning og etter oppdatering).
+    if (lsGet(SEEN_VER_KEY) !== APP_VERSION) lsSet(SEEN_VER_KEY, APP_VERSION);
   })();
 
   // Åpnes appen igjen etter en stund (f.eks. søndag kveld → mandag), velges riktig uke på nytt.

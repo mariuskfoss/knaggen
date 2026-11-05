@@ -733,13 +733,74 @@
       .sort(function (a, b) { return a.s - b.s; })
       .map(function (e) { var x = new Date(Math.max(e.s, ds)); return { tm: e.s < ds ? 'Før' : two(x.getHours()) + ':' + two(x.getMinutes()), t: e.t, who: names[e.c] || '', c: e.c }; });
   }
+  /* v0.23 «I dag | I morgen» på Nå (skisse merkevare/na-imorgen/v1, med Marius' endringer: ingen kveldshint, alltid I dag ved åpning).
+   * Valget ligger bare i minnet (ikke lagret) og gjelder bare samme dato: ny åpning eller ny dag → I dag. Sveip venstre/høyre bytter. */
+  var naDay = { v: 'idag', iso: '' }, NA_HINT_KEY = 'knaggen:na-sveip-sett', naSw = null;
+  function naDayNow() { if (naDay.v === 'imorgen' && naDay.iso !== dayIso(now())) naDay.v = 'idag'; return naDay.v; }
+  function setNaDay(v, focus) {
+    if (v !== 'idag' && v !== 'imorgen') return;
+    if (!lsGet(NA_HINT_KEY)) lsSet(NA_HINT_KEY, true);
+    if (naDayNow() === v) { if (focus) render(); return; }
+    naDay = { v: v, iso: dayIso(now()) }; naEdit = false;
+    render(); if (root) root.scrollTop = 0;
+    var b = focus && root && root.querySelector('[data-testid="na-dag-' + v + '"]'); if (b) b.focus();
+  }
+  function naDayTabs() {
+    var d = naDayNow(), tab = function (v, txt) {
+      var on = d === v;
+      return '<button type="button" role="tab" id="na-dag-' + v + '" data-k="na-dag-' + v + '" data-testid="na-dag-' + v + '" aria-selected="' + on + '" aria-controls="na-dagpanel" tabindex="' + (on ? 0 : -1) + '"' + (on ? ' class="on"' : '') + '>' + txt + '</button>';
+    };
+    var hint = d === 'idag' && !lsGet(NA_HINT_KEY) ? '<p class="na-sveip-hint" data-testid="na-sveip-hint">Sveip til venstre for i morgen →</p>' : '';
+    return '<div class="na-dager" role="tablist" aria-label="Dag" data-testid="na-dager">' + tab('idag', 'I dag') + tab('imorgen', 'I morgen') + '</div>' + hint;
+  }
+  function naTomorrowEvents(t) {
+    if (!kal.list || !kal.ev) return null;
+    var d = new Date(t), ds = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime(), de = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 2).getTime(), iso = dayIso(t, 1), names = {};
+    kal.list.forEach(function (c) { names[c.id] = c.name || ''; });
+    return kal.ev.filter(function (e) { return evOn(e, iso, ds, de); })
+      .sort(function (a, b) { var as = typeof a.s === 'string', bs = typeof b.s === 'string'; return as !== bs ? (as ? -1 : 1) : (as ? 0 : a.s - b.s); })
+      .map(function (e) { var hd = typeof e.s === 'string', x = new Date(hd ? ds : Math.max(e.s, ds)); return { tm: hd ? 'Heldag' : e.s < ds ? 'Før' : two(x.getHours()) + ':' + two(x.getMinutes()), t: e.t, l: e.l || '', who: names[e.c] || '', c: e.c }; });
+  }
+  function naImorgenVaer(t) {
+    var s = settings(), ok = wx && wx.lat === s.lat && wx.lon === s.lon && Date.now() - wx.at < 12 * 3600e3 && wx.d, im = ok && wx.d.imorgen;
+    if (!im || im.dato !== dayIso(t, 1) || im.lo == null) return '<div class="na-card na-im-vaer" data-testid="na-im-vaer"><p class="note" data-testid="na-im-vaer-tom">' + (wxBusy && !ok ? 'Henter været …' : 'Værvarselet er ikke klart') + '</p></div>';
+    var VS = window.KnaggenVaerSetning, sent = null;
+    if (VS && VS.setningDag && wx.d.serieImorgen) { try { sent = VS.setningDag(wx.d.serieImorgen); } catch (e) { sent = null; } }
+    var dg = function (x) { return VS ? VS.deg(x) : x + '°'; };
+    return '<div class="na-card na-im-vaer" data-testid="na-im-vaer"><span class="na-vi">' + wxIcon(im.sym) + '</span><div><p class="na-im-spenn" data-testid="na-im-spenn" aria-label="Fra ' + im.lo + ' til ' + im.hi + ' grader">' + dg(im.lo) + ' – ' + dg(im.hi) + '</p>' +
+      '<p class="na-vs" data-testid="na-im-vaer-tekst" data-regel="' + (sent ? sent.rule : 'fallback') + '">' + esc(sent ? sent.text : wxText(im.sym)) + '</p></div></div>';
+  }
+  function naImorgenHtml(t) {
+    var A = api(), d = new Date(t), td = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1), iso = dayIso(t, 1);
+    var h = '<div id="na-dagpanel" role="tabpanel" aria-labelledby="na-dag-imorgen" class="na-imorgen" data-testid="na-imorgen">' +
+      '<p class="na-date v2" data-testid="na-im-dato">' + esc(DAYS[td.getDay()] + ' ' + td.getDate() + '. ' + MONTHS[td.getMonth()]) + '</p>';
+    h += '<p class="na-lbl">Vær</p>' + naImorgenVaer(t);
+    var m = A.meal(iso), c = A.naCounts ? A.naCounts() : { recipes: 0 };
+    h += '<p class="na-lbl">Middag i morgen</p>' + (m
+      ? '<div class="na-din f-middag" data-testid="na-im-middag">' + ILL_PLATE + '<span class="f-mt"><b>' + esc(m.mark === 'rester' ? 'Rester – ' + m.name : m.name) + '</b>' + (m.time ? '<span>' + esc(m.time) + '</span>' : '') + '</span></div>'
+      : '<p class="na-din none" data-testid="na-im-middag-tom">Ingen middag valgt</p><a class="na-din-knapp" href="' + (c.recipes ? '#uke' : '#retter') + '" data-k="na-go" data-testid="na-im-middag-velg">Velg middag <i aria-hidden="true">›</i></a>');
+    var ev = naTomorrowEvents(t);
+    h += '<p class="na-lbl">Dagen</p><ul class="na-card" data-testid="na-im-avtaler">' + (ev && ev.length ? ev.map(function (e) {
+      return '<li data-testid="na-im-avtale"><b>' + esc(e.tm + ' ' + e.t) + '</b>' + (e.l ? '<span class="na-sted">' + esc(e.l) + '</span>' : '') + chip(e) + '</li>';
+    }).join('') : '<li class="note" data-testid="na-im-avtaler-tom">Ingen avtaler i morgen</li>') + '</ul>';
+    var ts = A.naTasks ? A.naTasks(iso) : [];
+    // 0.23.0: skjul Gjøremål når lista er tom – uten forfallsdato i reglene blir «Ingen gjøremål i morgen» misvisende.
+    if (ts.length) {
+      h += '<p class="na-lbl">Gjøremål</p><ul class="na-card" data-testid="na-im-gjoremal">' + ts.map(function (x) {
+        return '<li data-testid="na-im-gjoremal-rad"><b>' + esc(x.t) + '</b>' + chip(x) + '</li>';
+      }).join('') + '</ul>';
+    }
+    return h + '<p class="na-credit" data-testid="na-kreditering">Data fra MET Norway</p>';
+  }
   function naHtml() {
     var t = now(), d = new Date(t), A = api(), mm = naMode(), home = mm.mode === 'hjemme';
     var pw = posWanted(), auto = posMode();
     var seg = '<div class="na-seg" role="group" aria-label="Hjemme eller borte">' +
       '<button type="button" data-k="na-hjemme" data-testid="na-hjemme" aria-pressed="' + home + '"' + (home ? ' class="on"' : '') + '>Hjemme</button>' +
       '<button type="button" data-k="na-borte" data-testid="na-borte" aria-pressed="' + !home + '"' + (!home ? ' class="on"' : '') + '>Borte</button></div>';
-    var h = '<div class="na" data-testid="na" data-modus="' + mm.mode + '">';
+    var h = '<div class="na" data-testid="na" data-modus="' + mm.mode + '" data-dag="' + naDayNow() + '">' + naDayTabs();
+    if (naDayNow() === 'imorgen') return h + naImorgenHtml(t) + '</div></div>';
+    h += '<div id="na-dagpanel" role="tabpanel" aria-labelledby="na-dag-idag" data-testid="na-idag">';
     var sp = A.startProgress ? A.startProgress() : null;   // v0.18.9: oppsettet er ikke ferdig – vei tilbake til Kom i gang
     if (sp) h += '<a class="na-fortsett" href="#uke" data-k="na-go" data-testid="na-fortsett">Fortsett oppsettet (steg ' + sp.step + ' av ' + sp.of + ')\u00a0<i aria-hidden="true">›</i></a>';
     // 0.18.13 (D): delt posisjon som ikke er funnet ennå (og ikke avslått/feilet): aldri vis Hjemme/Borte-valget mens vi venter. Tom, reservert linje (0.19.0: ingen tekst).
@@ -814,7 +875,7 @@
       '<a href="#liste" data-k="na-go" data-testid="na-snarvei-liste"><b>Handleliste</b><span>' + (c.list ? c.list + ' igjen å handle' : 'Alt er handlet') + '</span></a>' +
       '<a href="#uke" data-k="na-go" data-testid="na-snarvei-uke"><b>Uke\u00a0' + c.week + '</b><span>' + (c.planned == null ? '' : c.planned + ' av 7 kvelder planlagt') + '</span></a>' +
       '<a href="#retter" data-k="na-go" data-testid="na-snarvei-retter"><b>Retter</b><span>' + c.recipes + (c.recipes === 1 ? ' rett' : ' retter') + '</span></a></div>' +
-      '<p class="na-credit" data-testid="na-kreditering">Data fra Entur og MET Norway</p></div>';   // v0.18.12: lisens (NLOD/CC BY), diskret nederst på Nå
+      '<p class="na-credit" data-testid="na-kreditering">Data fra Entur og MET Norway</p></div></div>';   // v0.18.12: lisens (NLOD/CC BY), diskret nederst på Nå
     return h;
   }
   // 0.18.13 (Trude): uten middag i dag får «Nå» en tydelig knapp – «Legg inn første rett» når husstanden ikke har noen retter ennå, ellers «Velg middag i dag» (til Uke).
@@ -842,6 +903,7 @@
   }
   function naClear() { for (var k in TOK.dag) root.style.removeProperty('--k-' + k); ['--k-fade', '--k-shift-x', '--k-shift-y', 'top', 'bottom'].forEach(function (p) { root.style.removeProperty(p); }); root.classList.remove('k-natt'); root.removeAttribute('data-fase'); root.removeAttribute('data-skjerm'); ['--k-ak', '--k-ak-pa', '--k-ak-lys', '--k-ak-mork'].forEach(function (p) { root.style.removeProperty(p); }); }
   function naTap(k, t, e) {
+    if (k === 'na-dag-idag' || k === 'na-dag-imorgen') { setNaDay(k.slice(7), true); return true; }
     if (k === 'na-modus-endre') { naEdit = true; render(); var sg = root && root.querySelector('.na-seg button.on, .na-seg button'); if (sg) { sg.scrollIntoView({ block: 'nearest' }); sg.focus(); } return true; }
     if (k === 'na-modus-ferdig') { e.preventDefault(); naEdit = false; render(); return true; }
     if (k === 'na-hjemme' || k === 'na-borte') { setNaMode(k === 'na-hjemme' ? 'hjemme' : 'borte'); return true; }
@@ -911,6 +973,7 @@
   function takeLock() {
     if (!('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
     navigator.wakeLock.request('screen').then(function (l) {
+      if (!open || view !== 'cook') { l.release().catch(function () {}); return; }   // 0.23.0: oppskriften ble lukket før låsen kom – ikke la den henge
       wakeLock = l; showAwake();
       l.addEventListener('release', function () { if (wakeLock === l) { wakeLock = null; showAwake(); } });
     }, function () { wakeLock = null; showAwake(); });
@@ -1272,8 +1335,27 @@
     while (fit.lvl < 8 && !root.classList.contains('k-natt') && overflowing()) { fit.lvl++; root.innerHTML = idleHtml(); }
     root.setAttribute('data-kutt', String(fit.lvl));
   }
-  function onSwipeStart(e) { if (view === 'cook' && e.touches && e.touches.length === 1) swipeX = [e.touches[0].clientX, e.touches[0].clientY]; }
+  // v0.23: sveip på Nå (I dag ↔ I morgen). Vertikal rulling vinner: må være vannrett (|dx| > 2·|dy|) og minst 60 px.
+  function onNaSwipeStart(e) {
+    naSw = null;
+    if (!root || !root.classList.contains('k-na') || !e.touches || e.touches.length !== 1) return;
+    if (e.target && e.target.closest && e.target.closest('input, textarea, select, .na-dep, [data-no-sveip]')) return;
+    naSw = [e.touches[0].clientX, e.touches[0].clientY];
+  }
+  function onNaSwipeEnd(e) {
+    if (!naSw || !e.changedTouches) return;
+    var dx = e.changedTouches[0].clientX - naSw[0], dy = e.changedTouches[0].clientY - naSw[1]; naSw = null;
+    if (Math.abs(dx) < 60 || Math.abs(dx) <= 2 * Math.abs(dy)) return;
+    var to = dx < 0 ? 'imorgen' : 'idag';
+    if (to === naDayNow()) return;
+    setNaDay(to, false);
+    if (root && !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+      var p = root.querySelector('#na-dagpanel'); if (p) p.classList.add(dx < 0 ? 'na-inn-h' : 'na-inn-v');
+    }
+  }
+  function onSwipeStart(e) { onNaSwipeStart(e); if (view === 'cook' && e.touches && e.touches.length === 1) swipeX = [e.touches[0].clientX, e.touches[0].clientY]; }
   function onSwipeEnd(e) {
+    onNaSwipeEnd(e);
     if (view !== 'cook' || !swipeX || !e.changedTouches) return;
     var dx = e.changedTouches[0].clientX - swipeX[0], dy = e.changedTouches[0].clientY - swipeX[1]; swipeX = null;
     if (Math.abs(dx) > 60 && Math.abs(dx) > 2 * Math.abs(dy)) { cook.step += dx < 0 ? 1 : -1; lastTap = Date.now(); render(); e.preventDefault(); }
@@ -1308,6 +1390,10 @@
     root.addEventListener('change', function (e) { var t = e.target; if (t && t.hasAttribute('data-na-key') && api().naCheck) { api().naCheck(t.getAttribute('data-na-key'), t.checked); setTimeout(render, 400); } });
     root.addEventListener('touchstart', onSwipeStart, { passive: true });
     root.addEventListener('touchend', onSwipeEnd);
+    root.addEventListener('keydown', function (e) {   // v0.23: piltaster i «I dag | I morgen» (faneliste)
+      var t = e.target; if (!t || !t.closest || !t.closest('.na-dager')) return;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'Home' || e.key === 'End') { e.preventDefault(); setNaDay(e.key === 'ArrowRight' || e.key === 'End' ? 'imorgen' : 'idag', true); }
+    });
     document.body.appendChild(root);
   }
   function show(sub) {

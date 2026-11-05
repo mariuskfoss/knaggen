@@ -431,3 +431,22 @@ html[data-tema="lys"] .kj.k-na .k-aks .k-ak { background: var(--sw-lys); color: 
 
 /* 0.18.13: «Prøv igjen» på kjøkkenskjermen */
 .kj .k-dep .k-igjen { justify-self: start; min-height: var(--tap, 48px); min-width: var(--tap, 48px); padding: 0 20px; border-radius: var(--radius); border: 1px solid var(--k-brand, currentColor); background: transparent; color: var(--k-brand, inherit); font: inherit; font-size: var(--fs-16); font-weight: 650; }
+
+/* v0.23 «I dag | I morgen» på Nå: to navngitte faner (salvie tekst + understrek), sveip bytter. Ingen kveldshint. */
+.kj.k-na .na-dager { display: flex; gap: 22px; border-bottom: 1px solid var(--line); margin: 0 0 10px; }
+.kj.k-na .na-dager button { font: inherit; font-weight: 600; background: transparent; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 10px 8px; min-height: 44px; min-width: 48px; color: var(--muted); cursor: pointer; box-shadow: none; border-radius: 0; }
+.kj.k-na .na-dager button.on { color: var(--brand); border-bottom-color: var(--brand); }
+.kj.k-na .na-dager button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.kj.k-na .na-sveip-hint { margin: -4px 0 10px; font-size: 13px; color: var(--muted); }
+.kj.k-na .na-im-vaer { display: flex; align-items: center; gap: 14px; }
+.kj.k-na .na-im-vaer .na-vi, .kj.k-na .na-im-vaer .na-vi svg { width: 44px; height: 44px; }
+.kj.k-na .na-im-spenn { margin: 0; font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.kj.k-na .na-im-vaer .na-vs { margin: 2px 0 0; }
+.kj.k-na .na-imorgen .na-sted { color: var(--muted); font-size: 13px; margin-left: 6px; }
+.kj.k-na .na-imorgen .f-middag { cursor: default; }
+.kj.k-na #na-dagpanel { touch-action: pan-y; }
+.kj.k-na .na-inn-h { animation: na-inn-h .22s ease-out; }
+.kj.k-na .na-inn-v { animation: na-inn-v .22s ease-out; }
+@keyframes na-inn-h { from { transform: translateX(24px); opacity: .4; } to { transform: none; opacity: 1; } }
+@keyframes na-inn-v { from { transform: translateX(-24px); opacity: .4; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .kj.k-na .na-inn-h, .kj.k-na .na-inn-v { animation: none; } }

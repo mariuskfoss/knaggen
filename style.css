@@ -1445,8 +1445,13 @@ body:has(.k188-panel) main { padding-bottom: 280px; }
 .km-steps .sr { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* ===== Hjemme-oppsett v5 (gren hjemme-v5, bak flagg) ===== */
-.v5 { position: fixed; inset: 56px 0 64px; z-index: 30; background: var(--bg); display: flex; flex-direction: column; padding: 16px; box-sizing: border-box; overflow: auto; }
-.v5.v5-ark { inset: auto 0 0; max-height: 88vh; border-radius: var(--radius) var(--radius) 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,.25); z-index: 60; }
+.v5 {
+  position: fixed; z-index: 30; background: var(--bg); display: flex; flex-direction: column; padding: 16px; box-sizing: border-box; overflow: auto;
+  /* Over innholdet, men over fanelinja: --nav-h + safe-area (hard 64px dekket toppen av fanene på telefon med home-indikator). */
+  top: calc(56px + env(safe-area-inset-top, 0px)); left: 0; right: 0;
+  bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px));
+}
+.v5.v5-ark { inset: auto 0 0; max-height: 88vh; max-height: 88dvh; border-radius: var(--radius) var(--radius) 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,.25); z-index: 60; }
 .v5-x { position: absolute; top: 8px; right: 8px; width: var(--tap); height: var(--tap); display: grid; place-items: center; font-size: var(--fs-24); color: var(--ink); text-decoration: none; }
 .v5-in { flex: 1; max-width: 560px; width: 100%; margin: 0 auto; position: relative; }
 .v5-in h2 { font-size: var(--fs-24); margin: 12px 0 6px; outline: none; }
