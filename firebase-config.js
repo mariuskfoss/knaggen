@@ -5,7 +5,8 @@
  */
 window.UKESHANDEL_FIREBASE_CONFIG = {
   apiKey: 'AIzaSyADfTSwHBXA1S_NQK5jy1e1Zz8CcsmwVhc',
-  authDomain: 'handleliste-8f568.firebaseapp.com',
+  // Innloggingsdomene: auth.knaggen.no (Firebase Hosting, samme site som del.knaggen.no). Connected 2026-11-05 (se merkevare/nettside/HOSTING-OG-DNS.md, del 2).
+  authDomain: 'auth.knaggen.no',
   projectId: 'handleliste-8f568',
   storageBucket: 'handleliste-8f568.firebasestorage.app',
   messagingSenderId: '68176897923',

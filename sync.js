@@ -565,11 +565,15 @@ function fnBase(pid) {
 }
 function fetchRecipe(hid, url) { return callFn('hentOppskrift', { hid, url }); }
 // v0.14 «Del lista til Oda»: funksjonen lager øyeblikksbildet (delelister/{id}); appen har ingen tilgang til samlingen.
-// Lenken er funksjonens egen adresse (app.knaggen.no ligger på GitHub Pages, så det finnes ingen Hosting-omskriving).
+// v0.22.1: produksjonslenke via del.knaggen.no/del/<id> (Hosting-rewrite → visDeleliste). Emulator: direkte functions-URL som før.
+// Gamle https://europe-west1-….cloudfunctions.net/visDeleliste/<id> fortsetter å virke (samme funksjon; path-parsing er bakoverkompatibel).
 async function makeShareList(hid, lines, title, people) {
   const r = await callFn('lagDeleliste', { hid, lines, title, people });
   const pid = mode() === 'emulator' ? EMULATOR_CONFIG.projectId : prodConfig().projectId;
-  return { url: fnBase(pid) + '/visDeleliste/' + r.id, expiresAt: r.expiresAt };
+  const url = mode() === 'emulator'
+    ? fnBase(pid) + '/visDeleliste/' + r.id
+    : 'https://del.knaggen.no/del/' + r.id;
+  return { url, expiresAt: r.expiresAt };
 }
 function deleteShareLists(hid) { return callFn('slettDelelister', { hid }); }
 // v0.15: vær til kjøkkenskjermen via hentVaer (MET-proxy; nettleseren kan ikke sette User-Agent).
@@ -634,7 +638,7 @@ async function linkOrSwitch(doLink, credFromError, cred, direct) {
   else await refreshToken();
   return { switched, uid: u && u.uid };
 }
-// kind: 'google' | 'apple'. Popup via Firebase (authDomain handleliste-8f568.firebaseapp.com).
+// kind: 'google' | 'apple'. Popup via Firebase (authDomain auth.knaggen.no, se firebase-config.js).
 async function linkProvider(kind) {
   const c = await init();
   const { au, auth } = c;
