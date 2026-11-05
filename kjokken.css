@@ -303,7 +303,17 @@ html[data-tema="lys"] .kj .k-sheet { --k-cal-1: #3f6e5a; --k-cal-2: #44617a; --k
 .kj.k-na .na-seg button { text-align: center; justify-content: center; width: 100%; box-shadow: none; font: inherit; font-weight: 600; border: 0; border-radius: var(--pill); padding: 9px 0; background: transparent; color: var(--muted); min-height: var(--tap); cursor: pointer; }
 .kj.k-na .na-seg button.on { background: var(--brand); color: var(--brand-ink); }
 .na-why { margin: 2px 0 6px; text-align: center; font-size: .82rem; color: var(--muted); }
-.na-clock { margin: 4px 0 0; font-size: 3.4rem; line-height: 1; font-weight: 300; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+/* v0.22: værblokk i stedet for stor klokke (skisse merkevare/na-vaer/v2). Bare Nå på mobil; kjøkkenskjermen har egen klokke og egen værvisning. */
+.kj.k-na .na-vaer { display: flex; align-items: center; gap: 6px; margin: 4px 0 0; }
+.kj.k-na .na-vaer-venter { min-height: 68px; }
+.kj.k-na .na-vi { flex: none; width: 68px; height: 68px; }
+.kj.k-na .na-vi svg { width: 68px; height: 68px; display: block; }
+.kj.k-na .na-vt { margin: 0; font-size: 2.8rem; line-height: 1; font-weight: 300; font-variant-numeric: tabular-nums; letter-spacing: -.02em; color: var(--ink); }
+.kj.k-na .na-vs { margin: 4px 0 0; font-size: 1.1rem; line-height: 1.35; font-weight: 500; color: var(--ink); }
+.kj.k-na .na-date.v2 { margin: 4px 0 8px; }
+/* Lys modus: --w-sol (#d29a2c) og --w-sky (#7f909e) har bare 2,2:1 og 2,9:1 mot Nå-bakgrunnen (grafikk trenger 3:1). Mørknes bare i værikonet på Nå; paletten og kjøkkenskjermen er uendret. */
+@media (prefers-color-scheme: light) { html:not([data-tema="mork"]) .kj.k-na .na-vi { --w-sol: #ac7e24; --w-sky: #768897; } }
+html[data-tema="lys"] .kj.k-na .na-vi { --w-sol: #ac7e24; --w-sky: #768897; }
 .na-date { margin: 2px 0 8px; color: var(--muted); }
 .na-lbl { margin: 12px 0 2px; font-size: .78rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .kj.k-na .na-din { box-shadow: none; min-height: 48px; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; width: 100%; text-align: left; font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: var(--radius, 12px); padding: 12px 14px; cursor: pointer; }

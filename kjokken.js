@@ -256,6 +256,22 @@
       (d.hi != null ? '<span class="s" data-testid="k-hoylav">· i dag ' + d.hi + '° / ' + d.lo + '°</span>' : '')) + '</div>';
   }
 
+  // v0.22 «Nå»: værblokk i stedet for stor klokke (skisse merkevare/na-vaer/v2): ikon + temperatur + én kort setning. Samme værkilde som kjøkkenskjermen (wx).
+  // Setningen kommer fra vaersetning.js når serien (resten av dagen) er ny nok og vi er på nett; ellers dagens tekst («Delvis skyet»).
+  function naVaerHtml() {
+    var s = settings(), ok = wx && wx.lat === s.lat && wx.lon === s.lon && Date.now() - wx.at < 3 * 3600e3 && wx.d;
+    if (!ok) {
+      // Henter: reservert plass (ingen hopp når været kommer). Ingen husstand / feil: ingenting.
+      return wxBusy || (!wxErr && api() && api().hid && api().hid()) ? '<div class="na-vaer na-vaer-venter" data-testid="na-vaer-venter" aria-hidden="true"></div>' : '';
+    }
+    var d = wx.d, VS = window.KnaggenVaerSetning, sent = null;
+    if (VS && d.serie && navigator.onLine !== false && Date.now() - wx.at < 90 * 60e3) { try { sent = VS.setning(d.serie, now()); } catch (e) { sent = null; } }
+    var txt = sent ? sent.text : wxText(d.sym);
+    var t = d.temp == null ? '–' : (VS ? VS.deg(d.temp) : d.temp + '°');
+    return '<div class="na-vaer" data-testid="na-vaer"><span class="na-vi">' + wxIcon(d.sym) + '</span><p class="na-vt" data-testid="na-temp">' + t + '</p></div>' +
+      (txt ? '<p class="na-vs" data-testid="na-vaer-tekst"' + (sent ? ' data-regel="' + sent.rule + '"' : ' data-regel="fallback"') + '>' + esc(txt) + '</p>' : '');
+  }
+
   /* ---------- v0.16: avganger (Entur Journey Planner v3, direkte fra nettleseren) ----------
    * Identifisert med ET-Client-Name. Grenser (Entur, 2026): 1000 kall/min og 200/s for identifiserte klienter
    * (uidentifiserte: 60/min). Vi spør ett kall hvert 30. sekund per skjerm, bare når skjermen vises, er på nett og
@@ -751,9 +767,7 @@
     }
     var m = A.meal(dayIso(t));
     if (home) {
-      var clock = two(d.getHours()) + ':' + two(d.getMinutes()), s = settings();
-      var w = wx && wx.d && Date.now() - wx.at < 3 * 3600e3 ? (wx.d.temp == null ? '' : wx.d.temp + '° ') + (wxText(wx.d.sym) || '').toLowerCase() : '';
-      h += '<p class="na-clock" data-testid="na-klokke">' + clock + '</p><p class="na-date" data-testid="na-dato">' + esc(DAYS[d.getDay()] + ' ' + d.getDate() + '. ' + MONTHS[d.getMonth()] + (w ? ' · ' + w : '')) + '</p>';
+      h += naVaerHtml() + '<p class="na-date v2" data-testid="na-dato">' + esc(DAYS[d.getDay()] + ' ' + d.getDate() + '. ' + MONTHS[d.getMonth()]) + '</p>';
       h += '<p class="na-lbl">Middag i dag</p>' + (m
         ? '<button type="button" class="na-din f-middag" data-k="cook" data-testid="na-middag">' + ILL_PLATE + '<span class="f-mt"><b>' + esc(m.mark === 'rester' ? 'Rester – ' + m.name : m.name) + '</b>' + (m.time ? '<span>' + esc(m.time) + '</span>' : '') + '</span></button>'
         : '<p class="na-din none" data-testid="na-middag-tom">Ingen middag valgt</p>' + naMiddagKnapp());
@@ -775,6 +789,7 @@
         if (a.src !== 'hjemnaer' && stopsFarFromHome()) h += '<p class="na-note" data-testid="na-avg-langt">Holdeplassene ble valgt langt fra hjemmeadressen. <a href="#kjokken/innstillinger/avg" data-k="na-endre">Velg på nytt</a></p>';
       } else h += naNoStop();
     } else {
+      h += naVaerHtml();   // v0.22: samme værblokk i Borte (husstandens sted)
       var bs = borteStops(), data = bs.src === 'posisjon' ? pos.dep : dep.data, rr = naRows(bs.stops, data, t, 4, false);
       // v0.18.8: uten holdeplass nær deg vises hjemmeholdeplassene – merket tydelig «Fra hjemme (X)», så de ikke ser lokale ut
       var local = bs.src === 'posisjon', bErr = local ? pos.depErr : dep.err;

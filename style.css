@@ -1477,8 +1477,8 @@ body:has(.k188-panel) main { padding-bottom: 280px; }
 .v5-card .btn.ghost { background: none; border-color: transparent; color: var(--ink); }
 .v5-hs { margin: 0 0 16px; }
 .v5-hs-t { margin: 8px 0 2px; font-size: var(--fs-18); }
-/* Nå før oppsettet: bare kortet, klokka og middag (ingen Hjemme/Borte eller holdeplass-oppfordring) */
-.v5-pre .na > :not(.v5-na):not(.na-clock):not(.na-date):not(.v5-mid):not(.na-din) { display: none !important; }
+/* Nå før oppsettet: bare kortet, været (v0.22; før: klokka), datoen og middag (ingen Hjemme/Borte eller holdeplass-oppfordring) */
+.v5-pre .na > :not(.v5-na):not(.na-vaer):not(.na-vs):not(.na-date):not(.v5-mid):not(.na-din) { display: none !important; }
 /* Nå etter oppsettet: ingen intern forklaringslinje */
 .v5-on .na-why { display: none; }
 /* v5 erstatter «Fortsett oppsettet» fra 0.18.9 */

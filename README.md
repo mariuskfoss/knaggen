@@ -6,6 +6,11 @@ Ukeplan for middager + handleliste for én husstand. Ren statisk side (HTML/CSS/
 Fra v0.2 deles dataene i husstanden via Firebase (Firestore + anonym innlogging, SDK lastes som ES-moduler fra gstatic).
 Uten husstand (eller uten Firebase-oppsett) lagres alt lokalt i nettleseren som før (`localStorage`, nøkkel `ukeshandel:v1`).
 
+## v0.22.0 «Nå med værkort»
+- På telefonen («Nå») er den store klokka byttet ut med et værkort øverst: ikon, temperatur og én kort setning om resten av dagen (Hjemme og Borte). Datoen står under, uten værtekst. Kjøkkenskjermen har fortsatt egen klokke.
+- Ny `vaersetning.js` (4 setningsmønstre). Faller tilbake til dagens værtekst når serien mangler eller er for kort.
+- Cloud Function `hentVaer` returnerer nå også `serie` (timer fra nå til midnatt, Oslo-tid). Bakoverkompatibelt. `firestore.rules` uendret (ikke publisert i denne releasen).
+
 ## v0.21.0 «Dashbord»
 - Ingen Google Analytics og ingen samtykkespørsmål. Alt er egne, anonyme tellere i Firebase, uten tredjepart.
 - Husstandsteller: `stats/husstander` (`antall`, `per_dag`, `oppdatert`), +1 etter at en ny husstand er laget (`sync.js` `countNewHousehold`). Reglene for dette er publisert (0.21.0).

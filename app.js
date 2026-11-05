@@ -6885,7 +6885,7 @@
     if (!p) return cb('00');
     function ut() { try { cb(window.KnaggenSted.fylke(p.lat, p.lon)); } catch (e) { cb('00'); } }
     if (window.KnaggenSted) return ut();
-    var sc = document.createElement('script'); sc.src = 'sted.js?v=0.21.1'; sc.onload = ut; sc.onerror = function () { cb('00'); };
+    var sc = document.createElement('script'); sc.src = 'sted.js?v=0.22.0'; sc.onload = ut; sc.onerror = function () { cb('00'); };
     document.head.appendChild(sc);
   }
   // Telles på nytt når UTC-datoen har skiftet: ved nye serverdata, når siden blir synlig igjen, når nettet kommer tilbake og hver time.
@@ -8076,8 +8076,9 @@
   /* ---------- v0.16: versjonsnummeret ved logoen og «Nytt i Knaggen» ----------
    * Trykk på «0.16» åpner arket. Etter en oppdatering åpnes det av seg selv én gang (ikke ved aller første åpning,
    * ikke på kjøkkenskjermen og ikke i automatiserte tester uten testkroken KNAGGEN_TEST_NYTT). */
-  var APP_VERSION = '0.21.1', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.22.0', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.22.0', ['«Nå» på telefonen viser nå været øverst i stedet for den store klokka: temperatur og én kort setning om hvordan dagen blir. Kjøkkenskjermen har fortsatt klokka.']],
     ['0.21.0', ['Knaggen teller nå anonymt hvor mange husstander som er i bruk, og omtrent hvilket fylke de er i. Tallene inneholder ingen id, navn, adresse eller posisjon, og ingenting går til andre. Les mer under Husstand → Personvern.']],
     ['0.20.0', ['Logg inn med Google eller e-post under Husstand → Konto. Du logger inn én gang per enhet og blir stående innlogget.', 'Gjøremål er nå felles for husstanden, og du kan si hvem som gjør det.', 'Lag lister: for hele husstanden, bare for deg eller for noen få. Private lister krever innlogging.', 'Invitasjonen har fått QR-kode, så den andre kan skanne den med kameraet.']],
     ['0.19.0', ['Ny meny nederst: Nå, Uke og Mat. Handleliste og Retter ligger nå samlet under Mat.', 'Slettet du en vare på handlelista ved en feil, kan du trykke Angre.', 'Finn flere retter og Hent oppskrift står over rettene, og Mat husker om du sist var på Handleliste eller Retter.']],
