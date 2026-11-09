@@ -823,7 +823,8 @@
     }
     return h + '<p class="na-credit" data-testid="na-kreditering">Data fra MET Norway</p>';
   }
-  var KJOP_HOLD_MS = 2500, kjopHold = {};   // 0.24.1: «Kjøp på vei hjem» – nøkkel → til når avkrysset vare fortsatt vises
+  var KJOP_HOLD_MS = 2500, kjopHold = {}, KJOP_MAX_DAG = 6, KJOP_MAX_LISTE = 5, kjopApen = false;   // 0.24.2b: foldet kort (ikke lagret)
+    // 0.24.1: «Kjøp på vei hjem» – nøkkel → til når avkrysset vare fortsatt vises
   function naHtml() {
     var t = now(), d = new Date(t), A = api(), mm = naMode(), home = mm.mode === 'hjemme';
     var pw = posWanted(), auto = posMode();
@@ -898,11 +899,23 @@
       if (kSug) h += '<p class="na-lbl">Middag i dag</p>' + A.kalCardHtml(kSug, 'na');   // 0.24.0 (Sigurd): samme forslagskort som i Hjemme
       var buy = A.naBuy ? A.naBuy() : { items: [], open: 0 };
       // 0.24.1: bare det som ikke er handlet – det du nettopp krysset av her, står gjennomstreket i KJOP_HOLD_MS så du kan angre
+      // 0.24.2: samme utvalg som «X igjen å handle» (A.naBuy bruker naOpen i app.js): hele lista, dagens middag først.
+      // «Alt er handlet» bare når den telleren er 0 (og ingen vare står i angre-tiden).
       var kjopNaa = Date.now(), kjopVis = buy.items.filter(function (i) { return !i.checked || (kjopHold[i.key] || 0) > kjopNaa; });
-      h += '<p class="na-lbl">Kjøp på vei hjem</p><div class="na-card" data-testid="na-kjop">' +
-        (!m ? '<p class="note">Ingen middag valgt i dag.</p>' : !buy.items.length ? '<p class="note">Alt til ' + esc(m.name) + ' er handlet.</p>' :
-          !kjopVis.length ? '<p class="note" data-testid="na-alt-handlet">Alt er handlet</p>' :
-          kjopVis.map(function (i) { return '<label class="na-cb"><input type="checkbox" data-na-key="' + esc(i.key) + '"' + (i.checked ? ' checked' : '') + ' data-testid="na-vare"><span>' + esc(i.name) + '</span></label>'; }).join('')) +
+      // 0.24.2b (Marius: «gjør kortet kortere»): foldet som standard. Først dagens middag (maks KJOP_MAX_DAG) under egen
+      // etikett; er middagen handlet / ingen middag i dag: de første KJOP_MAX_LISTE varene. Resten bak «+N til».
+      // N teller bare åpne varer, så synlige åpne + N == «X igjen å handle».
+      var kjopDag = kjopVis.filter(function (i) { return i.today; }), kjopFoerst = kjopDag.length ? kjopDag.slice(0, KJOP_MAX_DAG) : kjopVis.slice(0, KJOP_MAX_LISTE);
+      var kjopResten = kjopVis.filter(function (i) { return kjopFoerst.indexOf(i) < 0; }), kjopN = kjopResten.filter(function (i) { return !i.checked; }).length;
+      if (!kjopResten.length) kjopApen = false;
+      var kjopRad = function (i) { return '<label class="na-cb"><input type="checkbox" data-na-key="' + esc(i.key) + '"' + (i.checked ? ' checked' : '') + ' data-testid="na-vare"><span>' + esc(i.name) + '</span></label>'; };
+      h += '<p class="na-lbl">Kjøp på vei hjem</p><div class="na-card" data-testid="na-kjop"' + (kjopApen ? ' data-apen="1"' : '') + '>' +
+        (!kjopVis.length && !buy.open ? '<p class="note" data-testid="na-alt-handlet">Alt er handlet</p>' :
+          '<p class="na-kjop-lbl" data-testid="na-kjop-forst">' + (kjopDag.length ? 'Til middag i dag' + (m ? ' · ' + esc(m.name) : '') : 'Fra handlelista') + '</p>' +
+          kjopFoerst.map(kjopRad).join('') +
+          (kjopApen ? '<p class="na-kjop-lbl na-kjop-skille" data-testid="na-kjop-resten">Resten av lista</p>' + kjopResten.map(kjopRad).join('') +
+            '<button type="button" class="na-kjop-mer" data-k="na-kjop-faerre" data-testid="na-kjop-faerre" aria-expanded="true">Vis færre</button>' :
+            kjopN ? '<button type="button" class="na-kjop-mer" data-k="na-kjop-mer" data-testid="na-kjop-mer" data-n="' + kjopN + '" aria-expanded="false">+' + kjopN + ' til</button>' : '')) +
         '<a class="na-all" href="#liste" data-k="na-lista" data-testid="na-hele-lista"><b>Hele handlelista</b><span>' + buy.open + (buy.open === 1 ? ' vare' : ' varer') + '</span><i aria-hidden="true">›</i></a></div>';
       var ev2 = naEvents(t);
       h += '<p class="na-lbl">Familiens ettermiddag</p><ul class="na-card" data-testid="na-ettermiddag">' + (ev2.length ? ev2.slice(0, 4).map(function (e) { return '<li><b>' + esc(e.tm + ' ' + e.t) + '</b>' + chip(e) + '</li>'; }).join('') : '<li class="note">' + (kal.list && kal.list.length ? 'Ingenting mer i kalenderen i dag' : 'Ingen kalendere lagt til') + '</li>') +
@@ -947,6 +960,12 @@
     if (k === 'na-hjemme' || k === 'na-borte') { setNaMode(k === 'na-hjemme' ? 'hjemme' : 'borte'); return true; }
     if (k === 'na-avg-igjen') { gate('dep').until = 0; gate('nearest').until = 0; homeNear.err = ''; dep.until = 0; dep.fails = 0; /* v0.18.9: brukerens «Prøv igjen» får ett nytt forsøk */ pos.depAt = 0; pos.depErr = ''; if (!dep.busy) pollDep(); naPoll(); render(); return true; }
     if (k === 'na-endre') { e.preventDefault(); location.hash = '#kjokken/innstillinger/avg'; return true; }
+    if (k === 'na-kjop-mer' || k === 'na-kjop-faerre') {   // 0.24.2b: «+N til» / «Vis færre» – fokus til motsatt knapp etter tegning
+      if (e.preventDefault) e.preventDefault();
+      kjopApen = k === 'na-kjop-mer'; render();
+      var nb = root && root.querySelector('[data-k="' + (kjopApen ? 'na-kjop-faerre' : 'na-kjop-mer') + '"]'); if (nb) nb.focus();
+      return true;
+    }
     if (k === 'na-go' || k === 'na-lista') { return true; }   // vanlige lenker (fanelinja-sidene)
     if (t && t.hasAttribute && t.hasAttribute('data-na-key')) return true;
     return false;

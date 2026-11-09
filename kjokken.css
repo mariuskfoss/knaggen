@@ -333,7 +333,11 @@ html[data-tema="lys"] .kj.k-na .na-vi { --w-sol: #ac7e24; --w-sky: #768897; }
 .na-cb:first-child { border-top: 0; }
 .na-cb input { width: 22px; height: 22px; accent-color: var(--brand); margin: 0; }
 .na-cb input:checked + span { text-decoration: line-through; color: var(--muted); }
-.na-all { display: flex; align-items: center; gap: 8px; padding: 11px 0; border-top: 1px solid var(--line); color: var(--ink); text-decoration: none; }
+.na-kjop-lbl { margin: 0; padding: 8px 0 2px; font-size: .78rem; font-weight: 600; color: var(--muted); }   /* 0.24.2b */
+.na-kjop-skille { margin-top: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
+.na-kjop-lbl + .na-cb { border-top: 0; }
+.kj .na-card .na-kjop-mer, .na-kjop-mer { display: flex; align-items: center; width: 100%; min-height: 48px; box-sizing: border-box; margin: 0; padding: 0; border: 0; border-top: 1px solid var(--line); background: none; font: inherit; font-weight: 600; color: var(--k-brand, var(--brand)); text-align: left; cursor: pointer; }
+.na-all { display: flex; align-items: center; gap: 8px; padding: 11px 0; min-height: 48px; box-sizing: border-box; border-top: 1px solid var(--line); color: var(--ink); text-decoration: none; }   /* 0.24.2: trykkflate ≥ 48 px */
 .na-all span { margin-left: auto; color: var(--muted); } .na-all i { font-style: normal; color: var(--muted); }
 .na-short { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 16px; }
 .na-short a { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius, 12px); color: var(--ink); text-decoration: none; }

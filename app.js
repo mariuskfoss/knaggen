@@ -1427,6 +1427,9 @@
       steps: r._oneoff ? [] : stepsFor(r)
     };
   }
+  // 0.24.2: ett utvalg for Nå – «Kjøp på vei hjem» og snarveien «X igjen å handle» (og «Hele handlelista N varer»)
+  function naOnList(it) { return !(it.qty === 0); }
+  function naOpen(b) { return b.items.filter(isOpen); }
   window.KnaggenKitchenApi = {
     meal: function (d) { return kitchenMeal(d); },
     // 0.24.0: middagsforslag fra kalenderen (samme regler som Uke) og knappene på Nå / kjøkkenskjermen
@@ -1437,13 +1440,19 @@
     calChanged: function () { kalRefresh(); },
     kalState: function (d) { return JSON.parse(JSON.stringify({ oneoff: state.oneoffs[d] || null, people: state.day_people[d] || null, nei: kalNoSet(d) })); },   // les-bare (tester)
     // v0.18 «Nå»: varene til dagens middag (Kjøp på vei hjem), avkrysning og tallene til snarveiene
+    // 0.24.2 (feil fra Marius): kortet tok bare varene til DAGENS middag, mens «X igjen å handle» teller hele lista
+    // (faste varer, egne varer, andre dagers middager, basisvarer …). Nå bruker begge naOpen(): samme utvalg som handlelista.
+    // items = alle varer på lista (åpne + avkryssede, så kortet kan vise en nettopp avkrysset vare gjennomstreket);
+    // dagens middag først, ellers listas rekkefølge. Åpne varer = items.filter(!checked) = naOpen(b).
     naBuy: function () {
-      var b = buildList(true), today = isoDate(new Date()), out = [];
+      var b = buildList(true), today = isoDate(new Date()), first = {}, n = 0;
       b.source.forEach(function (g) {
         if (g.date !== today) return;
-        g.rows.forEach(function (r) { if (r.item && !(r.item.qty === 0) && !out.some(function (x) { return x.key === r.item.key; })) out.push({ key: r.item.key, name: cap(r.item.name), amount: r.amount, checked: !!r.item.checked }); });
+        g.rows.forEach(function (r) { if (r.item && first[r.item.key] == null) first[r.item.key] = n++; });
       });
-      return { items: out, open: b.items.filter(isOpen).length };
+      var all = b.items.filter(naOnList).map(function (it, idx) { return { it: it, idx: idx, r: first[it.key] != null ? first[it.key] : 1e6 + idx }; });
+      all.sort(function (x, y) { return x.r - y.r; });
+      return { items: all.map(function (x) { return { key: x.it.key, name: cap(x.it.name), checked: !!x.it.checked, today: first[x.it.key] != null }; }), open: naOpen(b).length };
     },
     naCheck: function (key, on) {
       var cur = currentItems(), week = cur.length ? cur[0].week : LIST_KEY, m = {}, wchecks = state.checks[week] || {};
@@ -1455,7 +1464,7 @@
       if (!m.hasOwnProperty(key)) m[key] = on;
       ops.setChecks(week, m);
     },
-    naCounts: function () { var b = buildList(true); return { list: b.items.filter(isOpen).length, week: isoWeek(new Date()), recipes: state.recipes.length, planned: weekCount(weekDates(0)) }; },
+    naCounts: function () { var b = buildList(true); return { list: naOpen(b).length, week: isoWeek(new Date()), recipes: state.recipes.length, planned: weekCount(weekDates(0)) }; },
     startProgress: function () { try { return startProgress(); } catch (e) { return null; } },   // v0.18.9
     // v0.23 «I morgen»: åpne gjøremål med forfallsdato (felt `forfall`, «ÅÅÅÅ-MM-DD») lik iso. Uten forfallsdato vises ikke.
     // Gjøremål har ingen forfallsdato ennå (taskOk i reglene tillater ikke feltet), så lista er tom til det kommer.
@@ -7095,7 +7104,7 @@
     if (!p) return cb('00');
     function ut() { try { cb(window.KnaggenSted.fylke(p.lat, p.lon)); } catch (e) { cb('00'); } }
     if (window.KnaggenSted) return ut();
-    var sc = document.createElement('script'); sc.src = 'sted.js?v=0.24.1'; sc.onload = ut; sc.onerror = function () { cb('00'); };
+    var sc = document.createElement('script'); sc.src = 'sted.js?v=0.24.2'; sc.onload = ut; sc.onerror = function () { cb('00'); };
     document.head.appendChild(sc);
   }
   // Telles på nytt når UTC-datoen har skiftet: ved nye serverdata, når siden blir synlig igjen, når nettet kommer tilbake og hver time.
@@ -8359,8 +8368,9 @@
     document.addEventListener('fullscreenchange', ut); document.addEventListener('webkitfullscreenchange', ut);
     ut();
   })();
-  var APP_VERSION = '0.24.1', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.24.2', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.24.2', ['«Kjøp på vei hjem» regner nå med de samme varene som «igjen å handle» – også faste varer, egne varer og varer til andre middager. Kortet viser varene til dagens middag først, og «+N til» viser resten av lista. «Alt er handlet» står bare når hele lista er handlet.']],
     ['0.24.1', ['«Kjøp på vei hjem» på Nå viser bare det som ikke er handlet. Det du krysser av, blir stående gjennomstreket et par sekunder så du kan angre, og er alt handlet, står det «Alt er handlet».']],
     ['0.24.0', ['Uke viser nå kalenderhendelsene for hver dag som linjer under middagen, med klokkeslett og hvem. Hendelsene kommer fra kalenderne som er lagt til på kjøkkenskjermen, for de nærmeste dagene.', 'Har en dag ingen middag, og det står for eksempel middag, julebord, pinnekjøtt eller lag i en avtale som starter mellom kl. 15 og 21 (står det middag, uansett klokkeslett), foreslår Knaggen den som middag. Du kan velge «Bruk som middag», «Ikke middag» eller «Porsjoner» (hvem som spiser hjemme). Ingenting lagres før du trykker.', '«Bruk som middag» legger inn en engangsmiddag merket «Fra kalenderen», uten varer på handlelista. «Ikke middag» gjelder hele husstanden.', 'Forslaget vises også på Nå og på kjøkkenskjermen.']],
     ['0.23.1', ['På telefon går Knaggen ut av API-fullskjerm hvis noe forsøker å sette den. Det kan hjelpe mot tomme varsler i noen nettlesere; vi har ikke bekreftet at det fjerner Android-varselet hos alle.', 'I morgen viste «Værvarselet er ikke klart» etter oppdateringen fordi en gammel værcache uten morgendagens vær ble brukt. Nå hentes været på nytt når morgendagen mangler.', 'Når du legger til en vare, foreslår Knaggen kjente varer under feltet etter to bokstaver – uten den store iOS-menyen som dekket hele skjermen.', 'Trykk på «Legg til» etter at du har skrevet en vare virker nå også på iPhone. Og legger du til en vare du nylig har krysset av, for eksempel egg, kommer den tilbake på lista i stedet for å bli liggende skjult under «handlet».']],
