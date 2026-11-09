@@ -490,21 +490,44 @@
 
   /* ---------- v0.16: kalender (via funksjonen «kalender», som henter ICS hvert 15. minutt) ---------- */
   var CAL_EVERY = 15 * 60000;
-  var kal = { list: null, ev: null, at: 0, from: '', busy: false, err: '', timer: null };
+  var kal = { list: null, ev: null, at: 0, from: '', busy: false, err: '', timer: null, hid: null };
   function loadCal(force) {
     var A = api();
     if (!A || !A.hid() || kal.busy || !A.calendar) return;
+    if (kal.hid && kal.hid !== A.hid()) { kal.list = null; kal.ev = null; kal.at = 0; }   // 0.24.0: annen husstand – ikke vis den forrige kalenderen
+    var forHid = A.hid();
     if (!force && (Date.now() - kal.at < CAL_EVERY && kal.from === dayIso(now()))) return;
     if (!force && (navigator.onLine === false || document.visibilityState === 'hidden' || isNight())) return;
     kal.busy = true;
     var from = dayIso(now());
     A.calendar('hendelser', { from: from }).then(function (r) {
-      kal.list = (r && r.kalendere) || []; kal.ev = (r && r.events) || []; kal.at = Date.now(); kal.from = from; kal.err = '';
+      kal.list = (r && r.kalendere) || []; kal.ev = (r && r.events) || []; kal.at = Date.now(); kal.from = from; kal.err = ''; kal.hid = forHid;
     }, function (e) { kal.err = (e && e.code) || 'feil'; kal.at = Date.now() - CAL_EVERY + 60000; }).then(function () {
       kal.busy = false;
+      try { if (api().calChanged) api().calChanged(); } catch (e) { }   // 0.24.0: Uke tegner hendelsene og forslagene på nytt
       if (open && view === 'idle' && !root.querySelector('.k-sheet')) render();
       if (open && root.querySelector('.k-sheet [data-testid="k-kal-liste"]')) refreshSheet();
     });
+  }
+  // 0.24.0: hendelsene for én dag til Uke og middagsforslaget (heldag først, så etter starttid). Tom liste når kalenderen
+  // ikke er hentet, gjelder en annen husstand, eller dagen er utenfor vinduet funksjonen sender (i dag + 7 døgn).
+  function calEvents(iso) {
+    var A = api();
+    if (!kal.list || !kal.ev || !iso || !A || (kal.hid || null) !== (A.hid() || null)) return [];
+    var p = iso.split('-'), ds = new Date(+p[0], +p[1] - 1, +p[2]).getTime(), de = new Date(+p[0], +p[1] - 1, +p[2] + 1).getTime(), names = {};
+    kal.list.forEach(function (c) { names[c.id] = c.name || ''; });
+    return kal.ev.filter(function (e) { return evOn(e, iso, ds, de); })
+      .sort(function (a, b) { var as = typeof a.s === 'string', bs = typeof b.s === 'string'; return as !== bs ? (as ? -1 : 1) : (as ? 0 : a.s - b.s); })
+      .map(function (e) { var hd = typeof e.s === 'string', x = new Date(hd ? ds : Math.max(e.s, ds));
+        return { tm: hd ? 'Heldag' : e.s < ds ? 'Før' : two(x.getHours()) + ':' + two(x.getMinutes()), t: e.t, l: e.l || '', who: names[e.c] || '', c: e.c, s: e.s, e: e.e, a: hd }; });
+  }
+  // 0.24.0: Uke ber om kalenderen (samme 15-minutters hurtigbuffer og kvote som kjøkkenskjermen)
+  function calWant() {
+    var A = api();
+    if (!A || !A.hid() || kal.busy || !A.calendar) return;
+    if (kal.hid === A.hid() && kal.from === dayIso(now()) && Date.now() - kal.at < CAL_EVERY) return;
+    if (navigator.onLine === false) return;
+    loadCal(true);
   }
   function evOn(e, iso, dayStart, dayEnd) {
     if (typeof e.s === 'string') return e.s <= iso && iso < e.e;
@@ -835,11 +858,13 @@
       h += seg + '<p class="na-why" data-testid="na-hvorfor">' + esc(why) + (auto ? ' · <a href="#" data-k="na-modus-ferdig" data-testid="na-modus-ferdig">Ferdig</a>' : '') + '</p>';
     }
     var m = A.meal(dayIso(t));
+    var kSug = !m && A.kalSuggestion ? A.kalSuggestion(dayIso(t), calEvents(dayIso(t))) : null;   // 0.24.0: forslaget fra kalenderen – likt i Hjemme og Borte
     if (home) {
       h += naVaerHtml() + '<p class="na-date v2" data-testid="na-dato">' + esc(DAYS[d.getDay()] + ' ' + d.getDate() + '. ' + MONTHS[d.getMonth()]) + '</p>';
       h += '<p class="na-lbl">Middag i dag</p>' + (m
-        ? '<button type="button" class="na-din f-middag" data-k="cook" data-testid="na-middag">' + ILL_PLATE + '<span class="f-mt"><b>' + esc(m.mark === 'rester' ? 'Rester – ' + m.name : m.name) + '</b>' + (m.time ? '<span>' + esc(m.time) + '</span>' : '') + '</span></button>'
+        ? '<button type="button" class="na-din f-middag" data-k="cook" data-testid="na-middag">' + ILL_PLATE + '<span class="f-mt"><b>' + esc(m.mark === 'rester' ? 'Rester – ' + m.name : m.name) + '</b>' + (m.time ? '<span>' + esc(m.time) + '</span>' : m.fraKal ? '<span data-testid="na-kal-merke">Fra kalenderen</span>' : '') + '</span></button>'
         : '<p class="na-din none" data-testid="na-middag-tom">Ingen middag valgt</p>' + naMiddagKnapp());
+      if (kSug) h += A.kalCardHtml(kSug, 'na');
       var ev = naEvents(t);
       if (ev.length) h += '<p class="na-lbl">I kveld</p><ul class="na-card" data-testid="na-ikveld">' + ev.slice(0, 3).map(function (e) { return '<li><b>' + esc(e.tm + ' ' + e.t) + '</b>' + chip(e) + '</li>'; }).join('') + '</ul>';
       var a = homeStops();
@@ -869,6 +894,7 @@
       else if (!bs.stops.length) h += naNoStop();
       if (bs.stops.length) h += local ? naDepState(pos.dep, pos.depBusy, pos.depErr, pos.depAt) : naDepState(dep.data, dep.busy, dep.err, dep.at);
       if (bs.stops.length) h += '<p class="na-src" data-testid="na-holdeplass-kilde">' + (local ? 'Holdeplasser nær deg' : bs.src === 'felles' ? 'Husstandens holdeplasser hjemme' : 'Holdeplass valgt manuelt') + ' · <button type="button" class="na-status-endre" data-k="na-modus-endre" data-testid="na-endre">Endre</button></p>';   // v0.18.11 (S7): åpner Hjemme/Borte, ikke kjøkkenskjerm-innstillingene
+      if (kSug) h += '<p class="na-lbl">Middag i dag</p>' + A.kalCardHtml(kSug, 'na');   // 0.24.0 (Sigurd): samme forslagskort som i Hjemme
       var buy = A.naBuy ? A.naBuy() : { items: [], open: 0 };
       h += '<p class="na-lbl">Kjøp på vei hjem</p><div class="na-card" data-testid="na-kjop">' +
         (!m ? '<p class="note">Ingen middag valgt i dag.</p>' : !buy.items.length ? '<p class="note">Alt til ' + esc(m.name) + ' er handlet.</p>' :
@@ -939,6 +965,9 @@
       ? '<button type="button" class="k-dinbtn" data-k="cook" data-testid="k-middag"><p class="k-lbl">Middag i dag</p><p class="k-dinner">' + esc(mname) + '</p>' +
         '<p class="k-dmeta">' + esc([m.time, 'trykk for oppskrift'].filter(Boolean).join(' · ')) + '</p></button>'
       : '<div data-testid="k-middag-tom"><p class="k-lbl">Middag i dag</p><p class="k-dinner k-none">Ingen middag valgt</p></div>';
+    var kSug = !m && A.kalSuggestion ? A.kalSuggestion(dayIso(t), calEvents(dayIso(t))) : null;   // 0.24.0: forslaget også på kjøkkenskjermen
+    if (kSug) dinner += A.kalCardHtml(kSug, 'k');
+    else if (m && m.fraKal) dinner = dinner.replace('<p class="k-dmeta">', '<p class="k-dmeta" data-testid="k-kal-merke">Fra kalenderen · ');
     var cal = calHtml(t), dep = depHtml(t, s);
     var next = '';
     if (!cal) {
@@ -1035,6 +1064,12 @@
       else if (k === 'ingtog') { cook.ingOpen = !cook.ingOpen; render(); }
       else if (k === 'ing') { var i = +t.getAttribute('data-i'); cook.done[i] = !cook.done[i]; render(); }
       if (wakeLock == null) takeLock();
+      return;
+    }
+    if (k === 'kal-bruk' || k === 'kal-nei' || k === 'kal-porsjoner') {   // 0.24.0: middagsforslaget fra kalenderen
+      if (e.preventDefault) e.preventDefault();
+      var A0 = api(); if (A0 && A0.kalAction) A0.kalAction(k, t.getAttribute('data-date'));
+      if (open && k !== 'kal-porsjoner') render();
       return;
     }
     if (root.classList.contains('k-na') && naTap(k, e.target, e)) return;
@@ -1462,6 +1497,6 @@
   document.addEventListener('submit', function () { if (!open) dirty = false; }, true);
   window.addEventListener('hashchange', function () { dirty = false; });
 
-  window.KnaggenKjokken = { show: show, hide: hide, sharedChanged: sharedChanged, homeChanged: function () { try { if (open && naOn()) render(); } catch (e) { } }, aksentChanged: function () { try { if (open) render(); } catch (e) { } }, isOpen: function () { return open; }, isNa: function () { return open && naOn(); }, narrow: function () { return isPhone(); }, phone: function () { return isPhone(); },
-    _test: { refresh: function () { render(); }, naMode: function () { return naMode(); }, posMode: function () { return posMode(); }, poll: function () { dep.fails = 0; dep.until = 0; pollDep(); }, loadCal: function () { loadCal(true); }, fit: function () { return fit.lvl; }, bedMs: bedMs, phaseAt: phaseAt, schedule: schedule, sunTimes: sunTimes, settings: settings, mixHex: mixHex, wxIcon: wxIcon, wxText: wxText, setKal: function (l, ev) { kal.list = l; kal.ev = ev; kal.at = Date.now(); render(); } } };
+  window.KnaggenKjokken = { calEvents: calEvents, calWant: calWant, show: show, hide: hide, sharedChanged: sharedChanged, homeChanged: function () { try { if (open && naOn()) render(); } catch (e) { } }, aksentChanged: function () { try { if (open) render(); } catch (e) { } }, isOpen: function () { return open; }, isNa: function () { return open && naOn(); }, narrow: function () { return isPhone(); }, phone: function () { return isPhone(); },
+    _test: { refresh: function () { render(); }, naMode: function () { return naMode(); }, posMode: function () { return posMode(); }, poll: function () { dep.fails = 0; dep.until = 0; pollDep(); }, loadCal: function () { loadCal(true); }, fit: function () { return fit.lvl; }, bedMs: bedMs, phaseAt: phaseAt, schedule: schedule, sunTimes: sunTimes, settings: settings, mixHex: mixHex, wxIcon: wxIcon, wxText: wxText, setKal: function (l, ev) { var A = api(); kal.list = l; kal.ev = ev; kal.at = Date.now(); kal.from = dayIso(now()); kal.hid = A && A.hid ? A.hid() : null; if (open) render(); try { if (A && A.calChanged) A.calChanged(); } catch (e) { } } } };
 })();

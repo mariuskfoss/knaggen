@@ -1576,3 +1576,32 @@ html[data-tema="lys"] .aks-rad .aks-dot { background: var(--sw-lys); color: var(
 
 /* 0.19.0 (Trude): navnet på husstanden er en trykkflate på minst 48 px */
 .k17-name { min-height: 48px; }
+
+/* 0.24.0: kalenderen på Uke og middagsforslag fra kalenderen (skisse merkevare/uke-kalender/v3) */
+.kal-forslag { background: color-mix(in srgb, var(--brand) 7%, var(--card)); border: 1px solid var(--line); padding: 8px 10px; margin: 0 0 8px; }
+.v11-day .kal-forslag { margin: 0 12px 8px; border: 0; border-radius: var(--radius-s, 8px); }   /* 0.24.0 (Sigurd): ingen strek inne i dagkortet – bare tonet bakgrunn */
+.kal-forslag > p { margin: 0; }
+.kal-forslag .hint { margin: 2px 0 0; }
+.v11-day .kal-merke { display: block; margin: 4px 0 8px; padding: 0 12px; box-sizing: border-box; color: var(--muted); font-size: var(--fs-14); }
+.kal-forslag-acts { margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: stretch; }
+.kal-forslag-acts .btn {
+  min-height: var(--tap); height: var(--tap); padding: 0 18px; box-sizing: border-box;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: var(--card); border: 1px solid var(--line-strong); color: var(--ink);
+  border-radius: var(--radius); font: inherit; font-weight: 600;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.kal-forslag-acts .btn.primary { grid-column: 1 / -1; background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.kj .kal-forslag { color: var(--ink); }
+.kj .kal-forslag-acts .btn { background: var(--card); border: 1px solid var(--line-strong); color: var(--ink); padding: 0 18px; min-height: var(--tap); height: var(--tap); }
+.kj .kal-forslag-acts .btn.primary { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.kj [data-testid="k-kal-forslag"] { margin: 10px 0 0; max-width: 520px; user-select: none; }
+/* 0.24.0 (Sigurd): ingen streker inne i dagkortet – luft og dempet tekst skiller middag og hendelser; bare streken mellom dagene står */
+.uke-kal-linjer { list-style: none; margin: 0; padding: 2px 12px 10px; border: 0; }
+.uke-kal-linjer li { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; font-size: var(--fs-14); color: var(--muted); background: none; border: 0 !important; box-shadow: none; }
+.uke-kal-linjer .tm { flex: none; min-width: 2.6rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.uke-kal-linjer .tx { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.uke-kal-linjer .who { flex: none; color: var(--muted); font-size: var(--fs-13); }
+.overlay.kal-por-ov { z-index: 2500; }
+
+.kj [data-testid="k-kal-forslag"] { font-size: 1.125rem; }

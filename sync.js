@@ -137,8 +137,11 @@ function stapleDoc(s, order) {
     order: s.order != null ? s.order : (order != null ? order : Date.now()) };
 }
 function validSource(u) { return typeof u === 'string' && u.length <= 2000 && /^https?:\/\/[^\s]+$/i.test(u); }
+// 0.24.0: fra = 'kalender' når engangsmiddagen ble laget fra et kalenderforslag («Fra kalenderen»). Reglene tillater
+// et fritt kart i oneoff, så feltet trenger ingen regelendring; eldre klienter overser det.
+function oneoffFra(o) { return o && o.fra === 'kalender' ? { fra: 'kalender' } : {}; }
 function oneoffDoc(o) {
-  return o ? Object.assign({ id: o.id, name: o.name, ingredients: recipeDoc(o).ingredients }, validSource(o.source) ? { source: o.source } : {}) : null;
+  return o ? Object.assign({ id: o.id, name: o.name, ingredients: recipeDoc(o).ingredients }, validSource(o.source) ? { source: o.source } : {}, oneoffFra(o)) : null;
 }
 // v0.4.4: kort signatur for en dag slik den ligger i Firestore (samme som app.js bruker for det telefonen viser).
 function daySig(d) {
@@ -152,7 +155,7 @@ function withMark(body, mark) { if (mark === 'handlet' || mark === 'rester') bod
 function dayBody(date, d) {
   const o = d && d.oneoff && d.oneoff.name ? d.oneoff : null;
   return withMark({ date, recipe_id: o ? null : ((d && d.recipe_id) || null),
-    oneoff: o ? Object.assign({ id: o.id || null, name: o.name, ingredients: o.ingredients || [] }, validSource(o.source) ? { source: o.source } : {}) : null }, markOf(d));
+    oneoff: o ? Object.assign({ id: o.id || null, name: o.name, ingredients: o.ingredients || [] }, validSource(o.source) ? { source: o.source } : {}, oneoffFra(o)) : null }, markOf(d));
 }
 function extraDoc(x) {
   return { week: x.week, name: x.name, qty: x.qty == null ? null : x.qty, unit: x.unit || '', aisle: x.aisle, created: x.created || Date.now() };

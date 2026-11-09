@@ -1238,7 +1238,7 @@
   function applyDays() {
     var wp = {}, oo = {}, mk = {};
     lastDays.forEach(function (d) {
-      if (d.oneoff && d.oneoff.name) { oo[d.date] = { id: d.oneoff.id, name: d.oneoff.name, ingredients: d.oneoff.ingredients || [] }; if (validSource(d.oneoff.source)) oo[d.date].source = d.oneoff.source; }
+      if (d.oneoff && d.oneoff.name) { oo[d.date] = { id: d.oneoff.id, name: d.oneoff.name, ingredients: d.oneoff.ingredients || [] }; if (validSource(d.oneoff.source)) oo[d.date].source = d.oneoff.source; if (d.oneoff.fra === 'kalender') oo[d.date].fra = 'kalender'; }
       else wp[d.date] = d.recipe_id || null;
       if ((d.mark === 'handlet' || d.mark === 'rester') && ((d.oneoff && d.oneoff.name) || d.recipe_id)) mk[d.date] = d.mark;
     });
@@ -1309,6 +1309,105 @@
     });
   }
 
+  /* ---------- 0.24.0: kalenderen på Uke og middagsforslag fra kalenderen (skisse merkevare/uke-kalender/v3) ----------
+   * Hendelsene er de samme som kjøkkenskjermen henter (kjokken.js → funksjonen «kalender»). Kalenderadressene ligger kryptert
+   * på serveren og finnes aldri i appen – her er det bare tittel, tid, sted og hvem.
+   * Forslag (regelbasert, ingen AI): dagen har ingen middag, er i dag eller senere, er ikke avvist med «Ikke middag», og en
+   * hendelse (ikke heldag) STARTER mellom 15:00 og 21:00 (begge med) med et av ordene middag, julebord, pinnekjøtt eller lag (se kalOrd) –
+   * eller har ordet «middag» i tittelen (søndagsmiddag, familiemiddag …), da uansett klokkeslett (Sigurd, 0.24.0c).
+   * Ingenting lagres før brukeren trykker «Bruk som middag», «Ikke middag» eller Lagre i porsjonsarket.
+   * «Ikke middag» huskes for hele husstanden i den felles lista: adjust["kalnei:<dato>"] = 1 (samme kart som allerede har
+   * merker som «v010:migrert»), så det trengs ingen regelendring. Gamle merker ryddes etter 30 døgn. */
+  var KAL_NEI = 'kalnei:', KAL_FRA = 15 * 60, KAL_TIL = 21 * 60;
+  // «lag» teller bare som eget ord (lag, laget) eller i sammensetninger med mat/drikke/fest (pinnekjøttlag, julelag, grillag,
+  // ribbelag …) – aldri «fotballaget», «nabolag», «forslag». Bindestrek holder ordet samlet: «fotball-lag» teller ikke, «jule-lag» gjør.
+  var KAL_LAG = /^(lag|laget|.*(kjøtt|ribbe|lutefisk|rakfisk|fårikål|smalahove|pølse|gløgg|vin|øl|grill|taco|pizza|krabbe|reke|vilt|suppe|grøt|vaffel|kake|fest|jule|julebords|bursdags|vors|kakao|middags|venne|familie)-?l?ag(et)?)$/;   // l? = grill+lag → «grillag»
+  function kalOrd(t) {
+    return String(t || '').toLowerCase().split(/[^a-z0-9æøåäöüéè-]+/).some(function (w) {
+      w = w.replace(/^-+|-+$/g, '');
+      return !!w && (w.replace(/(etter|for)middag/g, '').indexOf('middag') >= 0 || w.indexOf('julebord') >= 0 || w.indexOf('pinnekjøtt') >= 0 || KAL_LAG.test(w));
+    });
+  }
+  // «middag» som ord eller sammensetning (som i kalOrd) – men ikke «formiddag»/«ettermiddag», som er tid på dagen
+  function kalMiddag(t) {
+    return String(t || '').toLowerCase().split(/[^a-z0-9æøåäöüéè-]+/).some(function (w) {
+      return w.replace(/(etter|for)middag/g, '').indexOf('middag') >= 0;
+    });
+  }
+  function kalApi() { var K = window.KnaggenKjokken; return K && K.calEvents ? K : null; }
+  // Hendelsene for én dag (sortert, heldag først) – [] når kalenderen ikke er hentet eller dagen er utenfor vinduet
+  function kalDay(d) { var K = kalApi(); if (!K) return []; try { return K.calEvents(d) || []; } catch (e) { return []; } }
+  function kalNoSet(d) { return !!((state.list_adjust[LIST_KEY] || {})[KAL_NEI + d]); }
+  function kalTm(ms) { var x = new Date(ms); return pad(x.getHours()) + ':' + pad(x.getMinutes()); }
+  function kalSuggestion(d, evs) {
+    if (!d || d < isoDate(new Date()) || dinnerName(d) || kalNoSet(d)) return null;
+    var best = null;
+    (evs || kalDay(d)).forEach(function (e) {
+      if (!e || e.a || typeof e.s !== 'number') return;
+      var x = new Date(e.s), mm = x.getHours() * 60 + x.getMinutes();
+      if (isoDate(x) !== d || !(kalMiddag(e.t) || (mm >= KAL_FRA && mm <= KAL_TIL && kalOrd(e.t)))) return;
+      if (!best || e.s < best.s) best = e;
+    });
+    return best ? { date: d, t: String(best.t || '').slice(0, 120), l: String(best.l || '').slice(0, 80), who: best.who || '', tm: kalTm(best.s), s: best.s } : null;
+  }
+  function kalWhen(d) { return d === isoDate(new Date()) ? 'i dag' : dayLabel(d).toLowerCase(); }
+  // Forslagskortet (samme på Uke og Nå). where = 'uke' | 'na' | 'k' (testid-prefiks); knappene bærer data-action og data-k
+  function kalCardHtml(sug, where) {
+    var tid = where === 'uke' ? 'kl. ' + sug.tm : kalWhen(sug.date) + ' kl. ' + sug.tm;
+    return '<div class="notice kal-forslag" data-testid="' + where + '-kal-forslag" data-date="' + sug.date + '" role="group" aria-label="Forslag til middag fra kalenderen">' +
+      '<p><b>Middag: ' + esc(sug.t) + '</b><br><span class="hint">Fra kalenderen · ' + esc(tid) + (sug.l ? ' · ' + esc(sug.l) : '') + '</span></p>' +
+      '<div class="kal-forslag-acts">' +
+      '<button type="button" class="btn primary" data-action="kal-bruk" data-k="kal-bruk" data-date="' + sug.date + '" data-testid="' + where + '-kal-bruk">Bruk som middag</button>' +
+      '<button type="button" class="btn" data-action="kal-nei" data-k="kal-nei" data-date="' + sug.date + '" data-testid="' + where + '-kal-nei">Ikke middag</button>' +
+      '<button type="button" class="btn" data-action="kal-porsjoner" data-k="kal-porsjoner" data-date="' + sug.date + '" data-testid="' + where + '-kal-porsjoner">Porsjoner</button></div></div>';
+  }
+  function kalLinesHtml(evs) {
+    if (!evs.length) return '';
+    return '<ul class="uke-kal-linjer" data-testid="uke-kal-hendelser">' + evs.map(function (e) {
+      return '<li data-testid="uke-kal-hendelse"><span class="tm">' + esc(e.tm) + '</span><span class="tx">' + esc(e.t) + (e.l ? ' · ' + esc(e.l) : '') + '</span>' +
+        (e.who ? '<span class="who">' + esc(e.who) + '</span>' : '') + '</li>';
+    }).join('') + '</ul>';
+  }
+  function kalRefresh() {
+    if (main.querySelector('[data-page="uke"]') && !document.querySelector('.overlay') && !isFormRoute()) renderUke();
+    if (window.KnaggenKjokken && window.KnaggenKjokken.homeChanged) window.KnaggenKjokken.homeChanged();
+  }
+  function kalUse(d) {
+    var sug = kalSuggestion(d);
+    if (!sug) return false;
+    var o = { id: uid('o'), name: sug.t, ingredients: [], fra: 'kalender' };
+    ops.setDays([{ date: d, recipe_id: null, oneoff: o }]);
+    toast(sug.t + ' er middag ' + kalWhen(d), 8000, { label: 'Angre', run: function () {
+      var cur = state.oneoffs[d];
+      if (cur && cur.id === o.id) ops.setDays([{ date: d, recipe_id: null, oneoff: null }]);
+      kalRefresh();
+    } });
+    kalRefresh();
+    return true;
+  }
+  function kalNo(d) {
+    if (!kalSuggestion(d)) return false;
+    var m = {}; m[KAL_NEI + d] = 1;
+    ops.setAdjustRaw(LIST_KEY, m);
+    var old = new Date(); old.setDate(old.getDate() - 30); var cut = isoDate(old);
+    Object.keys(state.list_adjust[LIST_KEY] || {}).forEach(function (k) { if (k.indexOf(KAL_NEI) === 0 && k.slice(KAL_NEI.length) < cut) ops.clearAdjust(LIST_KEY, k); });
+    toast('Ingen middag ' + kalWhen(d) + ' – forslaget er skjult', 8000, { label: 'Angre', run: function () { ops.clearAdjust(LIST_KEY, KAL_NEI + d); kalRefresh(); } });
+    kalRefresh();
+    return true;
+  }
+  function kalPortions(d) {
+    var sug = kalSuggestion(d);
+    if (!sug) return false;
+    openDayPeopleSheet(d, sug);
+    return true;
+  }
+  function kalAction(a, d) {
+    if (a === 'kal-bruk') return kalUse(d);
+    if (a === 'kal-nei') return kalNo(d);
+    if (a === 'kal-porsjoner') return kalPortions(d);
+    return false;
+  }
+
   // v0.15 «Kjøkkenskjerm» (#kjokken, kjokken.js): appen gir bare data; skjermen tegner selv.
   function kitchenMeal(d) {
     var o = state.oneoffs[d];
@@ -1318,7 +1417,7 @@
     var tom = f === 'Tom';
     var por = r._oneoff ? null : (tom ? 0 : SC.servingsOf(r) * f);
     return {
-      date: d, name: shownName(r), id: r.id || null, time: r._oneoff ? '' : timeText(r), oneoff: !!r._oneoff, mark: markOf(d),
+      date: d, name: shownName(r), id: r.id || null, time: r._oneoff ? '' : timeText(r), oneoff: !!r._oneoff, mark: markOf(d), fraKal: !!(o && o.fra === 'kalender'),
       portions: por == null ? '' : fmtPor(por) + (por === 1 ? ' porsjon' : ' porsjoner'),
       ingredients: (r.ingredients || []).filter(function (i) { return i && String(i.name || '').trim(); }).map(function (i) {
         var q = (tom || f === 1) ? i.qty : scaleQty(i.qty, i.unit, f, normName(i.name));
@@ -1330,6 +1429,13 @@
   }
   window.KnaggenKitchenApi = {
     meal: function (d) { return kitchenMeal(d); },
+    // 0.24.0: middagsforslag fra kalenderen (samme regler som Uke) og knappene på Nå / kjøkkenskjermen
+    kalSuggestion: function (d, evs) { return kalSuggestion(d, evs); },
+    kalOrd: function (t) { return kalOrd(t); },   // les-bare (tester)
+    kalCardHtml: function (sug, where) { return kalCardHtml(sug, where); },
+    kalAction: function (a, d) { return kalAction(a, d); },
+    calChanged: function () { kalRefresh(); },
+    kalState: function (d) { return JSON.parse(JSON.stringify({ oneoff: state.oneoffs[d] || null, people: state.day_people[d] || null, nei: kalNoSet(d) })); },   // les-bare (tester)
     // v0.18 «Nå»: varene til dagens middag (Kjøp på vei hjem), avkrysning og tallene til snarveiene
     naBuy: function () {
       var b = buildList(true), today = isoDate(new Date()), out = [];
@@ -2523,6 +2629,7 @@
 
   function renderUke() {
     var dates = weekDates(ui.weekOffset);
+    var KK = kalApi(); if (KK && KK.calWant) { try { KK.calWant(); } catch (e) { } }   // 0.24.0: henter kalenderen (høyst hvert 15. min)
     var today = isoDate(new Date());
     var rs = sortedRecipes();
     var usedBy = {}; // recipe_id -> dagindeks
@@ -2660,7 +2767,12 @@
           (tag ? '<span class="v11-tag" data-testid="dag-merke">' + esc(tag) + '</span>' : '') +
           (mk ? '<span class="v16-mark" data-testid="dag-handlet" data-mark="' + mk + '" aria-hidden="true">' + (mk === 'rester' ? ICON_BOWL + 'Rester' : '✓ Handlet') + '</span>' : '') +
           (swapFrom ? '' : '<span class="go" aria-hidden="true">›</span>') + '</button>' +
-          (swapFrom ? swapBtn(d, dn) : '') + '</div></li>';
+          (swapFrom ? swapBtn(d, dn) : '') + '</div>';
+        // 0.24.0: «Fra kalenderen», middagsforslaget og dagens kalenderhendelser som linjer under middagen
+        if (o && o.fra === 'kalender') h += '<p class="kal-merke" data-testid="uke-kal-merke">Fra kalenderen</p>';
+        var kEv = kalDay(d), kSug = swapFrom ? null : kalSuggestion(d, kEv);
+        if (kSug) h += kalCardHtml(kSug, 'uke');
+        h += kalLinesHtml(kEv) + '</li>';
       });
       h += '</ol>';
     }
@@ -2971,6 +3083,7 @@
     var prev = state.oneoffs[date];
     var no = { id: prev ? prev.id : uid('o'), name: name, ingredients: readIngredients(form) };
     if (prev && validSource(prev.source)) no.source = prev.source;   // v0.12: kilden følger med
+    if (prev && prev.fra === 'kalender') no.fra = 'kalender';   // 0.24.0: «Fra kalenderen» følger med når den redigeres
     ops.setDays([{ date: date, recipe_id: null, oneoff: no }]);
     toast('Engangsmiddag lagret');
     location.hash = '#uke';
@@ -3362,7 +3475,9 @@
   }
   // Merk startretter som Knaggen hvis ingrediensene fortsatt matcher seed (Sigurd).
 
-  function openDayPeopleSheet(date) {
+  // 0.24.0: kal = middagsforslaget fra kalenderen («Porsjoner»): egen overskrift og forklaring, bare «Vanlig: N» per rad,
+  // «Regnes som N porsjoner», og 0 hjemme lagres som avvik (dagen har ingen middag å sette til Tom).
+  function openDayPeopleSheet(date, kal) {
     ui.hsDayDate = date;
     var usual = hsPeople();
     var delta = dayDelta(date) || { voksen: 0, barn: 0, smabarn: 0 };
@@ -3371,6 +3486,24 @@
       : { voksen: Math.max(0, delta.voksen), barn: Math.max(0, delta.barn), smabarn: Math.max(0, delta.smabarn) };
     var ov = document.createElement('div');
     ov.className = 'overlay';
+    if (kal) {
+      ov.className = 'overlay kal-por-ov';   // over kjøkkenskjermen (Nå) også
+      ov.innerHTML = '<div class="sheet hs-sheet" role="dialog" aria-modal="true" aria-labelledby="kal-por-h" data-testid="hs-dag-ark" data-kal="1">' +
+        '<div class="sheet-head"><h3 id="kal-por-h">Hvem spiser hjemme?</h3>' +
+        '<button type="button" class="icon-btn" data-action="hs-ark-lukk" aria-label="Lukk">✕</button></div>' +
+        '<p class="hint" data-testid="kal-porsjoner-hint">' + esc(kal.t) + ' kl. ' + esc(kal.tm) + ' står i kalenderen. Tell dem som spiser middag hjemme ' +
+        esc(date === isoDate(new Date()) ? 'i kveld' : dayLabel(date).toLowerCase()) + '.</p>' +
+        (usual ? '' : '<p class="hint">Husstanden er ikke satt. <a href="#husstand">Sett husstanden</a> for å kunne velge færre.</p>') +
+        peopleCountersHtml('hsd', cur, { usual: usual || { voksen: 0, barn: 0, smabarn: 0 }, plainUsual: true, dayMode: true, noFewer: !usual, testid: 'hs-dag-folk' }) +
+        '<div class="hs-sheet-acts">' +
+        '<button type="button" class="btn primary" data-action="hs-dag-lagre" data-date="' + date + '" data-kal="1" data-testid="hs-dag-lagre">Lagre</button>' +
+        '<button type="button" class="btn" data-action="hs-ark-lukk" data-testid="hs-dag-avbryt">Avbryt</button></div>' +
+        '</div>';
+      document.body.appendChild(ov);
+      var fb = ov.querySelector('[data-hs-step="1"]');
+      if (fb) try { fb.focus(); } catch (e) {}
+      return;
+    }
     ov.innerHTML = '<div class="sheet hs-sheet" role="dialog" aria-modal="true" data-testid="hs-dag-ark">' +
       '<div class="sheet-head"><h3>Hvem spiser ' + esc(dayLabel(date).toLowerCase()) + '?</h3>' +
       '<button type="button" class="icon-btn" data-action="hs-ark-lukk" aria-label="Lukk">✕</button></div>' +
@@ -3388,6 +3521,8 @@
     if (focusBtn) try { focusBtn.focus(); } catch (e) {}
   }
   function updateDaySheetResult(date) {
+    var kalSum = document.querySelector('[data-testid="hs-dag-ark"][data-kal] [data-testid="hsd-sum"]');
+    if (kalSum) { kalSum.innerHTML = 'Regnes som <b>' + fmtPor(SC.porsjoner(readCounters('hsd'))) + ' porsjoner</b>'; return; }   // 0.24.0
     var box = document.querySelector('[data-testid="hs-dag-resultat"]');
     if (!box) return;
     var cur = readCounters('hsd');
@@ -3486,7 +3621,7 @@
     } else {
       // 0 personer → sett Tom, ikke lagre avvik
       var eff = SC.effectivePeople(hsPeople() || { voksen: 0, barn: 0, smabarn: 0 }, clean);
-      if (hsPeople() && SC.porsjoner(eff) === 0) {
+      if (hsPeople() && SC.porsjoner(eff) === 0 && !opts.allowZero) {
         return clearDayToEmpty(date, prev, clean);
       }
       state.day_people[date] = clean;
@@ -3556,7 +3691,7 @@
       var dl = '';
       if (opts.usual) {
         var d = n - usual;
-        if (d) dl = '<span class="dl ' + (d > 0 ? 'up' : 'down') + '">Vanlig: ' + usual + ' · <b>' + (d > 0 ? '+' : '−') + Math.abs(d) + '</b></span>';
+        if (d && !opts.plainUsual) dl = '<span class="dl ' + (d > 0 ? 'up' : 'down') + '">Vanlig: ' + usual + ' · <b>' + (d > 0 ? '+' : '−') + Math.abs(d) + '</b></span>';
         else dl = '<span class="m">Vanlig: ' + usual + '</span>';
       }
       h += '<li data-k="' + k + '"><div class="who"><b>' + row[1] + '</b><span>' + row[2] + (dl ? ' · ' + dl : '') + '</span></div>' +
@@ -5244,7 +5379,8 @@
           var delta = usual ? { voksen: cur3.voksen - (usual.voksen||0), barn: cur3.barn - (usual.barn||0), smabarn: cur3.smabarn - (usual.smabarn||0) } : cur3;
           var net = SC.netPeople(delta);
           var msg = dayLabel(date) + (net > 0 ? ': +' + net + ' til middag. Lista er oppdatert.' : net < 0 ? ': −' + Math.abs(net) + ' til middag. Lista er oppdatert.' : ' er endret. Lista er oppdatert.');
-          saveDayPeople(date, delta, { toastMsg: msg });
+          if (fake.hasAttribute('data-kal')) saveDayPeople(date, delta, { allowZero: true, toastMsg: dayLabel(date) + ': ' + (SC.porsjoner(cur3) ? SC.peopleText(cur3, true) + ' hjemme' : 'ingen hjemme') });   // 0.24.0
+          else saveDayPeople(date, delta, { toastMsg: msg });
         }
       }
       return;
@@ -6959,7 +7095,7 @@
     if (!p) return cb('00');
     function ut() { try { cb(window.KnaggenSted.fylke(p.lat, p.lon)); } catch (e) { cb('00'); } }
     if (window.KnaggenSted) return ut();
-    var sc = document.createElement('script'); sc.src = 'sted.js?v=0.23.1'; sc.onload = ut; sc.onerror = function () { cb('00'); };
+    var sc = document.createElement('script'); sc.src = 'sted.js?v=0.24.0'; sc.onload = ut; sc.onerror = function () { cb('00'); };
     document.head.appendChild(sc);
   }
   // Telles på nytt når UTC-datoen har skiftet: ved nye serverdata, når siden blir synlig igjen, når nettet kommer tilbake og hver time.
@@ -7668,6 +7804,8 @@
       remote(function (w, hid) { return w.setHouseholdSettings(hid, state.household_size); });
       toast(next ? 'Retter fra Knaggen tilpasses husstanden' : 'Retter fra Knaggen bruker oppskriftens mengder', 8000);
       route();
+    } else if (a === 'kal-bruk' || a === 'kal-nei' || a === 'kal-porsjoner') {   // 0.24.0
+      kalAction(a, btn.getAttribute('data-date'));
     } else if (a === 'hs-day') {
       if (ui.dayOpen) { ui.dayOpen = null; renderUke(); }   // v0.11: fra dagsarket
       openDayPeopleSheet(btn.getAttribute('data-date'));
@@ -7682,7 +7820,8 @@
         : cur3;
       var net = SC.netPeople(delta);
       var msg = dayLabel(date) + (net > 0 ? ': +' + net + ' til middag. Lista er oppdatert.' : net < 0 ? ': −' + Math.abs(net) + ' til middag. Lista er oppdatert.' : ' er endret. Lista er oppdatert.');
-      saveDayPeople(date, delta, { toastMsg: msg });
+      if (btn.hasAttribute('data-kal')) saveDayPeople(date, delta, { allowZero: true, toastMsg: dayLabel(date) + ': ' + (SC.porsjoner(cur3) ? SC.peopleText(cur3, true) + ' hjemme' : 'ingen hjemme') });   // 0.24.0
+      else saveDayPeople(date, delta, { toastMsg: msg });
     } else if (a === 'hs-dag-tom') {
       var dateT = btn.getAttribute('data-date');
       var curT = readCounters('hsd');
@@ -8220,8 +8359,9 @@
     document.addEventListener('fullscreenchange', ut); document.addEventListener('webkitfullscreenchange', ut);
     ut();
   })();
-  var APP_VERSION = '0.23.1', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.24.0', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.24.0', ['Uke viser nå kalenderhendelsene for hver dag som linjer under middagen, med klokkeslett og hvem. Hendelsene kommer fra kalenderne som er lagt til på kjøkkenskjermen, for de nærmeste dagene.', 'Har en dag ingen middag, og det står for eksempel middag, julebord, pinnekjøtt eller lag i en avtale som starter mellom kl. 15 og 21 (står det middag, uansett klokkeslett), foreslår Knaggen den som middag. Du kan velge «Bruk som middag», «Ikke middag» eller «Porsjoner» (hvem som spiser hjemme). Ingenting lagres før du trykker.', '«Bruk som middag» legger inn en engangsmiddag merket «Fra kalenderen», uten varer på handlelista. «Ikke middag» gjelder hele husstanden.', 'Forslaget vises også på Nå og på kjøkkenskjermen.']],
     ['0.23.1', ['På telefon går Knaggen ut av API-fullskjerm hvis noe forsøker å sette den. Det kan hjelpe mot tomme varsler i noen nettlesere; vi har ikke bekreftet at det fjerner Android-varselet hos alle.', 'I morgen viste «Værvarselet er ikke klart» etter oppdateringen fordi en gammel værcache uten morgendagens vær ble brukt. Nå hentes været på nytt når morgendagen mangler.', 'Når du legger til en vare, foreslår Knaggen kjente varer under feltet etter to bokstaver – uten den store iOS-menyen som dekket hele skjermen.', 'Trykk på «Legg til» etter at du har skrevet en vare virker nå også på iPhone. Og legger du til en vare du nylig har krysset av, for eksempel egg, kommer den tilbake på lista i stedet for å bli liggende skjult under «handlet».']],
     ['0.23.0', ['Nå har fått «I dag | I morgen». Trykk på I morgen eller sveip til venstre for å se morgendagens vær, middag, avtaler og gjøremål. Nå åpner alltid på I dag.', '«Nytt i Knaggen» dukker ikke lenger opp av seg selv etter en oppdatering. Trykk på versjonsnummeret ved logoen når du vil se hva som er nytt.', 'Fanelinja nederst skjules ikke lenger under «Sett opp hjemmet» på nye telefoner.']],
     ['0.22.1', ['Innloggingen skjer nå på auth.knaggen.no (samme knaggen.no-familie som appen).', 'Når du deler lista til Oda, får du en kortere lenke på del.knaggen.no.']],
