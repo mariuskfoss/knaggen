@@ -637,12 +637,26 @@
   var ICON_PEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L18.5 9.5a2.83 2.83 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>';
   var ICON_REPEAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>';
 
-  function knownNamesDatalist() {
+  function knownNamesList() {
     var names = {};
     state.recipes.forEach(function (x) { x.ingredients.forEach(function (i) { names[normName(i.name)] = 1; }); });
     state.staples.forEach(function (s) { names[normName(s.name)] = 1; });
-    return '<datalist id="known-ings">' + Object.keys(names).sort(function (a, b) { return a.localeCompare(b, 'nb'); })
+    return Object.keys(names).sort(function (a, b) { return a.localeCompare(b, 'nb'); });
+  }
+  function knownNamesDatalist() {
+    // Brukes av ingrediensfelt i retter. Vare-feltet (＋) har egen forslagsliste (0.23.1) – ikke native datalist (iOS dekker hele skjermen).
+    return '<datalist id="known-ings">' + knownNamesList()
       .map(function (n) { return '<option value="' + esc(n) + '">'; }).join('') + '</datalist>';
+  }
+  function filterKnownNames(q) {
+    q = normName(q || '');
+    if (q.length < 2) return [];
+    var all = knownNamesList(), out = [], i;
+    for (i = 0; i < all.length && out.length < 5; i++) if (all[i].indexOf(q) === 0) out.push(all[i]);
+    for (i = 0; i < all.length && out.length < 5; i++) {
+      if (all[i].indexOf(q) > 0 && out.indexOf(all[i]) < 0) out.push(all[i]);
+    }
+    return out;
   }
 
   /* ---------- Husstand (Firebase) ---------- */
@@ -4512,7 +4526,9 @@
     return '<div class="add-panel' + (e ? ' edit-panel' : '') + '" id="add-panel">' +
       (e ? '<h3 class="edit-h" id="ie-h">Endre vare</h3>' : '') +
       '<form id="' + (e ? 'item-edit' : 'item-add') + '" class="item-add-form" novalidate ' + (e ? 'aria-labelledby="ie-h" data-key="' + esc(e.key) + '" data-testid="vare-endre"' : 'aria-label="Legg til vare"') + '>' +
-      '<input type="text" id="ai-name" placeholder="Vare, f.eks. tannkrem" aria-label="Vare" autocomplete="off"' + (e ? ' value="' + esc(e.name) + '"' + dis : ' list="known-ings"') + '>' +
+      '<input type="text" id="ai-vare" name="vare" placeholder="Vare, f.eks. tannkrem" aria-label="Vare" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-testid="ai-vare"' +
+      (e ? ' value="' + esc(e.name) + '"' + dis : ' aria-autocomplete="list" aria-controls="ai-vare-forslag" aria-expanded="false"') + '>' +
+      (e ? '' : '<ul id="ai-vare-forslag" class="ai-vare-forslag" role="listbox" hidden data-testid="ai-vare-forslag"></ul>') +
       '<div class="ai-row"><input type="text" id="ai-qty" inputmode="decimal" placeholder="1" aria-label="Mengde"' + (e ? ' value="' + esc(formatQty(e.qty)) + '"' : '') + '>' +
       '<select id="ai-unit" aria-label="Enhet"' + dis + '>' + unitOptions(e ? e.unit : '') + '</select>' +
       '<select id="ai-aisle" aria-label="Avdeling"' + dis + '>' + aisleOptions(e ? e.aisle : 'Tørrvare') + '</select></div>' +
@@ -4521,7 +4537,7 @@
         '<div class="form-actions plain"><button type="submit" class="btn primary" data-testid="vare-lagre">Lagre</button>' +
         '<button type="button" class="btn" data-action="edit-cancel" data-testid="vare-avbryt">Avbryt</button></div></form></div>' :
       '<label class="check"><input type="checkbox" id="ai-staple"> Legg til i faste varer</label>' +
-      '<button type="submit" class="btn primary">Legg til</button></form>' + knownNamesDatalist() + '</div>');
+      '<button type="submit" class="btn primary">Legg til</button></form></div>');
   }
   function editInfo(key) {
     var it = currentItems().filter(function (i) { return i.key === key; })[0];
@@ -4542,7 +4558,7 @@
   function openItemEdit(key) {
     if (!editInfo(key)) return;
     ui.editKey = key; ui.addOpen = false; renderListSection();
-    var f = document.getElementById('ai-name');
+    var f = document.getElementById('ai-vare');
     if (f && f.disabled) f = document.getElementById('ai-qty');
     if (f) { try { f.focus({ preventScroll: true }); } catch (x) { f.focus(); } var p = document.getElementById('add-panel'); if (p && p.scrollIntoView) p.scrollIntoView({ block: 'nearest' }); }
   }
@@ -4551,8 +4567,8 @@
     ui.editKey = null;
     if (!e) { renderListSection(); return; }
     var it = e.it, q = parseQty(document.getElementById('ai-qty').value);
-    var name = e.kind === 'qty' ? e.name : document.getElementById('ai-name').value.trim();
-    if (!name) { ui.editKey = e.key; document.getElementById('ai-name').focus(); return; }
+    var name = e.kind === 'qty' ? e.name : document.getElementById('ai-vare').value.trim();
+    if (!name) { ui.editKey = e.key; document.getElementById('ai-vare').focus(); return; }
     if (e.kind === 'qty') {
       if (q == null) { ui.editKey = e.key; document.getElementById('ai-qty').focus(); return; }
       var own = round3(q - (it.base_qty || 0) - (it.adjust_legacy || 0));
@@ -5144,14 +5160,29 @@
       renderFastePage();
       var n = document.getElementById('fv-q');
       if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) {} }
-    } else if (t.id === 'ai-name') {
+    } else if (t.id === 'ai-vare') {
       updateAddItemMatch();
+      aiVarePick = -1;
+      renderAiVareForslag();
     } else if (t.id === 'fv-new-qty') {
       var cq = main.querySelector('.fv-new'), vq = parseQty(t.value);
       if (cq && vq > 0) { cq.setAttribute('data-qty', String(round3(vq))); fvNewSync(cq); }
     }
   });
   main.addEventListener('keydown', function (e) {
+    if (e.target && e.target.id === 'ai-vare') {
+      var ul = document.getElementById('ai-vare-forslag');
+      var open = ul && !ul.hidden && ul.children.length;
+      if (e.key === 'Escape') { if (open) { e.preventDefault(); hideAiVareForslag(); } return; }
+      if (!open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { renderAiVareForslag(); ul = document.getElementById('ai-vare-forslag'); open = ul && !ul.hidden && ul.children.length; }
+      if (!open) return;
+      if (e.key === 'ArrowDown') { e.preventDefault(); aiVarePick = Math.min(ul.children.length - 1, aiVarePick + 1); renderAiVareForslag(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); aiVarePick = Math.max(0, aiVarePick - 1); renderAiVareForslag(); }
+      else if (e.key === 'Enter' && aiVarePick >= 0) {
+        var opt = ul.children[aiVarePick]; if (opt) { e.preventDefault(); pickAiVare(opt.getAttribute('data-v')); }
+      }
+      return;
+    }
     if (e.key === 'Escape' && ui.fvOpenId && /^#liste\/faste/.test(location.hash || '')) {
       e.preventDefault();
       var id = ui.fvOpenId; fvCloseOpen(); renderFastePage();
@@ -5411,22 +5442,58 @@
   // v0.7 (Merkevare 3.4 / skjerm 4b): «＋ Legg til vare» gjenkjenner eksisterende fast vare.
   function updateAddItemMatch() {
     var form = document.getElementById('item-add'); if (!form) return;
-    var nameEl = document.getElementById('ai-name'); if (!nameEl) return;
+    var nameEl = document.getElementById('ai-vare'); if (!nameEl) return;
     var hit = findStapleByKey(nameEl.value);
-    var old = form.querySelector('.ai-match'); if (old) old.parentNode.removeChild(old);
+    var old = form.querySelector('.ai-match');
     var sub = form.querySelector('[type=submit]');
+    // 0.23.1 (egg-feilen): «change» kommer når feltet mister fokus, altså midt i et trykk på «Legg til». Byttes knappens tekst
+    // (eller boksen over den) da, mister WebKit/iOS trykket – ingen click, ingen submit. Rør bare DOM-en når noe faktisk endres.
+    var want = hit ? 'Legg på lista' : 'Legg til';
+    if (old && hit && old.getAttribute('data-id') === hit.id) { if (sub && sub.textContent !== want) sub.textContent = want; return; }
+    if (old) old.parentNode.removeChild(old);
     if (hit) {
       form.classList.add('staple-match');
       var box = document.createElement('div');
-      box.className = 'ai-match'; box.setAttribute('role', 'status'); box.setAttribute('data-testid', 'ai-fast-treff');
+      box.className = 'ai-match'; box.setAttribute('role', 'status'); box.setAttribute('data-testid', 'ai-fast-treff'); box.setAttribute('data-id', hit.id);
       box.innerHTML = '<span class="ok" aria-hidden="true">✓</span><span><b>' + esc(cap(hit.name)) + '</b> er en fast vare. Den legges på lista som fast vare.' +
         '<span class="m">' + esc(stapleAmt(hit) || '1') + ' · ' + esc(aisleLabel(itemAisle(hit.name, hit.aisle))) + '</span></span>';
-      nameEl.insertAdjacentElement('afterend', box);
-      if (sub) sub.textContent = 'Legg på lista';
+      var after = form.querySelector('#ai-vare-forslag') || nameEl;
+      after.insertAdjacentElement('afterend', box);
     } else {
       form.classList.remove('staple-match');
-      if (sub) sub.textContent = 'Legg til';
     }
+    if (sub && sub.textContent !== want) sub.textContent = want;
+  }
+
+  // 0.23.1: egne vareforslag under feltet (ikke native <datalist> – iOS Safari fyller da hele skjermen, også med tomt felt).
+  var aiVarePick = -1, aiVareBlurT = 0;
+  function hideAiVareForslag() {
+    var ul = document.getElementById('ai-vare-forslag'), inp = document.getElementById('ai-vare');
+    if (ul) { ul.innerHTML = ''; ul.hidden = true; }
+    if (inp) { inp.setAttribute('aria-expanded', 'false'); inp.removeAttribute('aria-activedescendant'); }
+    aiVarePick = -1;
+  }
+  function renderAiVareForslag() {
+    var inp = document.getElementById('ai-vare'), ul = document.getElementById('ai-vare-forslag');
+    if (!inp || !ul || inp.disabled) { hideAiVareForslag(); return; }
+    var hits = filterKnownNames(inp.value);
+    if (!hits.length) { hideAiVareForslag(); return; }
+    if (aiVarePick >= hits.length) aiVarePick = hits.length - 1;
+    ul.hidden = false;
+    inp.setAttribute('aria-expanded', 'true');
+    ul.innerHTML = hits.map(function (n, i) {
+      return '<li id="ai-vare-opt-' + i + '" role="option" tabindex="-1" data-v="' + esc(n) + '" data-testid="ai-vare-treff"' +
+        (i === aiVarePick ? ' aria-selected="true" class="on"' : ' aria-selected="false"') + '>' + esc(cap(n)) + '</li>';
+    }).join('');
+    if (aiVarePick >= 0) inp.setAttribute('aria-activedescendant', 'ai-vare-opt-' + aiVarePick);
+    else inp.removeAttribute('aria-activedescendant');
+  }
+  function pickAiVare(n) {
+    var inp = document.getElementById('ai-vare'); if (!inp || inp.disabled) return;
+    inp.value = cap(n);
+    hideAiVareForslag();
+    try { inp.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) { }
+    updateAddItemMatch();
   }
 
   /* ---------- v0.9: Første møte og eget hjem (merkevare/forste-mote) ---------- */
@@ -6892,7 +6959,7 @@
     if (!p) return cb('00');
     function ut() { try { cb(window.KnaggenSted.fylke(p.lat, p.lon)); } catch (e) { cb('00'); } }
     if (window.KnaggenSted) return ut();
-    var sc = document.createElement('script'); sc.src = 'sted.js?v=0.23.0'; sc.onload = ut; sc.onerror = function () { cb('00'); };
+    var sc = document.createElement('script'); sc.src = 'sted.js?v=0.23.1'; sc.onload = ut; sc.onerror = function () { cb('00'); };
     document.head.appendChild(sc);
   }
   // Telles på nytt når UTC-datoen har skiftet: ved nye serverdata, når siden blir synlig igjen, når nettet kommer tilbake og hver time.
@@ -7637,7 +7704,7 @@
       ui.editKey = null;
       ui.addOpen = !ui.addOpen;
       renderListSection();
-      var af = ui.addOpen ? document.getElementById('ai-name') : main.querySelector('[data-action="add-toggle"]');
+      var af = ui.addOpen ? document.getElementById('ai-vare') : main.querySelector('[data-action="add-toggle"]');
       if (af) try { af.focus({ preventScroll: true }); } catch (x) { af.focus(); }
     } else if (a === 'list-menu') {
       openListMenu();
@@ -7921,7 +7988,7 @@
       }
     } else if (t.classList.contains('ing-basis-cb')) {
       t.setAttribute('data-touched', '1');
-    } else if (t.classList.contains('ing-name') || t.id === 'ai-name') {
+    } else if (t.classList.contains('ing-name') || t.id === 'ai-vare') {
       var row = t.classList.contains('ing-name') ? t.closest('.ing-row') : null;
       var bcb = row && row.querySelector('.ing-basis-cb');
       if (bcb && !bcb.hasAttribute('data-touched')) {
@@ -7964,6 +8031,17 @@
     if (e.target.classList.contains('staples')) ui.staplesOpen = e.target.open;
   }, true);
 
+  // 0.23.1: «＋ Legg til» på en vare som er krysset av (handlet) tar avkrysningen bort, så varen faktisk står på lista.
+  // pred velger linja (fast vare-id / ny ekstra-id). Gir true hvis noe ble satt tilbake.
+  function reopenAdded(pred) {
+    var built = buildList(true), it = built.items.filter(pred)[0];
+    if (!it || !it.checked) return false;
+    var wchecks = state.checks[it.week] || {}, m = {};
+    m[it.key] = false;
+    (it.legacyKeys || []).forEach(function (x) { if (wchecks[x.k]) m[x.k] = false; });
+    ops.setChecks(it.week, m);
+    return true;
+  }
   main.addEventListener('submit', function (e) {
     e.preventDefault();
     var id = e.target.id;
@@ -7979,8 +8057,8 @@
     else if (id === 'oneoff-form') saveOneoffForm(e.target);
     else if (id === 'item-edit') saveItemEdit(e.target);
     else if (id === 'item-add') {
-      var name = document.getElementById('ai-name').value.trim();
-      if (!name) { document.getElementById('ai-name').focus(); return; }
+      var name = document.getElementById('ai-vare').value.trim();
+      if (!name) { document.getElementById('ai-vare').focus(); return; }
       var wkDates = [LIST_KEY];   // v0.10: felles liste
       var hit = findStapleByKey(name);
       var msg;
@@ -7988,9 +8066,12 @@
         // v0.7: treff på fast vare → legg på som fast vare (ingen list_extras, ingen ny fast vare)
         var adj = state.list_adjust[wkDates[0]] || {};
         if (stapleChosen(hit, wkDates[0], adj)) {
-          toast(cap(hit.name) + ' står allerede på lista');
+          // 0.23.1 (egg-feilen): var varen krysset av (handlet), sto den skjult under «Vis N handlet» – sett den tilbake.
+          if (reopenAdded(function (it) { return it.staple_ids.indexOf(hit.id) >= 0; })) toast(cap(hit.name) + ' er på lista igjen');
+          else toast(cap(hit.name) + ' står allerede på lista');
         } else {
           var fm2 = {}; fm2[hit.id] = 1; ops.setFast(wkDates[0], fm2);
+          reopenAdded(function (it) { return it.staple_ids.indexOf(hit.id) >= 0; });
           toast(cap(hit.name) + ' (fast vare) er på lista');
         }
       } else if (document.getElementById('ai-staple') && document.getElementById('ai-staple').checked) {
@@ -8001,6 +8082,7 @@
           aisle: document.getElementById('ai-aisle').value || guessAisle(name) || 'Tørrvare', active: true };
         ops.addStaple(item);
         var fm3 = {}; fm3[item.id] = 1; ops.setFast(wkDates[0], fm3);
+        reopenAdded(function (it) { return it.staple_ids.indexOf(item.id) >= 0; });
         msg = 'Lagt til i lista og i faste varer';
         toast(msg);
       } else {
@@ -8008,12 +8090,49 @@
         var item2 = { id: uid('x'), name: name, qty: q2 == null ? 1 : q2, unit: document.getElementById('ai-unit').value,
           aisle: document.getElementById('ai-aisle').value, week: wkDates[0], created: Date.now() };
         ops.addExtra(item2);
-        toast('Lagt til i lista');
+        // Samme navn som en vare som er handlet: linja slås sammen og ble stående avkrysset (pakningen dekket mengden).
+        toast(reopenAdded(function (it) { return it.extra_ids.indexOf(item2.id) >= 0; }) ? cap(name) + ' er på lista igjen' : 'Lagt til i lista');
       }
       ui.addOpen = true;
       renderListSection();
-      var an = document.getElementById('ai-name'); if (an) { an.value = ''; an.focus(); updateAddItemMatch(); }
+      var an = document.getElementById('ai-vare'); if (an) { an.value = ''; an.focus(); updateAddItemMatch(); }
     }
+  });
+
+  // 0.23.1: vareforslag – mousedown (ikke click) så blur ikke rekker å lukke før valg; Escape/blur skjuler.
+  // Trykk ellers i skjemaet (f.eks. «Legg til»): lista blir stående til trykket er ferdig, ellers hopper knappen opp
+  // under fingeren og trykket havner utenfor (ingen submit).
+  var aiVarePtr = false, aiVarePtrT = 0;
+  function aiVarePtrEnd() {
+    if (!aiVarePtr) return;
+    clearTimeout(aiVarePtrT);
+    aiVarePtrT = setTimeout(function () {
+      aiVarePtr = false;
+      var a = document.activeElement;
+      if (!(a && a.id === 'ai-vare')) hideAiVareForslag();
+    }, 350);
+  }
+  document.addEventListener('pointerup', aiVarePtrEnd, true);
+  document.addEventListener('pointercancel', aiVarePtrEnd, true);
+  main.addEventListener('pointerdown', function (e) {
+    var li = e.target.closest && e.target.closest('#ai-vare-forslag [data-testid="ai-vare-treff"]');
+    if (!li) {
+      var ul0 = document.getElementById('ai-vare-forslag');
+      if (ul0 && !ul0.hidden && e.target.closest && e.target.closest('#item-add') && e.target.id !== 'ai-vare') { aiVarePtr = true; clearTimeout(aiVarePtrT); }
+      return;
+    }
+    e.preventDefault();
+    pickAiVare(li.getAttribute('data-v'));
+  });
+  main.addEventListener('focusout', function (e) {
+    if (!e.target || e.target.id !== 'ai-vare') return;
+    clearTimeout(aiVareBlurT);
+    aiVareBlurT = setTimeout(function () {
+      var a = document.activeElement;
+      if (a && (a.id === 'ai-vare' || (a.closest && a.closest('#ai-vare-forslag')))) return;
+      if (aiVarePtr) return;   // trykket pågår – aiVarePtrEnd lukker etterpå
+      hideAiVareForslag();
+    }, 120);
   });
 
   // v0.4.4: Esc avbryter byttemodus (fokus tilbake til «Bytt» på dagen).
@@ -8085,8 +8204,25 @@
   // 0.23.0: Knaggen spiller aldri lyd/video og bruker ikke Media Session. Defensiv nullstilling ved start, så Android ikke
   // viser en tom «Knaggen»-medievarsling. (Wake Lock i oppskriftsvisningen lager ingen varsling.)
   try { if (navigator.mediaSession) { navigator.mediaSession.metadata = null; navigator.mediaSession.playbackState = 'none'; } } catch (e) { }
-  var APP_VERSION = '0.23.0', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  // 0.23.1: på telefon går Knaggen ut av API-fullskjerm hvis noe har satt den. Bekreftet effekt på Android-varsel er ikke beviset.
+  // Vakten går ut av fullskjerm hvis noe likevel har satt den på telefon. Kjøkkenskjerm (nettbrett/PC) røres ikke.
+  (function () {
+    function phone() { var K = window.KnaggenKjokken; return !!(K && K.phone && K.phone()); }
+    function fsEl() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+    function ut() {
+      try {
+        if (!fsEl() || !phone()) return;
+        var f = document.exitFullscreen || document.webkitExitFullscreen;
+        if (f) { var r = f.call(document); if (r && r.catch) r.catch(function () { }); }
+      } catch (e) { }
+    }
+    window.KnaggenFullskjermVakt = ut;
+    document.addEventListener('fullscreenchange', ut); document.addEventListener('webkitfullscreenchange', ut);
+    ut();
+  })();
+  var APP_VERSION = '0.23.1', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.23.1', ['På telefon går Knaggen ut av API-fullskjerm hvis noe forsøker å sette den. Det kan hjelpe mot tomme varsler i noen nettlesere; vi har ikke bekreftet at det fjerner Android-varselet hos alle.', 'I morgen viste «Værvarselet er ikke klart» etter oppdateringen fordi en gammel værcache uten morgendagens vær ble brukt. Nå hentes været på nytt når morgendagen mangler.', 'Når du legger til en vare, foreslår Knaggen kjente varer under feltet etter to bokstaver – uten den store iOS-menyen som dekket hele skjermen.', 'Trykk på «Legg til» etter at du har skrevet en vare virker nå også på iPhone. Og legger du til en vare du nylig har krysset av, for eksempel egg, kommer den tilbake på lista i stedet for å bli liggende skjult under «handlet».']],
     ['0.23.0', ['Nå har fått «I dag | I morgen». Trykk på I morgen eller sveip til venstre for å se morgendagens vær, middag, avtaler og gjøremål. Nå åpner alltid på I dag.', '«Nytt i Knaggen» dukker ikke lenger opp av seg selv etter en oppdatering. Trykk på versjonsnummeret ved logoen når du vil se hva som er nytt.', 'Fanelinja nederst skjules ikke lenger under «Sett opp hjemmet» på nye telefoner.']],
     ['0.22.1', ['Innloggingen skjer nå på auth.knaggen.no (samme knaggen.no-familie som appen).', 'Når du deler lista til Oda, får du en kortere lenke på del.knaggen.no.']],
     ['0.22.0', ['«Nå» på telefonen viser nå været øverst i stedet for den store klokka: temperatur og én kort setning om hvordan dagen blir. Kjøkkenskjermen har fortsatt klokka.']],

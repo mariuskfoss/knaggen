@@ -232,11 +232,15 @@
     else inner = sky(Cup) + (/thunder/.test(b) ? bolt : /snow/.test(b) ? flakes : /sleet/.test(b) ? sleet : drops);
     return '<svg viewBox="0 0 48 48" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="' + esc(wxText(s) || 'Vær') + '" data-sym="' + esc(s) + '">' + inner + '</svg>';
   }
+  function hasImorgen(d) { return !!(d && d.imorgen && typeof d.imorgen.dato === 'string' && Array.isArray(d.serieImorgen)); }
+  var wxImRetry = '';   // 0.23.1: én ny henting per dato når I morgen mangler/er feil dag – ingen løkke
   function loadWeather(force) {
     var s = settings(), A = api();
     if (!A || !A.hid()) { wxErr = 'no-hh'; return; }
     if (wxBusy) return;
-    var fresh = wx && wx.lat === s.lat && wx.lon === s.lon && Date.now() - wx.at < WX_EVERY;
+    // 0.23.1: værcache fra før hentVaer sendte imorgen/serieImorgen har bare dagens felt – regnes ikke som fersk,
+    // ellers viser I morgen «Værvarselet er ikke klart» i opptil 30 min (eller lenger) etter oppgradering.
+    var fresh = wx && wx.lat === s.lat && wx.lon === s.lon && Date.now() - wx.at < WX_EVERY && hasImorgen(wx.d);
     if (fresh && !force) return;
     wxBusy = true;
     A.weather(s.lat, s.lon).then(function (d) {
@@ -763,7 +767,11 @@
   }
   function naImorgenVaer(t) {
     var s = settings(), ok = wx && wx.lat === s.lat && wx.lon === s.lon && Date.now() - wx.at < 12 * 3600e3 && wx.d, im = ok && wx.d.imorgen;
-    if (!im || im.dato !== dayIso(t, 1) || im.lo == null) return '<div class="na-card na-im-vaer" data-testid="na-im-vaer"><p class="note" data-testid="na-im-vaer-tom">' + (wxBusy && !ok ? 'Henter været …' : 'Værvarselet er ikke klart') + '</p></div>';
+    if (!im || im.dato !== dayIso(t, 1) || im.lo == null) {
+      var want = dayIso(t, 1);
+      if (ok && !wxBusy && wxImRetry !== want) { wxImRetry = want; try { loadWeather(true); } catch (e) { } }
+      return '<div class="na-card na-im-vaer" data-testid="na-im-vaer"><p class="note" data-testid="na-im-vaer-tom">' + (wxBusy ? 'Henter været …' : 'Værvarselet er ikke klart') + '</p></div>';
+    }
     var VS = window.KnaggenVaerSetning, sent = null;
     if (VS && VS.setningDag && wx.d.serieImorgen) { try { sent = VS.setningDag(wx.d.serieImorgen); } catch (e) { sent = null; } }
     var dg = function (x) { return VS ? VS.deg(x) : x + '°'; };
