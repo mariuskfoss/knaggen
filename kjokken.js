@@ -823,6 +823,7 @@
     }
     return h + '<p class="na-credit" data-testid="na-kreditering">Data fra MET Norway</p>';
   }
+  var KJOP_HOLD_MS = 2500, kjopHold = {};   // 0.24.1: «Kjøp på vei hjem» – nøkkel → til når avkrysset vare fortsatt vises
   function naHtml() {
     var t = now(), d = new Date(t), A = api(), mm = naMode(), home = mm.mode === 'hjemme';
     var pw = posWanted(), auto = posMode();
@@ -896,9 +897,12 @@
       if (bs.stops.length) h += '<p class="na-src" data-testid="na-holdeplass-kilde">' + (local ? 'Holdeplasser nær deg' : bs.src === 'felles' ? 'Husstandens holdeplasser hjemme' : 'Holdeplass valgt manuelt') + ' · <button type="button" class="na-status-endre" data-k="na-modus-endre" data-testid="na-endre">Endre</button></p>';   // v0.18.11 (S7): åpner Hjemme/Borte, ikke kjøkkenskjerm-innstillingene
       if (kSug) h += '<p class="na-lbl">Middag i dag</p>' + A.kalCardHtml(kSug, 'na');   // 0.24.0 (Sigurd): samme forslagskort som i Hjemme
       var buy = A.naBuy ? A.naBuy() : { items: [], open: 0 };
+      // 0.24.1: bare det som ikke er handlet – det du nettopp krysset av her, står gjennomstreket i KJOP_HOLD_MS så du kan angre
+      var kjopNaa = Date.now(), kjopVis = buy.items.filter(function (i) { return !i.checked || (kjopHold[i.key] || 0) > kjopNaa; });
       h += '<p class="na-lbl">Kjøp på vei hjem</p><div class="na-card" data-testid="na-kjop">' +
         (!m ? '<p class="note">Ingen middag valgt i dag.</p>' : !buy.items.length ? '<p class="note">Alt til ' + esc(m.name) + ' er handlet.</p>' :
-          buy.items.map(function (i) { return '<label class="na-cb"><input type="checkbox" data-na-key="' + esc(i.key) + '"' + (i.checked ? ' checked' : '') + ' data-testid="na-vare"><span>' + esc(i.name) + '</span></label>'; }).join('')) +
+          !kjopVis.length ? '<p class="note" data-testid="na-alt-handlet">Alt er handlet</p>' :
+          kjopVis.map(function (i) { return '<label class="na-cb"><input type="checkbox" data-na-key="' + esc(i.key) + '"' + (i.checked ? ' checked' : '') + ' data-testid="na-vare"><span>' + esc(i.name) + '</span></label>'; }).join('')) +
         '<a class="na-all" href="#liste" data-k="na-lista" data-testid="na-hele-lista"><b>Hele handlelista</b><span>' + buy.open + (buy.open === 1 ? ' vare' : ' varer') + '</span><i aria-hidden="true">›</i></a></div>';
       var ev2 = naEvents(t);
       h += '<p class="na-lbl">Familiens ettermiddag</p><ul class="na-card" data-testid="na-ettermiddag">' + (ev2.length ? ev2.slice(0, 4).map(function (e) { return '<li><b>' + esc(e.tm + ' ' + e.t) + '</b>' + chip(e) + '</li>'; }).join('') : '<li class="note">' + (kal.list && kal.list.length ? 'Ingenting mer i kalenderen i dag' : 'Ingen kalendere lagt til') + '</li>') +
@@ -1430,7 +1434,14 @@
     root.id = 'kjokken'; root.className = 'kj'; root.setAttribute('data-testid', 'kjokken');
     root.addEventListener('click', onTap);
     root.addEventListener('submit', onSubmit);
-    root.addEventListener('change', function (e) { var t = e.target; if (t && t.hasAttribute('data-na-key') && api().naCheck) { api().naCheck(t.getAttribute('data-na-key'), t.checked); setTimeout(render, 400); } });
+    root.addEventListener('change', function (e) {
+      var t = e.target; if (!(t && t.hasAttribute('data-na-key') && api().naCheck)) return;
+      var key = t.getAttribute('data-na-key');
+      // 0.24.1: avkrysset vare blir stående gjennomstreket litt (angre = trykk igjen), så forsvinner den
+      if (t.checked) { kjopHold[key] = Date.now() + KJOP_HOLD_MS; setTimeout(function () { if (kjopHold[key] && kjopHold[key] <= Date.now()) { delete kjopHold[key]; render(); } }, KJOP_HOLD_MS + 30); }
+      else delete kjopHold[key];
+      api().naCheck(key, t.checked); setTimeout(render, 400);   // tallet «Hele handlelista» oppdateres som før
+    });
     root.addEventListener('touchstart', onSwipeStart, { passive: true });
     root.addEventListener('touchend', onSwipeEnd);
     root.addEventListener('keydown', function (e) {   // v0.23: piltaster i «I dag | I morgen» (faneliste)

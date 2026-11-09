@@ -7095,7 +7095,7 @@
     if (!p) return cb('00');
     function ut() { try { cb(window.KnaggenSted.fylke(p.lat, p.lon)); } catch (e) { cb('00'); } }
     if (window.KnaggenSted) return ut();
-    var sc = document.createElement('script'); sc.src = 'sted.js?v=0.24.0'; sc.onload = ut; sc.onerror = function () { cb('00'); };
+    var sc = document.createElement('script'); sc.src = 'sted.js?v=0.24.1'; sc.onload = ut; sc.onerror = function () { cb('00'); };
     document.head.appendChild(sc);
   }
   // Telles på nytt når UTC-datoen har skiftet: ved nye serverdata, når siden blir synlig igjen, når nettet kommer tilbake og hver time.
@@ -8359,8 +8359,9 @@
     document.addEventListener('fullscreenchange', ut); document.addEventListener('webkitfullscreenchange', ut);
     ut();
   })();
-  var APP_VERSION = '0.24.0', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.24.1', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.24.1', ['«Kjøp på vei hjem» på Nå viser bare det som ikke er handlet. Det du krysser av, blir stående gjennomstreket et par sekunder så du kan angre, og er alt handlet, står det «Alt er handlet».']],
     ['0.24.0', ['Uke viser nå kalenderhendelsene for hver dag som linjer under middagen, med klokkeslett og hvem. Hendelsene kommer fra kalenderne som er lagt til på kjøkkenskjermen, for de nærmeste dagene.', 'Har en dag ingen middag, og det står for eksempel middag, julebord, pinnekjøtt eller lag i en avtale som starter mellom kl. 15 og 21 (står det middag, uansett klokkeslett), foreslår Knaggen den som middag. Du kan velge «Bruk som middag», «Ikke middag» eller «Porsjoner» (hvem som spiser hjemme). Ingenting lagres før du trykker.', '«Bruk som middag» legger inn en engangsmiddag merket «Fra kalenderen», uten varer på handlelista. «Ikke middag» gjelder hele husstanden.', 'Forslaget vises også på Nå og på kjøkkenskjermen.']],
     ['0.23.1', ['På telefon går Knaggen ut av API-fullskjerm hvis noe forsøker å sette den. Det kan hjelpe mot tomme varsler i noen nettlesere; vi har ikke bekreftet at det fjerner Android-varselet hos alle.', 'I morgen viste «Værvarselet er ikke klart» etter oppdateringen fordi en gammel værcache uten morgendagens vær ble brukt. Nå hentes været på nytt når morgendagen mangler.', 'Når du legger til en vare, foreslår Knaggen kjente varer under feltet etter to bokstaver – uten den store iOS-menyen som dekket hele skjermen.', 'Trykk på «Legg til» etter at du har skrevet en vare virker nå også på iPhone. Og legger du til en vare du nylig har krysset av, for eksempel egg, kommer den tilbake på lista i stedet for å bli liggende skjult under «handlet».']],
     ['0.23.0', ['Nå har fått «I dag | I morgen». Trykk på I morgen eller sveip til venstre for å se morgendagens vær, middag, avtaler og gjøremål. Nå åpner alltid på I dag.', '«Nytt i Knaggen» dukker ikke lenger opp av seg selv etter en oppdatering. Trykk på versjonsnummeret ved logoen når du vil se hva som er nytt.', 'Fanelinja nederst skjules ikke lenger under «Sett opp hjemmet» på nye telefoner.']],
