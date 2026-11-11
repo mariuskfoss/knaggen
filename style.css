@@ -1605,3 +1605,31 @@ html[data-tema="lys"] .aks-rad .aks-dot { background: var(--sw-lys); color: var(
 .overlay.kal-por-ov { z-index: 2500; }
 
 .kj [data-testid="k-kal-forslag"] { font-size: 1.125rem; }
+
+/* 0.25.0 Startpakke v2: første oppsett (husstand → velg retter) og kalenderforslaget på Nå */
+.v5 .sp-folk .hs-people { margin: 12px 0 0; }
+.v5 .sp-folk .hs-sum { margin: 8px 0 0; }
+.sp-antall { margin: 4px 0; font-size: var(--fs-14); font-weight: 600; color: var(--muted); }
+.sp-retter { list-style: none; margin: 0 0 8px; padding: 0; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
+.sp-retter li + li { border-top: 1px solid var(--line); }
+.sp-rett { display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box; min-height: var(--tap); padding: 6px 12px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.sp-rett .t { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
+.sp-rett .t b { flex: 1; min-width: 0; font-weight: 600; font-size: var(--fs-16); line-height: 1.25; }
+.sp-rett .t small { flex: none; color: var(--muted); font-size: var(--fs-13, 0.8125rem); font-weight: 500; white-space: nowrap; }
+.sp-merke { flex: none; width: 24px; height: 24px; box-sizing: border-box; border: 2px solid var(--line-strong); border-radius: var(--radius-s); background: var(--card); display: grid; place-items: center; color: var(--brand-ink); font-size: var(--fs-16); font-weight: 800; line-height: 1; }
+.sp-rett.on .sp-merke { background: var(--brand); border-color: var(--brand); }
+.sp-rett:focus-visible { outline: 3px solid var(--brand); outline-offset: -3px; border-radius: var(--radius); }
+.v5[data-steg="husstand"], .v5[data-steg="retter"] { overflow: hidden; }
+.v5[data-steg="husstand"] .v5-in, .v5[data-steg="retter"] .v5-in { min-height: 0; overflow: auto; }
+.v5[data-steg="husstand"] .v5-acts, .v5[data-steg="retter"] .v5-acts { flex: none; padding-top: 8px; }
+.v5-acts .btn[disabled] { opacity: .5; cursor: default; }
+.sp-kal { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin: 4px 0 16px; }
+.sp-kal-t { margin: 0 0 4px; font-size: var(--fs-18); font-weight: 700; }
+.sp-kal-m { margin: 0 0 12px; font-size: var(--fs-14); color: var(--muted); }
+.sp-kal-acts { display: flex; gap: 8px; }
+.sp-kal-acts .btn { flex: 1; min-height: var(--tap); padding: 0 14px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; }
+/* dagsarket i Uke: «Nytt forslag» */
+.day-sheet .day-nytt { margin-top: 8px; min-height: var(--tap); }
+
+/* 0.25.0 (Sigurd): «Koble til» i toppen skjules til første oppsett er ferdig (hjemme5.js setter .sp-uferdig) */
+.sp-uferdig .sync-link.none { display: none; }

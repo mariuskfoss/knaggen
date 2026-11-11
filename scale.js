@@ -1,4 +1,5 @@
-/* Knaggen v0.8 – husstandsskalering. Referanse: merkevare/husstand/skalering.py (må stemme bit for bit). */
+/* Knaggen v0.8 – husstandsskalering. Referanse: merkevare/husstand/skalering.py (må stemme bit for bit),
+   unntatt 0.25.0: rett fra Knaggen med husstand rundes opp (kvartOpp), ikke til nærmeste ¼ (Sigurd 11.11.2026). */
 (function (global) {
   'use strict';
   var VEKT = { voksen: 1, barn: 0.75, smabarn: 0.5 };
@@ -13,6 +14,10 @@
   function kvart(x) {
     // nærmeste ¼, halvveis opp — samme som math.floor(x*4 + 1/2)/4 med Fraction
     return Math.floor(x * 4 + 0.5) / 4;
+  }
+  function kvartOpp(x) {
+    // 0.25.0 (Sigurd 11.11): porsjoner rundes ALLTID opp — 3¼ → 4, 3½ → 4 (gulvet gir minst 2 ved B = 4). −1e-9 så hele tall står.
+    return Math.ceil(x * 4 - 1e-9) / 4;
   }
   function dagensFolk(husstand, avvik) {
     avvik = avvik || {};
@@ -34,7 +39,7 @@
     var Pd = dagensFolk(husstand, avvik);
     if (Pd === 0) return 'Tom';
     if (rettFraKnaggen && tilpassPa && husstand)
-      return Math.max(GULV, kvart(Pd / B));
+      return Math.max(GULV, kvartOpp(Pd / B));
     if (!harAvvik) return 1;
     var P = husstand ? porsjoner(husstand) : BASE;
     return Math.max(GULV, kvart(Pd / P));
@@ -112,7 +117,7 @@
 
   global.UKESHANDEL_SCALE = {
     VEKT: VEKT, BASE: BASE, GULV: GULV, TELLE: TELLE,
-    porsjoner: porsjoner, kvart: kvart, dagensFolk: dagensFolk, faktor: faktor,
+    porsjoner: porsjoner, kvart: kvart, kvartOpp: kvartOpp, dagensFolk: dagensFolk, faktor: faktor,
     skalerIngrediens: skalerIngrediens, fmt: fmt, peopleText: peopleText, deltaText: deltaText,
     netPeople: netPeople, hasDelta: hasDelta, effectivePeople: effectivePeople,
     isKnaggen: isKnaggen, servingsOf: servingsOf

@@ -1,4 +1,9 @@
-/* Hjemme-oppsett v5. 0.18.12: PÅ som standard. Slås av bare med localStorage 'knaggen:hjemme-v5' = '0' (nødbryter per telefon).
+/* 0.25.0 Startpakke v2 (merkevare/startpakke/v2): første oppsett er bare to steg – #oppsett/husstand (navn og hvem som spiser)
+ * og #oppsett/retter (velg blant ti klassikere) – og «Fyll uka» lander rett på den fylte handlelista (ingen «Uka er klar»).
+ * Åpnes av seg selv bare når husstanden har 0 retter (KnaggenStartpakke.eligible() i app.js) og telefonen ikke er ferdig.
+ * Kalenderforslaget («Se avtalene i uka?») kommer på Nå først neste gang appen åpnes. De gamle v5-stegene (ark fra Husstand,
+ * påminnelser for hoppede steg på eldre telefoner) virker som før.
+ * Hjemme-oppsett v5. 0.18.12: PÅ som standard. Slås av bare med localStorage 'knaggen:hjemme-v5' = '0' (nødbryter per telefon).
  * Telefoner som allerede har data/husstand (fra før v5) regnes som ferdige: de tvinges ikke gjennom oppsettet.
  * Funksjonsvalget gjelder PER TELEFON og lagres lokalt ('knaggen:v5:funksjoner'). Del posisjon: per telefon ('knaggen:na-posisjon').
  * Adressen er felles for husstanden (settings/hjem). Uten husstand lagres den på telefonen og deles når den blir med (app.js).
@@ -17,9 +22,17 @@
     }
   } catch (e0) { }
   document.documentElement.classList.add('v5-on');
+  try { if (localStorage.getItem('knaggen:sp:kal') === '"neste"') localStorage.setItem('knaggen:sp:kal', '"vis"'); } catch (e1) { }   // 0.25.0: ny oppstart = «neste gang»
+  var SPK = { kal: 'knaggen:sp:kal', hopp: 'knaggen:sp:hoppet', vist: 'knaggen:sp:vist' };   // vist: oppsettet er åpnet av seg selv én gang   // 0.25.0: kalenderforslaget (neste → vis → nei/koble) og «Hopp over»
   var K = { fn: 'knaggen:v5:funksjoner', done: 'knaggen:v5:ferdig', skip: 'knaggen:v5:hoppet', rem: 'knaggen:v5:minnet', notnow: 'knaggen:v5:ikke-na', resume: 'knaggen:v5:fortsett', remOff: 'knaggen:v5:minn-ikke-na' };
   var get = function (k, d) { try { var v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } };
-  var set = function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } };
+  var set = function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } if (k === K.done) spHdr(); };
+  // 0.25.0 (Sigurd): «Koble til» i toppen skjules til første oppsett er ferdig (fullført eller «Hopp over»). Gjelder bare telefoner som
+  // fortsatt skal gjennom oppsettet (0 retter); før app.js er lastet skjules den også, så den ikke blinker.
+  function spHdr() {
+    var sp = SP(), el = sp && sp.eligible ? sp.eligible() : null;
+    document.documentElement.classList.toggle('sp-uferdig', !get(K.done, false) && el !== false);
+  }
   var del = function (k) { try { localStorage.removeItem(k); } catch (e) { } };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
   // 0.18.12: «Kjøretid til jobb» er skjult (steg 6 har ikke innhold ennå) – verken som valg i steg 3, under Husstand eller i flyten.
@@ -53,11 +66,11 @@
     });
   }
   function close() { if (ov) { ov.remove(); ov = null; } document.body.classList.remove('v5-open'); }
-  function screen(n, body, acts) {
+  function screen(n, body, acts, dotsHtml) {
     if (!ov) { ov = document.createElement('section'); document.body.appendChild(ov); document.body.classList.add('v5-open'); }
     ov.className = 'v5' + (sheet ? ' v5-ark' : ''); ov.setAttribute('data-testid', 'v5'); ov.setAttribute('role', sheet ? 'dialog' : 'region'); ov.setAttribute('aria-label', 'Sett opp hjemmet');
     ov.setAttribute('data-steg', n);
-    ov.innerHTML = '<div class="v5-in">' + (sheet ? '<a class="v5-x" href="#husstand" aria-label="Lukk" data-testid="v5-lukk">×</a>' : dots(n)) + body + '</div><div class="v5-acts">' + acts + '</div>';
+    ov.innerHTML = '<div class="v5-in">' + (sheet ? '<a class="v5-x" href="#husstand" aria-label="Lukk" data-testid="v5-lukk">×</a>' : dotsHtml || dots(n)) + body + '</div><div class="v5-acts">' + acts + '</div>';
     var f = ov.querySelector('h2'); if (f) { f.tabIndex = -1; f.focus(); }
     if (!sheet) { tabsNa(); setTimeout(tabsNa, 50); }
   }
@@ -66,6 +79,57 @@
     var sk = api().sharedKitchen ? api().sharedKitchen() : null, loc = get('knaggen:kjokken-avganger', {});
     return ((sk && !loc.own ? sk.stops : loc.stops) || []).slice(0, 3);
   }
+  /* ---- 0.25.0 Startpakke v2 ---- */
+  function SP() { return window.KnaggenStartpakke || null; }
+  function spEligible() { var a = SP(); return a ? a.eligible() : null; }
+  var spSel = {};   // valgte retter i steg 2 (alle starter uvalgt)
+  function spDots(i) {
+    return '<div class="v5-dots" role="img" aria-label="Steg ' + (i + 1) + ' av 2" data-testid="v5-steg"><span class="' + (i === 0 ? 'on' : 'done') + '"></span><span class="' + (i === 1 ? 'on' : '') + '"></span></div>';
+  }
+  function spCount() { return Object.keys(spSel).filter(function (k) { return spSel[k]; }).length; }
+  function spFyllBtn() { var n = spCount(); return '<button type="button" class="btn primary" data-sp="fyll" data-testid="sp-fyll"' + (n ? '' : ' disabled aria-disabled="true"') + '>Fyll uka</button>'; }
+  function spHusstand() {
+    var a = SP(), hs = a.household(), p = hs.people || { voksen: 2, barn: 2, smabarn: 0 };
+    screen('husstand', '<h2>Hvem spiser middag?</h2><p class="hint">Da passer mengdene i lista. Alt kan endres senere.</p>' +
+      '<label class="v5-field"><span>Navn på husstanden</span><input type="text" id="sp-navn" maxlength="40" autocomplete="off" value="' + esc(hs.name || 'Familien') + '" placeholder="F.eks. Hansen" data-testid="sp-navn"></label>' +
+      '<div class="sp-folk">' + a.countersHtml(p) + '</div>',
+      '<button type="button" class="btn primary block" data-sp="neste" data-testid="sp-neste">Neste</button>', spDots(0));
+  }
+  function spRetter() {
+    var a = SP();
+    var rows = a.dishes().map(function (x) {
+      var on = !!spSel[x.id];
+      return '<li><button type="button" class="sp-rett' + (on ? ' on' : '') + '" data-sp-id="' + esc(x.id) + '" aria-pressed="' + on + '" data-testid="sp-rett">' +
+        '<span class="t"><b>' + esc(x.name) + '</b>' + (x.minutes ? '<small>' + x.minutes + ' min</small>' : '') + '</span><span class="sp-merke" aria-hidden="true">' + (on ? '✓' : '') + '</span></button></li>';
+    }).join('');
+    screen('retter', '<h2>Velg retter</h2><p class="hint">Trykk på dem dere liker. Vi fyller uka og handlelista. Alt kan endres senere.</p>' +
+      '<p class="sp-antall" data-testid="sp-antall" aria-live="polite">' + spCount() + ' valgt</p><ul class="sp-retter" data-testid="sp-retter">' + rows + '</ul>',
+      '<button type="button" class="btn" data-sp="hopp" data-testid="sp-hopp">Hopp over</button>' + spFyllBtn(), spDots(1));
+  }
+  function spFinish(filled) {
+    set(K.done, true);
+    if (filled) del(SPK.hopp); else set(SPK.hopp, true);
+    // kalenderforslaget: bare når startpakken er fullført («Fyll uka», ikke «Hopp over»), tidligst neste gang appen åpnes,
+    // og bare på en telefon som er med i en husstand (spKalShow)
+    if (filled && get(SPK.kal, null) == null) set(SPK.kal, 'neste');
+    close();
+    location.replace(filled ? '#liste' : '#kjokken');
+  }
+  // Åpnes av seg selv én gang per telefon (0.25.0: aldri igjen av seg selv), bare fra standardsiden og bare når husstanden har 0 retter.
+  // Lukkes det uten «Fyll uka» / «Hopp over», står kortet «Sett opp hjemmet» på Nå (med «Ikke nå»).
+  var spAutoDone = false;
+  function spAuto() {
+    if (spAutoDone) return;
+    if (get(K.done, false) || get(SPK.vist, false)) { spAutoDone = true; return; }   // aldri av seg selv igjen (da står «Sett opp hjemmet» på Nå)
+    if (!/^(#|#kjokken|#uke)?$/.test(location.hash)) { spAutoDone = true; return; }   // invitasjon, lenke eller brukeren har gått videre
+    var el = spEligible();
+    if (el == null) return;   // husstand: venter på at rettene er lest fra serveren
+    spAutoDone = true;
+    if (el === false) { set(K.done, true); return; }   // husstanden har retter: ingenting å sette opp
+    set(SPK.vist, true);
+    location.replace('#oppsett/husstand');
+  }
+
   function render() {
     var h0 = location.hash;
     // «Velg retter» i steg 4 går til Finn retter; når den er ferdig (tilbake til Uke) fortsetter oppsettet
@@ -74,6 +138,13 @@
     var m = /^#oppsett\/(ark-)?(\w+)/.exec(h0);
     if (!m) { close(); sheet = false; return; }
     sheet = !!m[1];
+    if (!sheet && (m[2] === '1' || m[2] === 'husstand' || m[2] === 'retter')) {   // 0.25.0: første oppsett
+      var elg = spEligible();
+      if (!SP() || elg === false) { if (elg === false) set(K.done, true); close(); location.replace('#kjokken'); return; }   // husstanden har retter
+      if (m[2] === '1') { location.replace('#oppsett/husstand'); return; }
+      if (m[2] === 'husstand') spHusstand(); else spRetter();
+      return;
+    }
     var n = m[2] === 'ferdig' ? 'ferdig' : m[2] === 'neste3' ? 'neste3' : +m[2];
     if (n === 'ferdig') { set(K.done, true); close(); location.replace('#kjokken'); return; }
     if (n === 'neste3') { location.replace(next(3)); return; }
@@ -105,6 +176,32 @@
       B('', next(7), 'Senere', 'v5-hopp', ' data-skip="7"') + '<button type="button" class="btn primary" data-testid="v5-koble" data-k7="1">Koble til</button>');
     else { close(); }
   }
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest && e.target.closest('.v5 [data-sp], .v5 [data-sp-id], [data-spk]'); if (!t) return;
+    e.preventDefault();
+    var a = SP(); if (!a) return;
+    if (t.dataset.spId) {
+      var id = t.dataset.spId, on = !spSel[id]; spSel[id] = on;
+      t.classList.toggle('on', on); t.setAttribute('aria-pressed', String(on));
+      var mk = t.querySelector('.sp-merke'); if (mk) mk.textContent = on ? '✓' : '';
+      var an = document.querySelector('[data-testid="sp-antall"]'); if (an) an.textContent = spCount() + ' valgt';
+      var fb = document.querySelector('[data-testid="sp-fyll"]'); if (fb) fb.outerHTML = spFyllBtn();
+      return;
+    }
+    var k = t.dataset.sp || t.dataset.spk;
+    if (k === 'neste') {
+      var inp = document.getElementById('sp-navn');
+      a.saveHousehold(a.readCounters(), inp ? inp.value : '');
+      location.hash = '#oppsett/retter';
+    } else if (k === 'hopp') spFinish(false);
+    else if (k === 'fyll') {
+      var ids = a.ids().filter(function (x) { return spSel[x]; });
+      if (!ids.length) return;
+      a.apply(ids);
+      spFinish(true);
+    } else if (k === 'kal-ikke') { set(SPK.kal, 'nei'); naApply(); }
+    else if (k === 'kal-koble') { set(SPK.kal, 'koble'); location.hash = '#kjokken/innstillinger/kal'; }
+  }, true);
   // adressefelt i steg 2: samme oppslag som Husstand → Hjem
   var adrT = null, adrSeq = 0, hits = [];
   document.addEventListener('input', function (e) {
@@ -162,23 +259,26 @@
   function firstSkipped() {
     var c = chosen(); return get(K.skip, []).filter(function (n) { return c.indexOf(FN_OF[n]) >= 0 && !HIDDEN_STEPS[n]; }).sort()[0];
   }
-  var NAMES = { 4: ['Legg inn noen retter', '#oppsett/4'], 5: ['Velg holdeplasser', '#oppsett/5'], 6: ['Legg inn jobbadresse', '#oppsett/6'], 7: ['Koble til kalenderen', '#oppsett/7'] };
+  var NAMES = { sp: ['Velg retter', '#oppsett/retter'], 4: ['Legg inn noen retter', '#oppsett/4'], 5: ['Velg holdeplasser', '#oppsett/5'], 6: ['Legg inn jobbadresse', '#oppsett/6'], 7: ['Koble til kalenderen', '#oppsett/7'] };
   function naApply() {
     var na = document.querySelector('[data-testid="na"]'); if (!na) return;
     var done = get(K.done, false), nn = get(K.notnow, { day: '', n: 0 });
-    var card = !done && nn.day !== today() && (nn.n || 0) < 3;
+    var card = !done && spEligible() === true && nn.day !== today() && (nn.n || 0) < 3;   // 0.25.0: bare når det er noe å sette opp
     document.body.classList.toggle('v5-pre', card);
     var el = na.querySelector('.v5-na'), html = '';
-    if (card) html = '<div class="v5-card" data-testid="v5-na-tom"><h3>Sett opp hjemmet</h3><p class="hint">Få middag, avganger og dagen samlet her.</p>' +
-      B('primary block', '#oppsett/1', 'Kom i gang', 'v5-kom-i-gang') + '<a href="#" class="btn ghost block" data-v5="ikke-na" data-testid="v5-ikke-na">Ikke nå</a></div>';
+    if (card) html = '<div class="v5-card" data-testid="v5-na-tom"><h3>Sett opp hjemmet</h3><p class="hint">Velg noen retter, så fyller vi uka og handlelista.</p>' +
+      B('primary block', '#oppsett/husstand', 'Kom i gang', 'v5-kom-i-gang') + '<a href="#" class="btn ghost block" data-v5="ikke-na" data-testid="v5-ikke-na">Ikke nå</a></div>';
     else if (done) {
       var sk = firstSkipped();   // bare første hoppede steg, én gang
+      var spH = get(SPK.hopp, false) && spEligible() === true;   // 0.25.0: «Hopp over» i oppsettet → «Velg retter» til husstanden har retter
+      if (spH) sk = 'sp';
+      if (spKalShow()) sk = null;   // én ting av gangen: kalenderforslaget først
       // 0.18.12: påminnelsen har «Ikke nå». Avvist → borte resten av dagen (lagres på telefonen); etter tre avvisninger kommer den ikke igjen.
       var ro = get(K.remOff, { day: '', n: 0 });
       if (sk && ro.day !== today() && (ro.n || 0) < 3) html = '<div class="v5-minn-rad" data-testid="v5-minn-rad"><a class="na-fortsett" href="' + NAMES[sk][1] + '" data-testid="v5-minn">' + NAMES[sk][0] + '\u00a0<i aria-hidden="true">›</i></a>' +
         '<a href="#" class="btn ghost v5-minn-x" data-v5="minn-ikke-na" data-testid="v5-minn-ikke-na">Ikke nå</a></div>';
     }
-    na.classList.toggle('v5-retter-minn', /data-testid="v5-minn"/.test(html) && /#oppsett\/4/.test(html));   // 0.18.13: påminnelsen «Legg inn noen retter» og «Legg inn første rett» står ikke samtidig – påminnelsen vinner
+    na.classList.toggle('v5-retter-minn', /data-testid="v5-minn"/.test(html) && /#oppsett\/(4|retter)/.test(html));   // 0.18.13: påminnelsen «Legg inn noen retter» og «Legg inn første rett» står ikke samtidig – påminnelsen vinner
     if (!html) { if (el) el.remove(); }
     else if (!el || el.getAttribute('data-h') !== html) { if (!el) { el = document.createElement('div'); el.className = 'v5-na'; } el.innerHTML = html; el.setAttribute('data-h', html); if (el.parentNode !== na || na.firstChild !== el) na.insertBefore(el, na.firstChild); }
     var tom = na.querySelector('[data-testid="na-avg-tom"]');
@@ -186,6 +286,36 @@
       tom.setAttribute('data-v5', '1'); tom.innerHTML = '<a href="#oppsett/ark-2" data-testid="v5-legg-adresse">Legg inn adressen for å se avganger\u00a0›</a>';
     }
     var lb = na.querySelector('.na-lbl'); if (lb && !lb.classList.contains('v5-mid') && /Middag i dag/.test(lb.textContent)) lb.classList.add('v5-mid');
+    spKalApply(na);
+  }
+  // 0.25.0: «Se avtalene i uka?» på Nå – bare i en husstand, tidligst neste gang appen åpnes etter at startpakken er fullført, til det er avklart («Koble til kalender» / «Ikke nå»).
+  // Ikke når husstanden allerede har en kalender. Under datoen, over dagens middag (som i na-kalenderforslag.png).
+  var spKindSeen = false;   // enhetsspørsmålet har vært ubesvart i denne økten
+  document.addEventListener('knaggen-enhet-spor', function () {
+    spKindSeen = true;
+    var el = document.querySelector('.sp-kal-wrap'); if (el) el.remove();
+  });
+  function spKalShow() {
+    if (!get(K.done, false) || get(SPK.kal, null) !== 'vis') return false;
+    if (!(SP() && SP().inHousehold && SP().inHousehold())) return false;   // aldri i lokal modus
+    // 0.25.0 (Trude/Sigurd): én ting av gangen. Står «Hvem sin enhet er dette?» ubesvart, venter forslaget; og har enhetsspørsmålet
+    // vært der i denne økten (besvart eller «Senere»), kommer forslaget først neste gang appen åpnes.
+    if (SP().kindPending && SP().kindPending()) spKindSeen = true;
+    if (spKindSeen) return false;
+    var c = SP() && SP().calCount ? SP().calCount() : null;
+    return !(c > 0);
+  }
+  var SP_KAL = '<div class="sp-kal" data-testid="sp-kal-forslag" role="region" aria-label="Forslag: kalender"><p class="sp-kal-t">Se avtalene i uka?</p>' +
+    '<p class="sp-kal-m">Koble til kalenderen, så vises de her og i ukeplanen. Du kan gjøre det senere også.</p><div class="sp-kal-acts">' +
+    '<button type="button" class="btn" data-spk="kal-ikke" data-testid="sp-kal-ikke-na">Ikke nå</button>' +
+    '<button type="button" class="btn primary" data-spk="kal-koble" data-testid="sp-kal-koble">Koble til kalender</button></div></div>';
+  function spKalApply(na) {
+    var el = na.querySelector('.sp-kal-wrap');
+    if (!spKalShow()) { if (el) el.remove(); return; }
+    var dato = na.querySelector('[data-testid="na-dato"]');
+    if (el && (dato ? el.previousElementSibling === dato : true)) return;
+    if (!el) { el = document.createElement('div'); el.className = 'sp-kal-wrap'; el.innerHTML = SP_KAL; }
+    if (dato && dato.parentNode) dato.parentNode.insertBefore(el, dato.nextSibling); else na.insertBefore(el, na.firstChild);
   }
   // ---- Husstand → Hjemme: avkrysning per telefon
   function hsApply() {
@@ -196,8 +326,9 @@
     }).join('') + '</ul>';
     var h = pg.querySelector('.k17-head, .page-head'); if (h && h.nextSibling) pg.insertBefore(sec, h.nextSibling); else pg.appendChild(sec);
   }
-  var mo = new MutationObserver(function () { naApply(); hsApply(); });
-  function start() { mo.observe(document.body, { childList: true, subtree: true }); naApply(); hsApply(); render(); }
+  var mo = new MutationObserver(function () { spHdr(); naApply(); hsApply(); if (!spAutoDone) spAuto(); });
+  function start() { mo.observe(document.body, { childList: true, subtree: true }); spHdr(); naApply(); hsApply(); render(); spAuto(); }
+  document.addEventListener('knaggen-startpakke', function () { spHdr(); naApply(); if (!spAutoDone) spAuto(); });   // 0.25.0: husstandens retter er lest fra serveren
   if (!get(K.done, false) && (!location.hash || location.hash === '#' || location.hash === '#uke')) location.replace('#kjokken');
   window.addEventListener('hashchange', render);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();

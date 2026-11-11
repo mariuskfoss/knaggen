@@ -377,6 +377,22 @@ const W = {
       return true;
     });
   },
+  // 0.25.0 (Startpakke): fyll bare kvelder som fortsatt er tomme på serveren. To telefoner som fyller uka samtidig, eller en plan
+  // som kom fra en annen telefon i mellomtiden, blir aldri overskrevet. Samme dokumenter og felter som setDays. Returnerer datoene som ble fylt.
+  fillEmptyDays: async (hid, entries) => {
+    const { fs, db } = ctx;
+    return fs.runTransaction(db, async tx => {
+      const refs = entries.map(e => fs.doc(...hh(hid, 'days', e.date))), snaps = [];
+      for (const r of refs) snaps.push(await tx.get(r));
+      const done = [];
+      entries.forEach((e, i) => {
+        if (daySig(snaps[i].exists() ? snaps[i].data() : null)) return;
+        tx.set(refs[i], { date: e.date, recipe_id: e.recipe_id || null, oneoff: null });
+        done.push(e.date);
+      });
+      return done;
+    });
+  },
   // v0.10: i den felles lista slettes feltene for en vare som ikke lenger er krysset av (lista vokser ikke over tid)
   setChecks: (hid, week, map) => {
     const m = {};

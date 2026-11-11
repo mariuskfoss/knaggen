@@ -6,6 +6,85 @@ Ukeplan for middager + handleliste for én husstand. Ren statisk side (HTML/CSS/
 Fra v0.2 deles dataene i husstanden via Firebase (Firestore + anonym innlogging, SDK lastes som ES-moduler fra gstatic).
 Uten husstand (eller uten Firebase-oppsett) lagres alt lokalt i nettleseren som før (`localStorage`, nøkkel `ukeshandel:v1`).
 
+## 0.25.0: rettinger etter Trudes gjennomgang (`test-trude/v0250.md`, Sigurd 11.11.2026)
+
+- **Én ting av gangen:** «Hvem sin enhet er dette?» kommer først. Kalenderforslaget kommer tidligst ved neste oppstart etter at spørsmålet er besvart eller
+  avvist (`KnaggenStartpakke.kindPending`, hendelsen `knaggen-enhet-spor`). Gjelder også en telefon som blir med i en husstand senere.
+- **Fyll uka:** taco fredag og pizza lørdag er harde ankre når de er valgt, dagen er tom og den er innenfor uka som fylles (`spPlan`). Grense: velger bare én av
+  to telefoner pizza mens den andre fyller lørdag samtidig, overskrives ikke lørdag (`fillEmptyDays` fyller bare tomme dager).
+- **Porsjoner:** UI viser samme tall som handlelisten skalerer med (`fmtFolk` = `SC.faktor` × 4). Rett fra Knaggen med husstand rundes ALLTID opp, minst 2 (`kvartOpp` i scale.js, Sigurd 11.11):
+  3¼ → 4, 3½ → 4, 2 → 2, 1 → 2. 2 voksne + 2 barn = 4. Avviker her fra `merkevare/husstand/skalering.py` (nærmeste ¼). Endret eldre sjekk: `e2e-v08`
+  «fre +1+1» 6¼ → ×1¾ (var ×1½).
+- **«Koble til»** i toppen er skjult til første oppsett er fullført eller hoppet over (`html.sp-uferdig`).
+- **Ingrediensnavn:** sjampinjong → champignon, tacolefser → tortillalefser i biblioteket. `LIST_SYNONYMS` har begge (eldre data slås sammen), og
+  `listMergeName` stammer nå synonymmålet. `library-quality.js` sjekker at kjente varianter ikke finnes side om side.
+- Endret eldre sjekk: `e2e-v0240-kalender` P3 venter «Regnes som 4 porsjoner» (var 3½).
+
+## 0.25.0: eldre tester av første oppsett som feiler
+
+Kartlagt 11.11.2026 ved å kjøre alle 55 eldre `tests/e2e-*.js` mot 0.25.0 (:8792) og mot 5b8d3f2 (0.24.2, :8775) med samme emulatorer
+(auth 9199 / firestore 8180) og samme skjermbildemappe utenfor repoet. Kjørt én og én (serielt) der resultatet var forskjellig. 8 suiter er grønne på begge
+(e2e-farge, e2e-liste, e2e-v01813, e2e-v0183, e2e-v0187, e2e-v0189, e2e-v0231-egg, e2e-v0231-vare). Ikke kjørt: e2e-live (ekte Firebase),
+e2e-v0200/-v0201/-v0210 (laster andre regler i emulatoren, `serve-v0200.sh`), e2e-v0240-fn-ekte (bytter functions-kode i emulatoren). De fire
+gjeldende suitene (v0240-kalender, v0241-kjop, v0242-kjop-teller, v0250-startpakke) er grønne.
+
+**Spec** = feiler fordi 0.25.0 bevisst endret oppførselen (dekning i 0.25.0 står ved siden av). **5b8d3f2** = feiler likt på 5b8d3f2, altså ikke
+innført i 0.25.0. «Krasj» = testen stopper der, og resten av den kjøres ikke (på noen av byggene).
+
+### Erstattet av 0.25.0-spec (4 tester i 4 suiter + to blokker, 36 sjekker, i e2e-hjemme-v5)
+
+| Suite | Test | Hvorfor | Dekkes nå av |
+|---|---|---|---|
+| e2e-hjemme-v5 | linje 48–103: første start → Nå med «Sett opp hjemmet», «Ikke nå», før oppsettet ingen Hjemme/Borte (Mons 8), steg 1 «Del posisjon?», steg 2 adresse, steg 3 «Hva vil du se?», steg 4 middag, steg 5 kalender «Koble til», ferdig → Nå, påminnelse om hoppet steg, bare én påminnelse, ingen intern forklaring (Mons 3), påminnelsens «Ikke nå» | Første oppsett er nå to steg (husstand → retter → «Fyll uka» → handlelista). | e2e-v0250-startpakke: A1 (åpner seg selv), A3–A9 (steg 2, «Fyll uka» → lista), N1–N4 (kortet «Sett opp hjemmet» med «Ikke nå»), **N2b** (Mons 8, ny), K5–K5f (påminnelse + «Ikke nå»), **K5g** (bare én påminnelse, ny), **K5h** (Mons 3, ny), **K8b/K8c** (adressesøk + lagret på telefonen uten husstand, i arket `#oppsett/ark-2`, ny), HK1–HK6 (kalender: forslag neste gang appen åpnes i stedet for steg 5). Den store klokka (Mons 8, 0.22.0): e2e-v0220 A2. «Hva vil du se?» og posisjon på/av: resten av e2e-hjemme-v5 (Husstand → Hjemme, holdeplasser), som kjøres som før. |
+| e2e-hjemme-v5 | linje 138–147: «Ikke nå» på «Sett opp hjemmet» (skjult samme dag, tilbake neste dag, borte etter 3) | Kortet vises bare når oppsettet er forlatt halvveis (det åpnes av seg selv bare én gang). | e2e-v0250-startpakke N5–N8 |
+| e2e-v01812 | «ny telefon: lander på Nå med «Sett opp hjemmet»» | En ny telefon åpner `#oppsett/husstand` selv (én gang). | A1, N1–N4 |
+| e2e-v011 | «1: Kom i gang viser «Velg 5–10 retter familien liker»» | 0 retter → oppsettet (steg 2 = velg retter), ikke steg 0 på Uke. Testen krasjer deretter på `[data-testid="uke-meny"]` (linje 43); på 5b8d3f2 krasjet den allerede på linje 38 (se under). | A1, A3, A6 |
+| e2e-v010 | «3: alle 65 bibliotekretter har 3–6 steg» (får 74) | Biblioteket har 9 nye retter (65 → 74). | library-quality.js «0.25.0: alle 74 bibliotekretter har 3–6 steg» (**ny**) |
+| e2e-v045 | «library.js: all 65 dishes have a time in minutes» (får 74) | Samme som over. | library-quality.js «realistic cooking time (10–240 min) on every dish» + «65 + 9 nye bibliotekretter = 74» |
+
+**Endringen i `tests/e2e-hjemme-v5.js`:** de to blokkene over hoppes over (`SKIP …` med henvisning til testene som dekker dem) *bare* når appen har
+`window.KnaggenStartpakke` (0.25.0 og senere). På eldre bygg kjøres de som før. Etter den første blokken settes `knaggen:v5:funksjoner` til
+`["middag","kalender"]`, det samme valget den gamle flyten etterlot, slik at resten av testen (Husstand → Hjemme, ark, holdeplasser, 0 funksjoner,
+emulator) kjøres uendret. Ingen andre forventninger er endret. Testen krasjer fortsatt på linje 193 (`[data-testid="hs-forste"] [data-testid="hs-bruk"]`,
+se 5b8d3f2-tabellen). Med «kalender»-funksjonen (127.0.0.1:5181) stubbet, i en midlertidig kopi som ikke er sjekket inn, er den grønn på begge:
+0.25.0 27 PASS + 3 SKIP, 5b8d3f2 84 PASS.
+
+### Feilet allerede på 5b8d3f2 (samme feil på 0.25.0)
+
+| Suite | Test / krasj | Feil |
+|---|---|---|
+| e2e-hjemme-v5 | krasj linje 178 (0.25.0: 193) | `page.click` timeout på `[data-testid="hs-forste"] [data-testid="hs-bruk"]` («element was detached from the DOM», 61 ganger). Uke tegnes på nytt hele tiden når kallet til «kalender»-funksjonen avbrytes (feil i appen siden 0.24.0, ikke rettet her). |
+| e2e-v010 | krasj linje 139 | `waitForSelector('[data-testid="fremgangsmate"]')` timeout (testid finnes ikke lenger) |
+| e2e-v011 | krasj linje 38 | `waitForSelector('[data-page="uke"]')` timeout (første start lander ikke på Uke siden hjemme-v5) |
+| e2e-v012 | «2: arket har Ingen dag + 7 dager»; krasj linje 46 | krasj: `form#hent-lagre` timeout |
+| e2e-v014, e2e-v03, e2e-v041, e2e-v042, e2e-v043, e2e-v043b, e2e-v044, e2e-v046, e2e-v06, e2e-v061, e2e-v062, e2e-v063, e2e-v07, e2e-v071, e2e-v08 | krasj (linje 51, 48, 156, 105, 94, 112, 94, 73, 206, 72, 98, 117, 52, 26, 72) | `waitForSelector('[data-page="uke"]')` timeout (samme grunn som e2e-v011) |
+| e2e-v0141, e2e-v09 | krasj linje 20 / 86 | `waitForSelector('[data-page="intro"]')` timeout (introen er borte) |
+| e2e-v015 | «1: dato + ukenummer» (får «Onsdag 11. november · uke 46», altså ekte dato), «1: kreditering MET synlig»; krasj linje 39 `[data-page="uke"]` | |
+| e2e-v016 | 1 «#kjokken/innstillinger åpner arket», 3 «nå under ett minutt», 3 «tones ned», 3 «kreditering MET og Entur», 4 «backoff» (308 ms ×3), 4 «etter feil vises siste avganger», 4 «fortsetter når skjermen vises igjen», 4 «fortsetter når nettet er tilbake», 6 «i dag høyst 3», 6 «kalenderfargene er varme om kvelden»; krasj linje 250 `[data-page="uke"]` | (kjørt for seg 11.11. da port 8768/8769 var ledig: 42 PASS / 10 FAIL på begge) |
+| e2e-v0161 | krasj linje 46 | `[data-page="liste"]` timeout |
+| e2e-v017 | krasj linje 47 med låst klokke | `[data-testid="hs-kode"]` timeout: å opprette husstand med `clock.install` (21.10.2026) henger på begge byggene, også i en minimal prøve. Uten klokke på begge: «1: forslaget er «Hjemme»», «1: rekkefølgen Enheter, Middag, …», krasj linje 142 `[data-testid="bli-med"]`, likt på begge (37 PASS). «3: ⚙ øverst til høyre», «3: 48×48» og «7: samme kode som invitasjonen» feilet bare i én heldig 0.25.0-kjøring med klokke; de passerer på begge uten klokke (tidsavhengig). |
+| e2e-v018 | 1 «linja under bryteren», 1 «snarveier Handleliste/Uke/Retter med tall», 2 «bare varene til dagens middag», 2 «kilde (felles etter opprettelse) + Endre», 2 «Endre åpner holdeplassvalget», 3 «etter midnatt: tilbake til Hjemme», 5 «hjemme innen 300 m» | `TypeError: Cannot read properties of undefined (reading 'ids')` i testens falske Entur (linje 26): appen sender ikke lenger `variables.ids` |
+| e2e-v0181 | krasj linje 180 | `[data-testid="bli-med"]` timeout |
+| e2e-v01810 | «Tokens: ingen rå font-size/border-radius i px» | kjokken.css har 3 |
+| e2e-v01811 | «versjon 0.18.11 i APP_VERSION og index.html» | låst til gammel versjon |
+| e2e-v01812 | «versjon 0.18.12 i app.js og sw.js», «alle ?v= er 0.18.12», «hjemme5.js og palett.css i precache» (lys + mørk = 6) | låst til gammel versjon / precache-liste |
+| e2e-v0182 | 1 «Handleliste-fanen → lista», 1 «Nå-fanen → Nå», 1 «fanelinja: Nå (aktiv), Uke, Mat», 2 «på tvers: fanelinja med Nå», 2 «telefonen snus mens Nå er åpen», 4 «nettbrett stående → Handleliste, ingen Nå-fane», 4 «nettbrett: ingen Nå-fane», 5 «PC uten # → Handleliste», 5 «smalt PC-vindu: ingen Nå-fane», 7 «?v=0.18.2», 7 «sw 0.18.2» | fanene og versjonen er endret siden |
+| e2e-v0183na | «4: tydelig feiltekst, ikke Henter for alltid»; krasj linje 69 | `[data-testid="na-avg-velg"]` timeout |
+| e2e-v0184, e2e-v0185 | «versjonsnummer synlig» (lys + mørk) | låst til gammel versjon (+ sammendragslinja «FAILURES: 2») |
+| e2e-v0186 | krasj linje 136 | `[data-testid="hs-kode"]` timeout (låst klokke, som e2e-v017) |
+| e2e-v0188 | krasj linje 177 med låst klokke | `[data-testid="hs-kode"]` timeout (som e2e-v017). Med klokken tatt bort for telefon A på begge: krasj linje 196 `page.click('[data-testid="fyll"]')` timeout, likt på begge (26 PASS) |
+| e2e-v0190 | A «#gjoremal uten flagg havner på Uke», A «Gjøremål-fanen har hidden…», A «tre faner som standard» (lys + mørk), E «APP_VERSION … 0.19.0», E «alle ?v= … 0.19.0», E «precache har ?v=0.19.0», E «ingen regelendring mot v01813», E «reglene har ingen stier for gjøremål»; C og F «husstand opprettet i emulatoren» (ustabil: feilet i 3 av 4 kjøringer, også på 5b8d3f2 serielt) | faner/versjon/regler endret siden 0.19 |
+| e2e-v02 | krasj linje 71 | `page.selectOption('#day-2026-11-09')` timeout |
+| e2e-v021 | «offline: cleared week survives an offline reload»; krasj linje 210 `[data-page="uke"]` | |
+| e2e-v031, e2e-v032 | krasj linje 57 / 89 | `[data-testid="ikke-naa"]` timeout |
+| e2e-v045 | krasj linje 26 | `TypeError: Cannot read properties of undefined (reading '0')`: testen venter seed-id-er `r1…r12` som seed-dataene ikke bruker lenger |
+| e2e-v0220 | A9 «rekkefølge: vær, så dato, så Middag i dag», C3 «værblokken står over avgangene i Borte», V1–V3 (versjon 0.22.1) | |
+| e2e-v0221 | V1–V3 (versjon 0.22.1) | låst til gammel versjon |
+| e2e-v0222 | B1, B3, B4 (versjonsmerke/nyheter 0.22.2), F1–F5 (versjon 0.22.2), F13 «firebase-config / functions / auth-hosting uendret vs 5e60a15» | låst til gammel versjon / commit |
+| e2e-v0230, e2e-v0231 | F1, F2 (versjon 0.23.0 / 0.23.1) | låst til gammel versjon |
+
+Ingen røde tester er innført av 0.25.0 utover de som står i spec-tabellen.
+
 ## v0.22.1 «auth.knaggen.no + del.knaggen.no»
 - `authDomain` er `auth.knaggen.no` (Firebase Hosting Connected 2026-11-05). Popup-innlogging viser knaggen.no i stedet for firebaseapp.com.
 - Nye Oda-dellinker: `https://del.knaggen.no/del/<id>` via Hosting-rewrite `/del/**` → `visDeleliste` (europe-west1) på samme Hosting-site som auth (`handleliste-8f568`). Emulator beholder lokal `…/visDeleliste/<id>`.
