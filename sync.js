@@ -121,6 +121,32 @@ function householdSettingsDoc(h) {
     updated_at: Date.now()
   };
 }
+// 0.26.0: «Hvem bor i husstanden?» – navn, alder og kjæledyr, felles for husstanden (settings/folk). Krever regelforslaget
+// i regler-0260.diff; med reglene som er publisert nå avvises skrivingen, og appen beholder alt på telefonen (som før).
+// Lagres som kolonner (reglene kan ikke sjekke hvert element i en liste med kart): navn med linjeskift mellom, alder med komma
+// mellom («-» = ikke oppgitt), type og dyr som lister. folkFromDoc gjør det om igjen.
+function folkDoc(d) {
+  const kinds = ['voksen', 'barn', 'smabarn'], types = ['hund', 'katt', 'annet'];
+  const age = v => (typeof v === 'number' && v === Math.floor(v) && v >= 0 && v <= 120) ? String(v) : '-';
+  const ps = ((d && d.persons) || []).slice(0, 36);
+  return {
+    mode: d && d.mode === 'navn' ? 'navn' : 'enkel',
+    navn: ps.map(p => String((p && p.name) || '').replace(/[\r\n]+/g, ' ').slice(0, 30)).join('\n'),
+    alder: ps.map(p => age(p && p.age)).join(','),
+    type: ps.map(p => kinds.indexOf(p && p.kind) >= 0 ? p.kind : 'voksen'),
+    dyr: ((d && d.pets) || []).map(x => x && x.type).filter(t => types.indexOf(t) >= 0).slice(0, 12),
+    updated_at: Date.now()
+  };
+}
+function folkFromDoc(o) {
+  if (!o || (o.mode !== 'navn' && o.mode !== 'enkel') || !Array.isArray(o.type)) return null;
+  const n = typeof o.navn === 'string' ? o.navn.split('\n') : [], a = typeof o.alder === 'string' && o.alder ? o.alder.split(',') : [];
+  return {
+    mode: o.mode,
+    persons: o.type.slice(0, 36).map((k, i) => ({ name: n[i] || '', age: /^\d{1,3}$/.test(a[i] || '') ? +a[i] : null, kind: k })),
+    pets: (Array.isArray(o.dyr) ? o.dyr : []).slice(0, 12).map(t => ({ type: t }))
+  };
+}
 function dayPeopleDoc(date, delta) {
   return {
     date,
@@ -324,7 +350,8 @@ function subscribe(hid, oldest, handlers) {
       // 0.18.13: «serveren har svart» (cache → server uten endringer) gir også beskjed for settings: appen må vite at hjemmeadressen sikkert mangler
       const changed = first || snap.docChanges().length > 0 || (name === 'settings' && wasCache && !snap.metadata.fromCache);
       first = false; if (!snap.metadata.fromCache) wasCache = false;
-      if (changed && handlers[name]) handlers[name](snap.docs.map(d => Object.assign({ id: d.id }, d.data())), snap.metadata);
+      // 0.26.0: settings-dokumenter får __pending (lokal skriving som serveren ennå ikke har godtatt – kan bli avvist av reglene)
+      if (changed && handlers[name]) handlers[name](snap.docs.map(d => Object.assign({ id: d.id }, d.data(), name === 'settings' && d.metadata.hasPendingWrites ? { __pending: true } : null)), snap.metadata);
       if (!quiet) status();
     }, err => {
       // v0.9: members/invite er tillegg – feil der (f.eks. eldre regler) skal ikke påvirke resten
@@ -379,18 +406,28 @@ const W = {
   },
   // 0.25.0 (Startpakke): fyll bare kvelder som fortsatt er tomme på serveren. To telefoner som fyller uka samtidig, eller en plan
   // som kom fra en annen telefon i mellomtiden, blir aldri overskrevet. Samme dokumenter og felter som setDays. Returnerer datoene som ble fylt.
-  fillEmptyDays: async (hid, entries) => {
+  // 0.26.0: har en annen telefon fylt NOEN av kveldene i mellomtiden, lages planen for de kveldene som fortsatt er tomme på nytt
+  // (replan(serverdager) i appen, med den andre telefonens retter som faste), i stedet for å flette to planer dag for dag – det kunne
+  // gi samme type to kvelder på rad (e2e-v0250 H8, sett 17.11). Uten replan som før. Returnerer { done: [datoer], plan: [entries] }.
+  fillEmptyDays: async (hid, entries, replan) => {
     const { fs, db } = ctx;
     return fs.runTransaction(db, async tx => {
       const refs = entries.map(e => fs.doc(...hh(hid, 'days', e.date))), snaps = [];
       for (const r of refs) snaps.push(await tx.get(r));
+      const data = snaps.map(s => s.exists() ? s.data() : null), filled = data.map(d => !!daySig(d));
+      let plan = entries;
+      if (filled.some(Boolean) && typeof replan === 'function') {
+        const server = {}; entries.forEach((e, i) => { server[e.date] = data[i]; });
+        plan = (replan(server) || []).filter(e => entries.some((x, i) => x.date === e.date && !filled[i]));
+      }
       const done = [];
-      entries.forEach((e, i) => {
-        if (daySig(snaps[i].exists() ? snaps[i].data() : null)) return;
+      plan.forEach(e => {
+        const i = entries.findIndex(x => x.date === e.date);
+        if (i < 0 || filled[i]) return;
         tx.set(refs[i], { date: e.date, recipe_id: e.recipe_id || null, oneoff: null });
         done.push(e.date);
       });
-      return done;
+      return { done, plan };
     });
   },
   // v0.10: i den felles lista slettes feltene for en vare som ikke lenger er krysset av (lista vokser ikke over tid)
@@ -423,6 +460,24 @@ const W = {
   updateDevice: (hid, uid, fields) => ctx.fs.updateDoc(ctx.fs.doc(...hh(hid, 'devices', uid)), fields),
   // v0.18.1: hjemmeadresse (felles i husstanden), lat/lon avrundet til 4 desimaler
   setHome: (hid, h) => ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'settings', 'hjem')), { adresse: String(h.adresse).slice(0, 200), lat: Math.round(h.lat * 1e4) / 1e4, lon: Math.round(h.lon * 1e4) / 1e4, updated_at: Date.now() }),
+  // 0.26.0: navn, alder og kjæledyr (settings/folk). SDK-ens advarsel ved avvist skriving har dokumentstien med husstands-id-en;
+  // den skal ikke i konsollen når regelforslaget ikke er publisert, så advarslene er av til skrivingen er ferdig (høyst 20 s).
+  setFolk: (hid, d) => {
+    const lyd = lv => { try { ctx.fs.setLogLevel(lv); } catch (e) { /* ignorer */ } };
+    lyd('error');
+    const p = ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'settings', 'folk')), folkDoc(d));
+    const t = setTimeout(() => lyd('warn'), 20000);
+    return p.then(r => { clearTimeout(t); lyd('warn'); return r; }, e => { clearTimeout(t); lyd('warn'); throw e; });
+  },
+  // 0.26.0: «Fjern navn» – sletter settings/folk (regelforslaget har 'folk' i delete-lista; reglene som er publisert nå avviser,
+  // og appen har da bare fjernet navnene på telefonen). Advarslene er av på samme måte som i setFolk.
+  deleteFolk: (hid) => {
+    const lyd = lv => { try { ctx.fs.setLogLevel(lv); } catch (e) { /* ignorer */ } };
+    lyd('error');
+    const p = ctx.fs.deleteDoc(ctx.fs.doc(...hh(hid, 'settings', 'folk')));
+    const t = setTimeout(() => lyd('warn'), 20000);
+    return p.then(r => { clearTimeout(t); lyd('warn'); return r; }, e => { clearTimeout(t); lyd('warn'); throw e; });
+  },
   // 0.18.12: personfarger (ett felt, { kalender-id: aksent }); tom map = alle automatisk
   setPersonColors: (hid, m) => ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'settings', 'personer')), { farger: m || {} }),
   removeHome: (hid) => ctx.fs.deleteDoc(ctx.fs.doc(...hh(hid, 'settings', 'hjem'))),
@@ -968,7 +1023,7 @@ async function gjDeleteAll(hid) {
   }
 }
 
-window.UkeshandelSync = { fetchRecipe, makeShareList, deleteShareLists, fetchWeather, calendar, mode, init, randomCode, createHousehold, reportActive, joinHousehold, isMember, subscribe, write: W, uid: () => ctx && ctx.uid,
+window.UkeshandelSync = { folkFromDoc, fetchRecipe, makeShareList, deleteShareLists, fetchWeather, calendar, mode, init, randomCode, createHousehold, reportActive, joinHousehold, isMember, subscribe, write: W, uid: () => ctx && ctx.uid,
   inviteCode, createInvite, getInvite, leaveHousehold, deleteHousehold, stillMember, myDeviceExists,
   // v0.20
   accountInfo, linkProvider, linkCredential, sendEmailLink, isEmailLink, savedEmail, completeEmailLink, adoptHousehold, saveAccountHousehold, accountHousehold,

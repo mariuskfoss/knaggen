@@ -866,6 +866,7 @@
             asked: !!doc.asked
           };
           if (doc.asked) lsSet(HS_ASKED_KEY, '1');
+          setTimeout(function () { try { document.dispatchEvent(new Event('knaggen-husstand')); } catch (e) { /* ignorer */ } }, 0);   // 0.26.0: hjemme5.js (oppsettet viser husstandens tellere)
         }
         remoteChanged();
       },
@@ -1121,6 +1122,7 @@
     // 1. Husstanden
     var scalePref = hsState().scale !== false;
     var b1 = '<p class="hs-h">Hvem spiser middag</p>' + peopleCountersHtml('hsh', hasP ? hsPeople() : hp, { testid: 'hs-innstillinger' }) +
+      '<p class="hs3-rediger"><a class="hs3-lenke" href="#oppsett/ark-husstand" data-testid="hs-navn-dyr">Navn, alder og kjæledyr</a></p>' +   // 0.26.0
       '<button type="button" class="hs-switch" role="switch" data-action="hs-scale-toggle" aria-checked="' + (scalePref ? 'true' : 'false') + '" data-testid="hs-tilpass-bryter">' +
       '<div class="t"><b>Tilpass retter fra Knaggen</b><span>Egne retter endres ikke</span></div>' +
       '<span class="sw' + (scalePref ? ' on' : '') + '" aria-hidden="true"></span></button>' +
@@ -3155,10 +3157,15 @@
     if (spBusy || !hh || !syncReady || !batch.length || isOffline()) return;
     spBusy = true;
     var hid = hh.hid;
-    syncReady.then(function (S) { return S.write.fillEmptyDays(hid, batch.map(function (e) { return { date: e.date, recipe_id: e.recipe_id }; })); }).then(function () {
+    syncReady.then(function (S) { return S.write.fillEmptyDays(hid, batch.map(function (e) { return { date: e.date, recipe_id: e.recipe_id }; }), function (server) { return spReplan(batch, server); }); }).then(function (res) {
       spBusy = false;
       if (!hh || hh.hid !== hid) return;
-      batch.forEach(function (e) { e.sent = true; }); spSave(); applyDays(); remoteChanged();
+      // 0.26.0: planen kan være laget på nytt (en annen telefon fylte noen kvelder først): bare det som ble skrevet, står igjen i køen
+      var done = res && Array.isArray(res.done) ? res.done : null, plan = res && Array.isArray(res.plan) ? res.plan : null;
+      if (done && plan) {
+        spPending = spPending.filter(function (e) { return batch.indexOf(e) < 0; }).concat(plan.filter(function (e) { return done.indexOf(e.date) >= 0; }).map(function (e) { return { date: e.date, recipe_id: e.recipe_id, sent: true }; }));
+      } else batch.forEach(function (e) { e.sent = true; });
+      spSave(); applyDays(); remoteChanged();
     }, function (e) {
       spBusy = false;
       if (!hh || hh.hid !== hid) return;
@@ -3167,11 +3174,28 @@
       toast('Kunne ikke lagre uka', 4000);
     });
   }
+  // 0.26.0: ny plan for kveldene i batch når serveren (transaksjonen i fillEmptyDays) har fylt noen av dem fra en annen telefon.
+  // Serverdagene settes midlertidig inn i tilstanden (med en stubb for retter telefonen ikke har fått ennå), og spPlan lager planen
+  // med de samme rettene som ble valgt her; tilstanden settes tilbake etterpå. Bare kveldene i batch som er tomme på serveren.
+  function spReplan(batch, server) {
+    var ids = (batch[0] && batch[0].pool) || batch.map(function (e) { return e.recipe_id; });
+    var wp = Object.assign({}, state.week_plan), oo = Object.assign({}, state.oneoffs), nR = state.recipes.length;
+    try {
+      Object.keys(server).forEach(function (d) {
+        var s = server[d];
+        if (s && s.oneoff && s.oneoff.name) { state.oneoffs[d] = { name: s.oneoff.name, ingredients: [] }; state.week_plan[d] = null; }
+        else if (s && s.recipe_id) { delete state.oneoffs[d]; state.week_plan[d] = s.recipe_id; if (!recipeById(s.recipe_id)) state.recipes.push({ id: s.recipe_id, name: '', ingredients: [] }); }
+        else { delete state.oneoffs[d]; state.week_plan[d] = null; }
+      });
+      var pool = ids.map(recipeById).filter(Boolean);
+      return spPlan(pool).filter(function (e) { return server.hasOwnProperty(e.date) && !(server[e.date] && (server[e.date].recipe_id || (server[e.date].oneoff && server[e.date].oneoff.name))); });
+    } catch (e) { return []; } finally { state.week_plan = wp; state.oneoffs = oo; state.recipes.length = nR; }
+  }
   // Lokalt: som vanlig.
-  function spWrite(entries) {
+  function spWrite(entries, pool) {
     if (!entries.length) return;
     if (!hh) { ops.setDays(entries); return; }
-    entries = entries.map(function (e) { return { date: e.date, recipe_id: e.recipe_id }; });
+    entries = entries.map(function (e) { return { date: e.date, recipe_id: e.recipe_id, pool: pool || null }; });
     spPending = spPending.concat(entries); spSave();
     spOverlay(); saveMirror();
     spFlush();
@@ -3192,7 +3216,7 @@
       pool.push(r);
     });
     var entries = spPlan(pool, rng);
-    spWrite(entries);
+    spWrite(entries, pool.map(function (r) { return r.id; }));
     return { recipes: pool.map(function (r) { return r.id; }), filled: entries.map(function (e) { return { date: e.date, id: e.recipe_id }; }) };
   }
   // «Nytt forslag» på en kveld (dagsarket i Uke): en annen av husstandens retter som ikke står i uka fra før, helst av en annen
@@ -3226,6 +3250,123 @@
     replacedToast(d, before, old.name);
     focusEl('[data-action="day-open"][data-date="' + d + '"]');
   }
+  // 0.26.0: navn, alder og kjæledyr. Alltid på telefonen (per husstand), og i husstanden (settings/folk) så alle telefonene ser det samme
+  // (Sigurd 17.11). settings/folk krever regelforslaget regler-0260.diff: med reglene som er publisert nå avvises skrivingen stille, og
+  // det som er lagret på telefonen brukes som før. Tellerne synkes som før (settings/household); personradene stemmes av mot dem når
+  // de vises (KnaggenHusstand.reconcile). Siste lagring vinner (hele dokumentet skrives).
+  var SP_DETAIL_PREFIX = 'knaggen:husstand3:';
+  function spDetailKey() { return SP_DETAIL_PREFIX + (hh ? hh.hid : 'lokal'); }
+  function spDetailGet() {
+    var raw = lsGet(spDetailKey()) || (hh ? lsGet(SP_DETAIL_PREFIX + 'lokal') : null), d = null;
+    try { d = JSON.parse(raw || 'null'); } catch (e) { d = null; }
+    d = d && typeof d === 'object' ? d : {};
+    return { mode: d.mode === 'navn' ? 'navn' : 'enkel', persons: Array.isArray(d.persons) ? d.persons.slice(0, 36) : [], pets: Array.isArray(d.pets) ? d.pets.filter(function (x) { return x && /^(hund|katt|annet)$/.test(x.type); }).slice(0, 12) : [] };
+  }
+  function spDetailClean(d) {
+    var H = window.KnaggenHusstand;
+    return { mode: d && d.mode === 'navn' ? 'navn' : 'enkel',
+      persons: ((d && d.persons) || []).slice(0, 36).map(function (p) { return { name: String((p && p.name) || '').trim().slice(0, 30), age: H ? H.cleanAge(p && p.age) : null, kind: /^(voksen|barn|smabarn)$/.test(p && p.kind) ? p.kind : 'voksen' }; }),
+      pets: ((d && d.pets) || []).filter(function (x) { return x && /^(hund|katt|annet)$/.test(x.type); }).slice(0, 12).map(function (x) { return { type: x.type }; }) };
+  }
+  // Glemmer navn, alder og kjæledyr på denne telefonen når den går ut av husstanden (slett, forlat, fjernet, logget ut):
+  // husstandens kopi (knaggen:husstand3:<hid>) og den fra oppsettet før telefonen ble med (…:lokal, som er delt med husstanden).
+  function spFolkDrop(hid) {
+    if (hid) { lsDel(SP_DETAIL_PREFIX + hid); lsDel(SP_FOLK_SRV + hid); }
+    lsDel(SP_DETAIL_PREFIX + 'lokal');
+    spFolkSeen = null; spFolkAvvist = false;
+  }
+  // Merke: denne telefonen har sett settings/folk på serveren. Forsvinner dokumentet senere («Fjern navn» på en annen telefon),
+  // fjernes navnene her også – i stedet for å dele dem på nytt. Uten merket (f.eks. reglene som er publisert nå, der dokumentet
+  // aldri finnes) blir det som står på telefonen, stående.
+  var SP_FOLK_SRV = 'knaggen:husstand3-sett:';
+  // 0.26.0 (Sigurd 17.11): «Fjern navn» under Husstand → Navn, alder og kjæledyr. Kort bekreftelse; sletter settings/folk for hele
+  // husstanden og det som ligger på telefonen. Tellerne beholdes. Avviser reglene slettingen (publisert nå: 'folk' er ikke i
+  // delete-lista), fjernes navnene likevel her, uten feilmelding – de har da aldri vært delt.
+  function spFolkRemove() {
+    return ask({ id: 'fjern-navn', title: 'Fjerne navn, alder og kjæledyr?', ok: 'Fjern', cancel: 'Avbryt', danger: true,
+      text: hh ? 'De slettes for alle i husstanden. Antall voksne og barn beholdes.' : 'De slettes fra denne telefonen. Antall voksne og barn beholdes.' }).then(function (ok) {
+      if (!ok) return false;
+      var hid = hh && hh.hid;
+      lsDel(spDetailKey()); lsDel(SP_DETAIL_PREFIX + 'lokal');
+      if (hid) {
+        lsDel(SP_FOLK_SRV + hid); spFolkSeen = hid;
+        if (syncReady) syncReady.then(function (S) { return S.write.deleteFolk ? S.write.deleteFolk(hid) : null; }).catch(function () { /* eldre regler eller frakoblet: fjernet på telefonen */ });
+      }
+      toast('Navn, alder og kjæledyr er fjernet', 4000);
+      return true;
+    });
+  }
+  var spFolkAvvist = false;   // reglene (publisert nå) avviste settings/folk i denne økten: prøv igjen ved neste lagring, men ikke ved hver oppstart
+  function spDetailSet(d) {
+    d = spDetailClean(d);
+    lsSet(spDetailKey(), JSON.stringify(d));
+    if (hh) spFolkPush(d);
+  }
+  function spFolkPush(d) {
+    if (!hh || !syncReady) return;
+    var hid = hh.hid;
+    syncReady.then(function (S) {
+      if (!S.write.setFolk) return;
+      S.write.setFolk(hid, d).then(function () { spFolkAvvist = false; }, function (e) {
+        // eldre regler: blir på telefonen (ingen feilmelding – alt annet er lagret, og tellerne er delt)
+        if (e && e.code === 'permission-denied') spFolkAvvist = true;
+      });
+    }, function () { /* frakoblet/ikke satt opp: blir på telefonen */ });
+  }
+  // Fra serveren (settings/folk): husstandens versjon gjelder. Finnes den ikke ennå, og denne telefonen har navn/dyr fra
+  // oppsettet (også fra før den ble med i husstanden), deles de – én gang, når serveren har svart.
+  var spFolkSeen = null;
+  function spFolkFromServer(doc, meta) {
+    if (!hh) return;
+    if (doc && doc.__pending) return;   // egen skriving som ikke er bekreftet: står allerede på telefonen (og kan bli avvist av eldre regler)
+    var fd = doc && window.UkeshandelSync && window.UkeshandelSync.folkFromDoc ? window.UkeshandelSync.folkFromDoc(doc) : null;
+    if (fd) {
+      var d = spDetailClean(fd), cur = lsGet(spDetailKey());
+      if (cur !== JSON.stringify(d)) {
+        lsSet(spDetailKey(), JSON.stringify(d));
+        setTimeout(function () { try { document.dispatchEvent(new Event('knaggen-husstand')); } catch (e) { /* ignorer */ } }, 0);
+      }
+      spFolkSeen = hh.hid;
+      if (!lsGet(SP_FOLK_SRV + hh.hid)) lsSet(SP_FOLK_SRV + hh.hid, '1');
+      return;
+    }
+    if (meta && meta.fromCache) return;
+    if (lsGet(SP_FOLK_SRV + hh.hid)) {   // fantes på serveren, er slettet («Fjern navn» på en annen telefon): fjern her også
+      lsDel(SP_FOLK_SRV + hh.hid); lsDel(spDetailKey()); lsDel(SP_DETAIL_PREFIX + 'lokal'); spFolkSeen = hh.hid;
+      setTimeout(function () { try { document.dispatchEvent(new Event('knaggen-husstand')); } catch (e) { /* ignorer */ } }, 0);
+      return;
+    }
+    if (spFolkSeen === hh.hid || spFolkAvvist) return;
+    spFolkSeen = hh.hid;
+    var loc = spDetailGet();
+    if (loc.mode === 'navn' || loc.pets.length) { if (!lsGet(spDetailKey())) lsSet(spDetailKey(), JSON.stringify(loc)); spFolkPush(loc); }
+  }
+  function spFasteForslag() {
+    var H = window.KnaggenHusstand; if (!H) return [];
+    var d = spDetailGet(), people = hsPeople() || { voksen: 2, barn: 2, smabarn: 0 };
+    var persons = d.mode === 'navn' ? H.reconcile(d.persons, people) : null;
+    return H.fasteVarer({ people: people, persons: persons, pets: d.pets }, window.KnaggenStartpakke.porsjonerTall(people));
+  }
+  // Lagrer forslaget som husstandens faste varer og setter dem på handlelista. Én vare per navn: finnes varen fra før
+  // (f.eks. startdataenes «melk»), oppdateres mengden; ellers lages den med fast id (fv3-<navn>), så to telefoner som gjør
+  // dette samtidig skriver samme dokument i stedet for å lage to. Fjernede linjer tas av lista (varen slettes ikke).
+  function spFastId(key) { return 'fv3-' + String(key).toLowerCase().replace(/æ/g, 'ae').replace(/ø/g, 'o').replace(/å/g, 'a').replace(/[^a-z0-9]+/g, '-'); }
+  function spSaveFaste(lines, removed) {
+    var on = {}, ids = [];
+    (lines || []).forEach(function (l) {
+      var s = findStapleByKey(l.name) || state.staples.filter(function (x) { return x.id === spFastId(l.key || l.name); })[0];
+      if (s) {
+        if (s.qty !== l.qty || s.unit !== l.unit || s.active === false) ops.updateStaple(s, { qty: l.qty, unit: l.unit, active: true });
+      } else {
+        s = { id: spFastId(l.key || l.name), name: String(l.name).toLowerCase(), qty: l.qty, unit: l.unit, aisle: l.aisle, active: true };
+        ops.addStaple(s);
+      }
+      on[s.id] = 1; ids.push(s.id);
+    });
+    (removed || []).forEach(function (l) { var s = findStapleByKey(l.name); if (s && !on[s.id] && (state.list_adjust[LIST_KEY] || {})[FAST_PREFIX + s.id] > 0) on[s.id] = -1; });
+    if (Object.keys(on).length) ops.setFast(LIST_KEY, on);
+    return ids;
+  }
   window.KnaggenStartpakke = {
     ids: function () { return SP_IDS.slice(); },
     dishes: function () { return SP_IDS.map(libById).filter(Boolean).map(function (x) { return { id: x.id, name: x.name, minutes: x.minutes }; }); },
@@ -3247,6 +3388,13 @@
       else lsSet(SP_NAME_KEY, name);
     },
     apply: function (ids) { return spApply(ids); },
+    // 0.26.0 (retning-v3): husstanden i to nivåer og faste varer fra husstanden (husstand.js)
+    porsjonerTall: function (p) { var f = SC.faktor(true, true, p || {}, null); return f === 'Tom' ? 0 : f * SC.BASE; },
+    detail: function () { return spDetailGet(); },
+    saveDetail: function (d) { spDetailSet(d); },
+    removeDetail: function () { return spFolkRemove(); },   // 0.26.0: «Fjern navn» (Promise<boolean>)
+    faste: function () { return spFasteForslag(); },
+    saveFaste: function (lines, removed) { return spSaveFaste(lines, removed); },
     inHousehold: function () { return !!hh; },
     kindPending: function () { return !!(hh && lsGet(KIND_ASK_KEY) === hh.hid); },   // «Hvem sin enhet er dette?» ubesvart (hjemme5: kalenderforslaget venter)
     calCount: function () { var K = window.KnaggenKjokken; return K && K.calCount ? K.calCount() : null; },
@@ -6892,10 +7040,10 @@
     temaMedia();
   }
   // 0.18.13: aksentfarge for hele appen, lagret per enhet. index.html setter html[data-aksent] før CSS-en tegnes; aksent-app.css bytter --brand-familien.
-  var AKSENT_KEY = 'knaggen:aksent', AKSENTER = [['salvie', 'Salvie'], ['messing', 'Messing'], ['rav', 'Rav'], ['fjord', 'Fjord'], ['lyng', 'Lyng'], ['rust', 'Rust'], ['mose', 'Mose']];
+  var AKSENT_KEY = 'knaggen:aksent', AKSENTER = [['salvie', 'Standard'], ['messing', 'Messing'], ['rav', 'Rav'], ['fjord', 'Fjord'], ['lyng', 'Lyng'], ['rust', 'Rust'], ['mose', 'Mose']];
   function aksentGet() { var t = null; try { t = JSON.parse(localStorage.getItem(AKSENT_KEY) || 'null'); } catch (e) { } return AKSENTER.some(function (x) { return x[0] === t; }) ? t : 'salvie'; }
   function aksentRadHtml() {
-    return '<span class="aks-rad" role="radiogroup" aria-label="Aksentfarge">' + AKSENTER.map(function (x) { var on = aksentGet() === x[0]; return '<button type="button" role="radio" aria-checked="' + on + '" aria-label="' + x[1] + '" data-action="aksent" data-v="' + x[0] + '" data-testid="aksent-' + x[0] + '"><span class="aks-dot" style="--sw-lys:var(--kj-ak-' + x[0] + '-lys);--sw-mork:var(--kj-ak-' + x[0] + '-mork)" aria-hidden="true">' + (on ? '✓' : '') + '</span><span class="nm">' + x[1] + '</span></button>'; }).join('') + '</span>';
+    return '<span class="aks-rad" role="radiogroup" aria-label="Aksentfarge">' + AKSENTER.map(function (x) { var on = aksentGet() === x[0]; return '<button type="button" role="radio" aria-checked="' + on + '" aria-label="' + x[1] + '" data-action="aksent" data-v="' + x[0] + '" data-testid="aksent-' + x[0] + '"><span class="aks-dot" style="--sw-lys:' + (x[0] === 'salvie' ? '#cd8d1d' : 'var(--kj-ak-' + x[0] + '-lys)') + ';--sw-mork:var(--kj-ak-' + x[0] + '-mork)" aria-hidden="true">' + (on ? '✓' : '') + '</span><span class="nm">' + x[1] + '</span></button>'; }).join('') + '</span>';
   }
   // 0.18.13: «Utseende» nederst på Husstand (med og uten husstand). Valget gjelder bare denne telefonen og lagres lokalt.
   function utseendeHusstandHtml() {
@@ -7109,6 +7257,7 @@
     K17.name = p && typeof p.name === 'string' ? p.name : ''; if (p || !(meta && meta.fromCache)) hhNameCache(K17.name); renderSyncStatus();
     var k = docs.filter(function (d) { return d.id === 'kjokken'; })[0];
     K17.kitchen = k && Array.isArray(k.stops) ? { stops: k.stops, lat: k.lat, lon: k.lon } : null;
+    spFolkFromServer(docs.filter(function (d) { return d.id === 'folk'; })[0], meta);   // 0.26.0: navn, alder og kjæledyr (felles)
     var pf = docs.filter(function (d) { return d.id === 'personer'; })[0];   // 0.18.12: valgte personfarger (felles)
     K17.farger = pf && pf.farger && typeof pf.farger === 'object' ? pf.farger : {};
     var hj = docs.filter(function (d) { return d.id === 'hjem'; })[0];   // v0.18.1: hjemmeadresse
@@ -7342,7 +7491,7 @@
     if (!p) return cb('00');
     function ut() { try { cb(window.KnaggenSted.fylke(p.lat, p.lon)); } catch (e) { cb('00'); } }
     if (window.KnaggenSted) return ut();
-    var sc = document.createElement('script'); sc.src = 'sted.js?v=0.25.0'; sc.onload = ut; sc.onerror = function () { cb('00'); };
+    var sc = document.createElement('script'); sc.src = 'sted.js?v=0.26.0'; sc.onload = ut; sc.onerror = function () { cb('00'); };
     document.head.appendChild(sc);
   }
   // Telles på nytt når UTC-datoen har skiftet: ved nye serverdata, når siden blir synlig igjen, når nettet kommer tilbake og hver time.
@@ -7476,6 +7625,7 @@
     // 2. Middag
     var scalePref = hsState().scale !== false, lim = weekdayLimit();
     var b1 = peopleCountersHtml('hsh', hasP ? hsPeople() : hp, { testid: 'hs-innstillinger' }) +
+      '<p class="hs3-rediger"><a class="hs3-lenke" href="#oppsett/ark-husstand" data-testid="hs-navn-dyr">Navn, alder og kjæledyr</a></p>' +   // 0.26.0
       '<button type="button" class="hs-switch" role="switch" data-action="hs-scale-toggle" aria-checked="' + (scalePref ? 'true' : 'false') + '" data-testid="hs-tilpass-bryter">' +
       '<div class="t"><b>Tilpass retter fra Knaggen</b><span>Egne retter endres ikke</span></div><span class="sw' + (scalePref ? ' on' : '') + '" aria-hidden="true"></span></button>' +
       '<p class="hs-note">Vektene følger Helsedirektoratets energibehov (omtrent). Under 1 år telles ikke.</p>' +
@@ -7613,6 +7763,7 @@
     clearTimeout(connectTimer); syncStatus.connecting = false;
     lsDel(HH_KEY);
     if (hid) { lsDel(MIRROR_PREFIX + hid); lsDel(SWAPQ_PREFIX + hid); }
+    spFolkDrop(hid);   // 0.26.0 (Trude v0260 #3): navn, alder og kjæledyr blir ikke liggende på telefonen etter slett/forlat
     renderSyncStatus();
     return hid;
   }
@@ -8610,8 +8761,9 @@
     document.addEventListener('fullscreenchange', ut); document.addEventListener('webkitfullscreenchange', ut);
     ut();
   })();
-  var APP_VERSION = '0.25.0', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.26.0', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.26.0', ['Første oppsett har tre steg: hvem som bor i husstanden, faste varer og retter.', 'Skriv bare antall, eller legg til navn, alder og kjæledyr. Navn, alder og kjæledyr deles med de andre i husstanden, og alle kan endre dem senere.', 'Faste varer fylles ut etter husstanden, med én linje per vare. Fjern det dere ikke trenger.', 'Ny gul farge på knappene i lys modus.']],
     ['0.25.0', ['Nytt første oppsett: skriv hvem som spiser middag, velg retter blant ti hverdagsklassikere og trykk «Fyll uka». Da står middagene i uka og handlelista er klar. Kalenderen foreslås neste gang du åpner appen.', '«Nytt forslag» på en kveld i Uke bytter til en annen av rettene deres, helst en annen type enn kvelden før og etter.']],
     ['0.24.2', ['«Kjøp på vei hjem» regner nå med de samme varene som «igjen å handle» – også faste varer, egne varer og varer til andre middager. Kortet viser varene til dagens middag først, og «+N til» viser resten av lista. «Alt er handlet» står bare når hele lista er handlet.']],
     ['0.24.1', ['«Kjøp på vei hjem» på Nå viser bare det som ikke er handlet. Det du krysser av, blir stående gjennomstreket et par sekunder så du kan angre, og er alt handlet, står det «Alt er handlet».']],

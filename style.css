@@ -136,7 +136,7 @@ main { max-width: 640px; margin: 0 auto; padding: 12px 14px; outline: none; }
   font: inherit; font-weight: 600; text-decoration: none; cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-.btn.primary { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.btn.primary { background: var(--knapp); border-color: var(--knapp); color: var(--knapp-ink); }   /* 0.26.0: --knapp (lys standard: #CD8D1D), ellers = --brand */
 .btn.danger { color: var(--danger); border-color: var(--danger); }
 .btn:active { transform: translateY(1px); }
 .icon-btn {
@@ -435,7 +435,7 @@ select option:disabled { color: var(--line-strong); }
 .swapping .day.swap-target { border-color: var(--line-strong); }
 .swapping .day.swap-from { border: 2px dashed var(--brand); background: var(--brand-soft); padding: 9px 11px; }
 .swapping .day.swap-from select { border-color: var(--brand); } /* v0.6: feltkanten ≥ 3:1 også mot den tonede flata */
-.swap-btn.swap-to { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.swap-btn.swap-to { background: var(--knapp); border-color: var(--knapp); color: var(--knapp-ink); }
 .swap-btn.is-from { border-color: var(--brand); color: var(--brand); }
 .swap-bar {
   position: sticky; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 8px); z-index: 4;
@@ -588,7 +588,7 @@ select option:disabled { color: var(--line-strong); }
 .fv-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .fv-chip { min-height: var(--tap); padding: 0 12px; border: 1px solid var(--line-strong); border-radius: var(--pill); background: var(--card); color: var(--ink); font: inherit; font-size: var(--fs-14); font-weight: 600; cursor: pointer; position: relative; }
 .fv-chip::after { content: ""; position: absolute; inset: -2px 0; } /* treffflate 44 px */
-.fv-chip.on { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.fv-chip.on { background: var(--knapp); border-color: var(--knapp); color: var(--knapp-ink); }
 .fv-chip.on::before { content: "✓ "; }
 .fv-editor .seg { grid-template-columns: repeat(2, 1fr); margin: 0; }
 .fv-editor .seg button.on { box-shadow: inset 0 -3px 0 var(--brand); }
@@ -1012,7 +1012,7 @@ body.v9-notabs { --nav-h: 0px; }
 .fv-new-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .fv-new-chips .chip { min-height: var(--tap); padding: 0 12px; border: 1px solid var(--line-strong); border-radius: var(--pill); background: var(--card); color: var(--ink); font: inherit; font-size: var(--fs-14); font-weight: 600; cursor: pointer; position: relative; }
 .fv-new-chips .chip::after { content: ""; position: absolute; inset: -2px 0; }
-.fv-new-chips .chip.on { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.fv-new-chips .chip.on { background: var(--knapp); border-color: var(--knapp); color: var(--knapp-ink); }
 /* v0.9: uten fanelinje (Bli med, Koble til, flyttesiden) ligger toastbåndet helt nederst */
 body.v9-notabs .toast-dock { bottom: calc(env(safe-area-inset-bottom, 0px) + var(--dock-lift, 0px)); }
 
@@ -1326,7 +1326,7 @@ a.btn { display: flex; align-items: center; justify-content: center; text-decora
 .k17-seg button { flex:1; min-height:var(--tap); border:0; border-radius:var(--radius-s); background:none; color:var(--ink); font:inherit; font-weight:600; font-size: var(--fs-16); }
 .k17-seg button.on { background:var(--card); box-shadow:0 0 0 1px var(--line-strong); }
 .k17-btn { min-height:48px; border-radius: var(--radius); border:1px solid var(--line-strong); background:none; color:var(--ink); font:inherit; font-weight:600; font-size: var(--fs-16); padding:0 16px; }
-.k17-btn.pri { background:var(--brand); color:var(--brand-ink); border-color:var(--brand); }
+.k17-btn.pri { background:var(--knapp); color:var(--knapp-ink); border-color:var(--knapp); }
 .k17-btn.dng { background:var(--danger-fill); color:var(--on-danger); border-color:var(--danger-fill); }
 .k17-btn.txt { border-color:transparent; color:var(--danger); }
 .k17-btn.full { width:100%; }
@@ -1591,7 +1591,7 @@ html[data-tema="lys"] .aks-rad .aks-dot { background: var(--sw-lys); color: var(
   border-radius: var(--radius); font: inherit; font-weight: 600;
   display: inline-flex; align-items: center; justify-content: center;
 }
-.kal-forslag-acts .btn.primary { grid-column: 1 / -1; background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.kal-forslag-acts .btn.primary { grid-column: 1 / -1; background: var(--knapp); border-color: var(--knapp); color: var(--knapp-ink); }
 .kj .kal-forslag { color: var(--ink); }
 .kj .kal-forslag-acts .btn { background: var(--card); border: 1px solid var(--line-strong); color: var(--ink); padding: 0 18px; min-height: var(--tap); height: var(--tap); }
 .kj .kal-forslag-acts .btn.primary { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
@@ -1633,3 +1633,67 @@ html[data-tema="lys"] .aks-rad .aks-dot { background: var(--sw-lys); color: var(
 
 /* 0.25.0 (Sigurd): «Koble til» i toppen skjules til første oppsett er ferdig (hjemme5.js setter .sp-uferdig) */
 .sp-uferdig .sync-link.none { display: none; }
+
+/* ===== 0.26.0 (merkevare/retning-v3): aksent i lys modus =====
+ * Knapp (fyll) #CD8D1D med tekst #1F1606 (6,31:1). Knappegult er bare 2,53:1 mot bakgrunnen #f4f2ed, så alt som er tekst, strek
+ * eller ikon på bakgrunnen (lenker, valgt fane og streken over den, prikkene i oppsettet, «i dag»-nålen, fokusring, avkrysning)
+ * bruker tekstvarianten #875A10 (5,36:1 mot #f4f2ed, 5,75:1 mot #fbfaf7; hvit på #875A10 6,0:1).
+ * Gjelder bare standardaksenten (ingen data-aksent) i lys modus. Mørk modus og de andre aksentene er uendret (--knapp = --brand). */
+:root { --knapp: var(--brand); --knapp-ink: var(--brand-ink); }
+.kj { --knapp: var(--brand); --knapp-ink: var(--brand-ink); }   /* kjøkkenskjermen har egne farger (uendret) */
+@media (prefers-color-scheme: light) {
+  :root:not([data-tema="mork"]):not([data-aksent]) {
+    --brand: #875a10; --brand-ink: #ffffff; --knapp: #cd8d1d; --knapp-ink: #1f1606;
+    --brand-soft: #f3eadb; --brand-soft-line: #dcc69f; --inv-brand: #e2b35e; --inv-brand-ink: #1f1606; --tone-top: #eeebe3; --tone-top: #eeebe3;
+  }
+}
+:root[data-tema="lys"]:not([data-aksent]) {
+  --brand: #875a10; --brand-ink: #ffffff; --knapp: #cd8d1d; --knapp-ink: #1f1606;
+  --brand-soft: #f3eadb; --brand-soft-line: #dcc69f; --inv-brand: #e2b35e; --inv-brand-ink: #1f1606; --tone-top: #eeebe3;
+}
+
+/* ===== 0.26.0: «Hvem bor i husstanden?», faste varer og gang-illustrasjonen ===== */
+/* Gangen: lag fra KnaggenGang.lag (gang.js, skalert etter husstanden; kroken kan byttes). Uten krok = den faste gangen
+ * (bilder/gang-lys|mork.webp). Lagene ligger oppå hverandre i et 16:9-lerret (1280×720 hos Mons); --dx-lys/--dx-mork (eller --dx)
+ * flytter et hengende lag sidelengs til sin knagg (prosent av bredden). */
+:root { --gang-lys: url("bilder/gang-lys.webp"); --gang-mork: url("bilder/gang-mork.webp"); }
+.gang { position: relative; width: 100%; aspect-ratio: 16 / 9; margin: 12px auto 4px; border-radius: var(--radius); overflow: hidden; }
+.gang.liten { width: 70%; }
+.gang-lag { position: absolute; inset: 0; pointer-events: none; background: var(--gang-mork) center / 100% 100% no-repeat; transform: translateX(var(--dx-mork, var(--dx, 0%))); }
+@media (prefers-color-scheme: light) { :root:not([data-tema="mork"]) .gang-lag { background-image: var(--gang-lys); transform: translateX(var(--dx-lys, var(--dx, 0%))); } }
+:root[data-tema="lys"] .gang-lag { background-image: var(--gang-lys); transform: translateX(var(--dx-lys, var(--dx, 0%))); }
+/* 0.26.0 (Sigurd 17.11): gangen vises bare i oppsettet, aldri der plassen er knapp: lave skjermer (liggende telefon, delt skjerm). */
+@media (max-height: 639.98px) { .gang { display: none; } }   /* README: skjult når skjermen er lavere enn 640 px (vises ved 640) */
+.hs3-lenker { display: flex; flex-wrap: wrap; gap: 0 24px; margin: 4px 0 0; }
+.hs3-lenker + .hs3-lenker { margin-top: 0; }
+.hs3-fjern { margin-top: 12px; }   /* 0.26.0: «Fjern navn» (arket fra Husstand) */
+.hs3-lenke.hs3-fjern-navn { color: var(--danger); }
+/* 0.26.0: bekreftelsen («Fjern navn») og toasten over oppsettet/arket (.v5 30, .v5-ark 60) */
+body.v5-open .ask-overlay { z-index: 70; }
+body.v5-ark-open .toast, body.v5-ark-open .toast-dock { z-index: 75; }
+.hs3-lenke { display: inline-flex; align-items: center; min-height: var(--tap); color: var(--brand); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1.5px; white-space: nowrap; }
+.hs3-rediger { margin: 4px 0 0; }
+.hs3-folk, .hs3-dyr, .fv3-liste { list-style: none; margin: 12px 0 0; padding: 0; }
+.hs3-p { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; }
+.v5 input.hs3-navn { flex: 1; min-width: 0; min-height: var(--tap); box-sizing: border-box; padding: 10px 12px; font: inherit; font-size: var(--fs-16); color: var(--ink); background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--radius); }
+.hs3-alder { flex: none; display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: var(--fs-14); }
+.v5 .hs3-alder input { width: 3.25em; min-height: var(--tap); box-sizing: border-box; padding: 10px 6px; text-align: center; font: inherit; font-size: var(--fs-16); color: var(--ink); background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--radius); }
+.hs3-alder input::placeholder { color: var(--muted); opacity: 1; }
+/* voksen uten alder: «Voksen» som rolig tekst (som i skissen); feltet får kant når det er i bruk */
+.v5 .hs3-p.voksen .hs3-alder input { width: 5.25em; border-color: transparent; background: none; text-align: right; }
+.v5 .hs3-p.voksen .hs3-alder input:focus { border-color: var(--line-strong); background: var(--card); text-align: center; }
+.hs3-p.voksen .hs3-alder span { visibility: hidden; }
+.hs3-x { flex: none; width: var(--tap); height: var(--tap); border-color: transparent; background: var(--card-2); font-size: var(--fs-18); line-height: 1; }
+.hs3-dyr li, .fv3-liste li { display: flex; align-items: center; gap: 8px; min-height: var(--tap); margin: 0 0 8px; }
+.hs3-dyr li b, .fv3-liste li .t { flex: 1; min-width: 0; }
+.fv3-liste li .t b { font-weight: 700; }
+.fv3-liste li .t .m { margin-left: 4px; color: var(--muted); font-weight: 500; }
+.hs3-sporr { margin: 8px 0 0; }
+.hs3-sporr .hint { margin: 0 0 8px; }
+.hs3-sporr-b { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.hs3-sporr-b .btn { min-height: var(--tap); }
+.fv3-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.fv3-head h2 { margin-bottom: 4px; }
+.v5[data-steg="faste"] { overflow: hidden; }
+.v5[data-steg="faste"] .v5-in { min-height: 0; overflow: auto; }
+.v5[data-steg="faste"] .v5-acts { flex: none; padding-top: 8px; }

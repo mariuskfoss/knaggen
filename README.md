@@ -6,6 +6,40 @@ Ukeplan for middager + handleliste for én husstand. Ren statisk side (HTML/CSS/
 Fra v0.2 deles dataene i husstanden via Firebase (Firestore + anonym innlogging, SDK lastes som ES-moduler fra gstatic).
 Uten husstand (eller uten Firebase-oppsett) lagres alt lokalt i nettleseren som før (`localStorage`, nøkkel `ukeshandel:v1`).
 
+## 0.26.0: gangen skalert etter husstanden (Sigurd 17.11.2026; Mons `../merkevare/retning-v3/gang-lag/README.md`)
+- `gang.js` (`window.KnaggenGang.plan/lag`, ren funksjon, testes i node): behov = personer + 1 hvis hund; S (behov 1–2, 3 knagger tegnet),
+  M (3–4, 5), L (5+, 6). Knagger etter produktregelen `min(behov + 1, 6)` står i `data-knagger`; bakgrunnene er tegnet med maks i båndet.
+  Full liste: ledig knagg faller bort, med hund 5 personer + bånd, uten hund 6. Båndet på siste knagg. Voksne først (voksen-1/2/3 i syklus),
+  så barn eldst → yngst (16+ voksen, 9–15, 4–8, 0–3; uten alder: «barn» = standard-barn, «småbarn» = standard-smabarn; samme barnegruppe
+  andre gang = standardlaget, som i «Stor familie»). Katt/annet på gulvet. hjemmekos og felles-sko alltid; sko-barn-4-8 med barn-4-8.
+  Bare antall → standard-voksen/-barn/-smabarn. Hengende lag: dx = spacing × (k − 1), egen spacing i lys og mørk (`--dx-lys`/`--dx-mork`).
+- Lagene ligger i `bilder/gang/{lys,mork}/{s,m,l}/*.webp` (konvertert fra Mons' png, ~1 MB). Service workeren har gang.js, bakgrunn, matte og sko
+  i alle varianter; plagg og dyr mellomlagres når de vises.
+- Vises bare i oppsettet (steg 1 og arket «Navn, alder og kjæledyr»), oppdateres når alder eller tellere endres, skjult når skjermen er lavere enn 640 px.
+  Kroken kan byttes (`window.KnaggenGang`); feil i kroken → den faste gangen (`bilder/gang-lys|mork.webp`).
+
+## 0.26.0: «Hvem bor i husstanden?» delt i husstanden (Sigurd 17.11.2026) – krever regelforslaget `regler-0260.diff`
+- Navn, alder og kjæledyr lagres alltid på telefonen (`localStorage['knaggen:husstand3:<hid>']`) og i husstanden i `settings/folk`
+  `{ mode, navn, alder, type, dyr, updated_at }`: navn med linjeskift mellom, alder med komma mellom (`-` = ikke oppgitt), type og dyr som lister
+  (`sync.js` `folkDoc`/`folkFromDoc`). Kolonner fordi reglene ikke kan gå gjennom en liste med kart, og 36 sjekker hver for seg sprengte
+  grensen på 1000 uttrykk. Hele dokumentet skrives; siste lagring vinner. Tellerne er fortsatt `settings/household` (eldre versjoner skriver det helt).
+- Fra serveren: husstandens versjon gjelder og vises på oppsettskjermen og i arket «Navn, alder og kjæledyr» når de ikke er rørt
+  (hendelsen `knaggen-husstand`). Egen skriving som ikke er bekreftet (`__pending`) brukes ikke. Har husstanden ingen `folk` ennå og
+  telefonen har navn/dyr (også fra før den ble med), deles de én gang når serveren har svart.
+- Reglene som er publisert nå avviser `settings/folk`: da blir alt på telefonen som før, uten melding, og SDK-ens advarsel (med husstands-id-en)
+  er av mens skrivingen pågår. Testet mot en egen emulator med de gamle reglene (`/app-gamle/`, Firestore 8181; e2e-v0260 L1–L8).
+- Regelforslaget (`regler-0260.diff`, IKKE publisert, krever Marius' ja): `settings/folk` for medlemmer med nøyaktig de feltene og grensene over,
+  og `folk` i lista over settings-dokumenter som kan slettes (ellers stopper «Slett husstanden»). Regresjonstestene som sjekker «ingen regelendring»
+  sammenligner reglene uten denne diffen (`tests/regler0260.js`).
+- «Vis bare antall» skjuler bare navnene: `mode: 'enkel'` lagres, men personer, alder og dyr beholdes (på telefonen og i `settings/folk`), så
+  «Legg til navn» henter dem fram igjen (e2e-v0260 V1–V3, FN2–FN3).
+- «Fjern navn» (arket Husstand → «Navn, alder og kjæledyr», vises når noe er lagret): kort bekreftelse, så slettes `settings/folk` (`write.deleteFolk`)
+  og `knaggen:husstand3:<hid>`/`:lokal` på telefonen; tellerne beholdes. Telefoner som har sett dokumentet (merket `knaggen:husstand3-sett:<hid>`)
+  fjerner navnene når det forsvinner fra serveren, i stedet for å dele dem på nytt. Med reglene som er publisert nå avvises slettingen stille, og
+  navnene fjernes bare på telefonen (de har aldri vært delt). e2e-v0260 V4–V8, FN4–FN9, L9–L11.
+- Slett/forlat/fjernet/logget ut (`dropHousehold`): `knaggen:husstand3:<hid>`, `knaggen:husstand3-sett:<hid>` og `:lokal` fjernes (e2e-v0260 H13–H16).
+- Fanelinja under oppsettet: «Nå» lyser på telefon; på nettbrett/PC (ingen «Nå»-fane) lyser «Uke», siden som ligger bak oppsettet (e2e-v0260 F).
+
 ## 0.25.0: rettinger etter Trudes gjennomgang (`test-trude/v0250.md`, Sigurd 11.11.2026)
 
 - **Én ting av gangen:** «Hvem sin enhet er dette?» kommer først. Kalenderforslaget kommer tidligst ved neste oppstart etter at spørsmålet er besvart eller
