@@ -6,6 +6,41 @@ Ukeplan for middager + handleliste for én husstand. Ren statisk side (HTML/CSS/
 Fra v0.2 deles dataene i husstanden via Firebase (Firestore + anonym innlogging, SDK lastes som ES-moduler fra gstatic).
 Uten husstand (eller uten Firebase-oppsett) lagres alt lokalt i nettleseren som før (`localStorage`, nøkkel `ukeshandel:v1`).
 
+## 0.26.1: «alltid opp, minst 2» og primærknappene på Nå i aksenten (Sigurd 18.11.2026)
+- **Porsjoner** (`scale.js`, `SC.porsjonerFor`; `SC.faktor` = porsjoner / B, B = rettens porsjoner). Vekter: voksen 1, barn ¾, småbarn ½.
+  1. Knaggen-rett, husstandsskalering på, husstand satt: dagens folk (vektet), rundet opp, minst 2 (også retter for 6 og 8).
+  2. Ingen avvik og ikke 1: retten lages som skrevet, B porsjoner – også en egen rett for 1 («minst 2» bare når vi skalerer).
+  3. Avvik (flere/færre en dag) på egne retter og Knaggen-retter uten husstandsskalering: **B + (dagens folk − husstandens folk)**,
+     dvs. de ekstra legges til og de som ikke spiser trekkes fra med vektene, rundet opp, minst 2 (husstand ikke satt: regnet som 4).
+     Eks. husstand 2+2: egen for 4 +1 voksen = 5, −1 voksen = 3, −2 barn = 2½ → 3; egen for 2 −1 voksen −2 barn → minst 2. 0 personer = Tom.
+  - `SC.fmt` viser tredjedeler/femtedeler/sjettedeler/åttendedeler (×⅔, ×1⅕). «Tilpasset ×…» vises for alle retter når porsjonene er endret (aldri ×1).
+  - Nå/matlaging, «Tilpasset ×…», arket «Hvem spiser …?» («Regnes som N porsjoner» = rettens porsjoner den dagen, oppdateres mens du teller)
+    og handlelista bruker samme tall. «Hent oppskrift» foreslår husstandens tall (opp, minst 2). `merkevare/husstand/skalering.py` er ikke oppdatert.
+- **Primærknapper på Nå** i lys modus: `--knapp` #CD8D1D / `--knapp-ink` #1F1606 på `.kj.k-na` (telefon) og `.kj[data-skjerm="lys"]`
+  (kjøkkenskjermen på nettbrett/PC i dagfasen) – «Kom i gang», «Velg middag i dag ›» (`.na-din-knapp`), «Bruk som middag», «Koble til kalender».
+  Sekundærknapper, Hjemme/Borte, mørk modus, kveld/natt og de andre aksentene er uendret.
+- **Innlogget uten husstand → oppsettet i tre steg** (Sigurd 18.11): e-postlenke (`loginReturn`), Google/Apple uten husstand (`xsLoginDone`),
+  «Logg ut på denne enheten», «Slett kontoen», «Slett husstanden» (også «Ja, behold» med tom kopi), «Forlat husstanden → Start på nytt»,
+  «Start uten husstand» og «Bli med senere» går til `noHomeHash()` = `#oppsett/husstand` når oppsettet gjelder (v5, ingen husstand, ingen retter),
+  ellers `#uke` som før. Det gamle kortet «Hvor mange spiser middag hos dere?» vises ikke i v5 så lenge oppsettet gjelder. Steg 1 har lenka
+  «Har dere en husstand fra før? Koble til med lenke eller kode» (`#koble`) når man er innlogget uten husstand.
+  Fikset samtidig: `resetToIntro` etter et spørsmål (ask) ventet ikke på spørsmålets `history.back()`, så «Logg ut» landet på Husstand-siden
+  (`afterAskBack`). `hjemme5.js` holder oppsettet i takt med adressen når appen bytter side med `replaceState` (ingen hashchange).
+- **Norsk e-post fra Firebase**: `auth.languageCode = 'no'` ved oppstart og rett før `sendSignInLinkToEmail` (`X-Firebase-Locale: no`).
+  Fast `'no'` heller enn `useDeviceLanguage()`: mange norske telefoner står på engelsk, og `nb-NO` er ikke sikkert å treffe Firebase-malen `no`.
+  Firebase-oppsettet og auth-hostingen er ikke rørt. (Emulatorens `oobLink` har alltid `lang=en`; headeren er det som sjekkes.)
+- **Fremgangsmåte fra Matprat o.l. på engangsmiddager** (Sigurd 18.11): «Nei, bare denne gangen» lagrer `oneoff.steps` (og `stepsTried`)
+  på dagen. Høyst 12 steg à 300 tegn, uten HTML og tomme steg (`cleanSteps` i app.js og sync.js; `oneoffDoc`, `dayBody`, `applyDays`, lasting,
+  redigering av engangsmiddagen). `kitchenMeal` bruker engangsmiddagens steg og gir `source` for retter og engangsmiddager.
+  Matlagingen (Nå og kjøkkenskjermen): uten steg nøytral tekst (ikke «til venstre») + «Se oppskriften hos Matprat ↗» (ny fane; Matprat, Godt.no,
+  TINE, MENY, KIWI, REMA 1000, Coop, Oda … ellers vertsnavnet); med steg står lenka under tittelen.
+  Eldre retter/engangsmiddager med kilde uten steg: når matlagingen, oppskriften eller engangsmiddagen åpnes, hentes siden ÉN gang
+  (`Sync.fetchRecipe`) og BARE steps skrives, i en transaksjon som bare skriver når stegene fortsatt mangler (`setRecipeSteps`/`setOneoffSteps`).
+  Forsøket huskes: `oneoff.stepsTried` (oneoff er et fritt kart i reglene) og for retter lokalt per id (`knaggen:steg-forsokt`; reglenes hasOnly
+  har ikke plass til et nytt felt). Forbigående feil (nett/server/kvote) teller én gang: andre gang er retten forsøkt. Høyst 5 automatiske
+  hentinger per time fra enheten (`knaggen:steg-hentinger`; serveren tillater 15 per husstand per time). Testet mot Firestore 8180 og 8181 (`/app-gamle/`).
+- Tester: `tests/e2e-v0261-porsjoner.js` (S, P, D, K, B, E = innlogging, C = fremgangsmåte). Ingen regel- eller functions-endring.
+
 ## 0.26.0: gangen skalert etter husstanden (Sigurd 17.11.2026; Mons `../merkevare/retning-v3/gang-lag/README.md`)
 - `gang.js` (`window.KnaggenGang.plan/lag`, ren funksjon, testes i node): behov = personer + 1 hvis hund; S (behov 1–2, 3 knagger tegnet),
   M (3–4, 5), L (5+, 6). Knagger etter produktregelen `min(behov + 1, 6)` står i `data-knagger`; bakgrunnene er tegnet med maks i båndet.

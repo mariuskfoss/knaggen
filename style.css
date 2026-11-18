@@ -1651,6 +1651,22 @@ html[data-tema="lys"] .aks-rad .aks-dot { background: var(--sw-lys); color: var(
   --brand: #875a10; --brand-ink: #ffffff; --knapp: #cd8d1d; --knapp-ink: #1f1606;
   --brand-soft: #f3eadb; --brand-soft-line: #dcc69f; --inv-brand: #e2b35e; --inv-brand-ink: #1f1606; --tone-top: #eeebe3;
 }
+/* 0.26.1 (Sigurd 18.11): ALLE primærknapper på «Nå» har aksenten i lys modus (#CD8D1D med #1F1606), som resten av appen:
+ * «Kom i gang» (Sett opp hjemmet), «Bruk som middag» (kalenderforslaget), «Koble til kalender» og alle andre .btn.primary.
+ *  - Telefon: Nå (.kj.k-na) følger appens tema.
+ *  - Nettbrett/PC: kjøkkenskjermen (.kj uten .k-na) når skjermen er lys (data-skjerm="lys", dagfasen) OG appen er lys.
+ * .kj holder ellers --knapp = --brand. Sekundærknapper og Hjemme/Borte er uendret. Mørk modus, kveld/natt på kjøkkenskjermen og de
+ * andre aksentene: --knapp = --brand som før (ingen regel her). */
+@media (prefers-color-scheme: light) {
+  :root:not([data-tema="mork"]):not([data-aksent]) .kj.k-na,
+  :root:not([data-tema="mork"]):not([data-aksent]) .kj[data-skjerm="lys"] { --knapp: #cd8d1d; --knapp-ink: #1f1606; }
+  :root:not([data-tema="mork"]):not([data-aksent]) .kj.k-na .kal-forslag-acts .btn.primary,
+  :root:not([data-tema="mork"]):not([data-aksent]) .kj[data-skjerm="lys"] .kal-forslag-acts .btn.primary { background: var(--knapp); border-color: var(--knapp); color: var(--knapp-ink); }
+}
+:root[data-tema="lys"]:not([data-aksent]) .kj.k-na,
+:root[data-tema="lys"]:not([data-aksent]) .kj[data-skjerm="lys"] { --knapp: #cd8d1d; --knapp-ink: #1f1606; }
+:root[data-tema="lys"]:not([data-aksent]) .kj.k-na .kal-forslag-acts .btn.primary,
+:root[data-tema="lys"]:not([data-aksent]) .kj[data-skjerm="lys"] .kal-forslag-acts .btn.primary { background: var(--knapp); border-color: var(--knapp); color: var(--knapp-ink); }
 
 /* ===== 0.26.0: «Hvem bor i husstanden?», faste varer og gang-illustrasjonen ===== */
 /* Gangen: lag fra KnaggenGang.lag (gang.js, skalert etter husstanden; kroken kan byttes). Uten krok = den faste gangen

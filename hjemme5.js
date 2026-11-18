@@ -179,6 +179,9 @@
     var lagret = a.detail ? a.detail() : null;
     if (sheet && a.removeDetail && lagret && (lagret.pets.length || lagret.persons.some(function (p) { return (p && p.name) || (p && p.age != null); })))
       body += '<p class="hs3-lenker hs3-fjern"><a href="#" class="hs3-lenke hs3-fjern-navn" data-h3="fjern-navn" data-testid="hs3-fjern-navn">Fjern navn</a></p>';
+    // 0.26.1 (Sigurd 18.11): innlogget uten husstand (f.eks. e-postlenke) – kan koble til en husstand dere har fra før i stedet
+    if (!sheet && a.kontoUtenHusstand && a.kontoUtenHusstand())
+      body += '<p class="hs3-lenker"><a href="#koble" class="hs3-lenke" data-testid="sp-koble">Har dere en husstand fra før? Koble til med lenke eller kode</a></p>';
     var act = sheet ? '<button type="button" class="btn primary block" data-sp="lagre-hs" data-testid="sp-lagre">Lagre</button>'
       : '<button type="button" class="btn primary block" data-sp="neste" data-testid="sp-neste">Neste</button>';
     screen('husstand', body, act, spDots(0));
@@ -509,7 +512,13 @@
     }).join('') + '</ul>';
     var h = pg.querySelector('.k17-head, .page-head'); if (h && h.nextSibling) pg.insertBefore(sec, h.nextSibling); else pg.appendChild(sec);
   }
-  var mo = new MutationObserver(function () { spHdr(); naApply(); hsApply(); if (!spAutoDone) spAuto(); });
+  // 0.26.1: appen bytter side med history.replaceState (ingen hashchange) – f.eks. innlogging som kobler til husstanden (→ #uke)
+  // eller utlogging/sletting (→ #oppsett/husstand). Hold oppsettet i takt med adressen når siden tegnes på nytt.
+  function rute() {
+    var ov = document.querySelector('[data-testid="v5"]'), opp = /^#oppsett\//.test(location.hash || '');
+    if (ov ? !opp : opp) render();
+  }
+  var mo = new MutationObserver(function () { rute(); spHdr(); naApply(); hsApply(); if (!spAutoDone) spAuto(); });
   function start() { mo.observe(document.body, { childList: true, subtree: true }); spHdr(); naApply(); hsApply(); render(); spAuto(); }
   document.addEventListener('knaggen-startpakke', function () { spHdr(); naApply(); if (!spAutoDone) spAuto(); });   // 0.25.0: husstandens retter er lest fra serveren
   if (!get(K.done, false) && (!location.hash || location.hash === '#' || location.hash === '#uke')) location.replace('#kjokken');

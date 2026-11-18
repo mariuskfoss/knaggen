@@ -1009,11 +1009,26 @@
       '<div class="k-foot k-fadeable"><a class="k-mark k-til-appen" href="#liste" data-k="toapp" data-testid="k-til-appen">' + MARK + 'Knaggen<span class="k-ta">Til appen ›</span></a>' +
       '<span class="k-credit" data-testid="k-kreditering">Data fra Entur og MET Norway</span></div></div>';
   }
+  // 0.26.1: «Se oppskriften hos …» – kjente nettsteder med navn, ellers bare vertsnavnet
+  var KILDER = { 'matprat.no': 'Matprat', 'godt.no': 'Godt.no', 'tine.no': 'TINE', 'meny.no': 'MENY', 'kiwi.no': 'KIWI', 'rema.no': 'REMA 1000',
+    'coop.no': 'Coop', 'oda.com': 'Oda', 'arla.no': 'Arla', 'trinesmatblogg.no': 'Trines Matblogg', 'toro.no': 'Toro', 'fjordland.no': 'Fjordland',
+    'nrk.no': 'NRK', 'kokkejegeren.no': 'Kokkejegeren', 'detsoteliv.no': 'Det søte liv', 'frukt.no': 'Frukt.no', 'brodogkorn.no': 'Brød & Korn' };
+  function kildeNavn(u) {
+    var h = ''; try { h = new URL(u).hostname.toLowerCase().replace(/^www\./, ''); } catch (e) { return ''; }
+    for (var k in KILDER) if (h === k || h.slice(-(k.length + 1)) === '.' + k) return KILDER[k];
+    return h;
+  }
+  function kildeLenke(m) {
+    var n = m.source ? kildeNavn(m.source) : '';
+    if (!n) return '';
+    return '<a class="k-kilde" href="' + esc(m.source) + '" target="_blank" rel="noopener noreferrer" data-testid="k-kilde">Se oppskriften hos ' + esc(n) + ' ↗</a>';
+  }
   function cookHtml() {
-    var m = cook.meal, steps = m.steps.length ? m.steps : ['Ingen fremgangsmåte er lagt inn for denne retten. Ingrediensene står til venstre.'];
+    // 0.26.1: nøytral tekst uten «til venstre» (på telefon står ingrediensene over)
+    var m = cook.meal, tom = !m.steps.length, steps = tom ? [m.source ? 'Ingen fremgangsmåte er lagt inn i Knaggen for denne retten.' : 'Ingen fremgangsmåte er lagt inn for denne retten.'] : m.steps;
     cook.step = Math.max(0, Math.min(steps.length - 1, cook.step));
     var meta = [m.time, m.portions].filter(Boolean).join(' · ');
-    return '<div class="k-stage"><div class="k-ctop"><div><h1 data-testid="k-kok-tittel">' + esc(m.name) + '</h1>' + (meta ? '<span class="m" data-testid="k-kok-meta">' + esc(meta) + '</span>' : '') + '</div>' +
+    return '<div class="k-stage"><div class="k-ctop"><div><h1 data-testid="k-kok-tittel">' + esc(m.name) + '</h1>' + (meta ? '<span class="m" data-testid="k-kok-meta">' + esc(meta) + '</span>' : '') + (tom ? '' : kildeLenke(m)) + '</div>' +
       '<span class="k-awake" data-testid="k-vaaken"' + (wakeLock ? '' : ' hidden') + '>☀ Skjermen holdes våken</span>' +
       '<button type="button" class="k-x" data-k="close" aria-label="Lukk oppskriften" data-testid="k-lukk">✕</button></div>' +
       '<div class="k-cgrid">' +
@@ -1025,7 +1040,7 @@
           (x.amount ? '<b>' + esc(x.amount) + '</b> ' : '') + esc(x.name) + '</button></li>';
       }).join('') + '</ul>' +
       '<section class="k-step" aria-live="polite"><span class="n" data-testid="k-steg-nr">Steg ' + (cook.step + 1) + ' av ' + steps.length + '</span>' +
-      '<p class="t" data-testid="k-steg">' + esc(steps[cook.step]) + '</p>' +
+      '<p class="t" data-testid="k-steg">' + esc(steps[cook.step]) + (tom ? kildeLenke(m) : '') + '</p>' +
       '<div class="k-steps"><button type="button" class="k-btn" data-k="prev" data-testid="k-forrige"' + (cook.step === 0 ? ' disabled' : '') + '>‹ Forrige</button>' +
       '<button type="button" class="k-btn pri" data-k="next" data-testid="k-neste-steg"' + (cook.step >= steps.length - 1 ? ' disabled' : '') + '>Neste ›</button></div></section></div></div>';
   }
@@ -1052,6 +1067,12 @@
     var same = cook && cook.meal.date === m.date && cook.meal.name === m.name;
     cook = { meal: m, step: same ? cook.step : 0, done: same ? cook.done : {}, ingOpen: same ? !!cook.ingOpen : false };
     view = 'cook'; lastTap = Date.now(); render(); takeLock();
+    // 0.26.1: kilde uten fremgangsmåte → appen henter stegene én gang; kommer de mens oppskriften er åpen, vises de
+    if (!m.steps.length && m.source && api().ensureSteps) api().ensureSteps(m.date, function () {
+      if (!open || view !== 'cook' || !cook || cook.meal.date !== m.date) return;
+      var n = api().meal(m.date); if (!n || n.name !== m.name) return;
+      cook.meal = n; cook.step = 0; render();
+    });
   }
   function closeCook() { view = 'idle'; cook = null; dropLock(); render(); }   // strykingene nullstilles ved lukking
   function toApp(h) {

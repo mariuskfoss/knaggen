@@ -422,7 +422,7 @@ body.k-phone .kj .k-ing button { min-height: var(--tap, 48px); }
 @media (prefers-color-scheme: light) { html:not([data-tema="mork"]) .kj.k-na .k-aks .k-ak { background: var(--sw-lys); color: var(--kj-ak-pa-lys); } }
 html[data-tema="lys"] .kj.k-na .k-aks .k-ak { background: var(--sw-lys); color: var(--kj-ak-pa-lys); }
 /* 0.18.13: «Nå» uten middag i dag – tydelig knapp til å legge inn første rett / velge middag */
-.kj.k-na .na-din-knapp { display: flex; align-items: center; justify-content: center; min-height: var(--tap, 48px); margin: 6px 0 0; padding: 0 14px; border-radius: var(--radius, 12px); background: var(--brand); color: var(--brand-ink); font-weight: 650; text-decoration: none; }
+.kj.k-na .na-din-knapp { display: flex; align-items: center; justify-content: center; min-height: var(--tap, 48px); margin: 6px 0 0; padding: 0 14px; border-radius: var(--radius, 12px); background: var(--knapp, var(--brand)); color: var(--knapp-ink, var(--brand-ink));   /* 0.26.1: primærknapp på Nå – aksenten i lys (--knapp), ellers = --brand */ font-weight: 650; text-decoration: none; }
 .kj.k-na .na-din-knapp i { font-style: normal; }
 
 /* 0.18.13 (D): «venter på posisjon» – rolig linje, ingen hopp når posisjonen er funnet */
@@ -454,3 +454,7 @@ html[data-tema="lys"] .kj.k-na .k-aks .k-ak { background: var(--sw-lys); color: 
 @keyframes na-inn-h { from { transform: translateX(24px); opacity: .4; } to { transform: none; opacity: 1; } }
 @keyframes na-inn-v { from { transform: translateX(-24px); opacity: .4; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .kj.k-na .na-inn-h, .kj.k-na .na-inn-v { animation: none; } }
+/* 0.26.1: «Se oppskriften hos …» i matlagingen (åpner i ny fane) */
+.kj .k-kilde { display: block; margin-top: 14px; font-size: var(--fs-16, 16px); font-weight: 600; color: var(--brand); text-decoration: underline; text-underline-offset: 3px; }
+.kj .k-ctop .k-kilde { margin-top: 6px; }
+.kj .k-step .t .k-kilde { font-size: clamp(16px, 4.4vw, 20px); }

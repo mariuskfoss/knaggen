@@ -52,6 +52,9 @@ async function init() {
       try {
         auth = au.initializeAuth(app, { persistence: [au.indexedDBLocalPersistence, au.browserLocalPersistence], popupRedirectResolver: au.browserPopupRedirectResolver });
       } catch (e) { auth = au.getAuth(app); }
+      // 0.26.1 (Sigurd 18.11): norske e-poster fra Firebase (innloggingslenke m.m.). Fast 'no' heller enn useDeviceLanguage():
+      // mange norske telefoner står på engelsk, og nettleserens 'nb-NO' er ikke garantert å treffe Firebase sin norske mal ('no').
+      try { auth.languageCode = 'no'; } catch (e) { /* ignorer */ }
       try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) { /* ignorer */ }
       let db;
       try {
@@ -97,7 +100,7 @@ function recipeDoc(r) {
   // v0.8: valgfrie felt – bare når satt, så eldre regler/klienter ikke brytes unødig ved lesing
   if (r.origin) o.origin = String(r.origin).slice(0, 40);
   // v0.10: valgfri fremgangsmåte (liste med korte steg)
-  if (Array.isArray(r.steps) && r.steps.length) o.steps = r.steps.slice(0, 12).map(x => String(x).slice(0, 300));
+  if (Array.isArray(r.steps) && r.steps.length) { const st = cleanSteps(r.steps); if (st.length) o.steps = st; }   // 0.26.1: renset (uten HTML og tomme steg)
   if (r.servings != null && isFinite(r.servings)) o.servings = Number(r.servings);
   if (r.scale === false) o.scale = false;
   // v0.11: passiv tid (minutes = aktiv tid) og merke fra Matrett-byggeren – bare når satt
@@ -166,8 +169,22 @@ function validSource(u) { return typeof u === 'string' && u.length <= 2000 && /^
 // 0.24.0: fra = 'kalender' når engangsmiddagen ble laget fra et kalenderforslag («Fra kalenderen»). Reglene tillater
 // et fritt kart i oneoff, så feltet trenger ingen regelendring; eldre klienter overser det.
 function oneoffFra(o) { return o && o.fra === 'kalender' ? { fra: 'kalender' } : {}; }
+// 0.26.1: fremgangsmåte på engangsmiddager (Matprat-steg forsvant for «Nei, bare denne gangen»). Høyst 12 steg à 300 tegn,
+// uten HTML og tomme steg (samme grense som recipes.steps i reglene). stepsTried = siden er forsøkt hentet (ikke prøv igjen).
+// oneoff er et fritt kart i reglene, så feltene trenger ingen regelendring; eldre klienter overser dem.
+function cleanSteps(a) {
+  if (!Array.isArray(a)) return [];
+  return a.map(x => typeof x === 'string' ? x.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 300).trim() : '')
+    .filter(Boolean).slice(0, 12);
+}
+function oneoffSteps(o) {
+  const st = cleanSteps(o && o.steps), out = {};
+  if (st.length) out.steps = st;
+  if (o && o.stepsTried === true) out.stepsTried = true;
+  return out;
+}
 function oneoffDoc(o) {
-  return o ? Object.assign({ id: o.id, name: o.name, ingredients: recipeDoc(o).ingredients }, validSource(o.source) ? { source: o.source } : {}, oneoffFra(o)) : null;
+  return o ? Object.assign({ id: o.id, name: o.name, ingredients: recipeDoc(o).ingredients }, validSource(o.source) ? { source: o.source } : {}, oneoffFra(o), oneoffSteps(o)) : null;
 }
 // v0.4.4: kort signatur for en dag slik den ligger i Firestore (samme som app.js bruker for det telefonen viser).
 function daySig(d) {
@@ -181,7 +198,7 @@ function withMark(body, mark) { if (mark === 'handlet' || mark === 'rester') bod
 function dayBody(date, d) {
   const o = d && d.oneoff && d.oneoff.name ? d.oneoff : null;
   return withMark({ date, recipe_id: o ? null : ((d && d.recipe_id) || null),
-    oneoff: o ? Object.assign({ id: o.id || null, name: o.name, ingredients: o.ingredients || [] }, validSource(o.source) ? { source: o.source } : {}, oneoffFra(o)) : null }, markOf(d));
+    oneoff: o ? Object.assign({ id: o.id || null, name: o.name, ingredients: o.ingredients || [] }, validSource(o.source) ? { source: o.source } : {}, oneoffFra(o), oneoffSteps(o)) : null }, markOf(d));
 }
 function extraDoc(x) {
   return { week: x.week, name: x.name, qty: x.qty == null ? null : x.qty, unit: x.unit || '', aisle: x.aisle, created: x.created || Date.now() };
@@ -381,6 +398,30 @@ function subscribe(hid, oldest, handlers) {
 const W = {
   setRecipe: (hid, r) => ctx.fs.setDoc(ctx.fs.doc(...hh(hid, 'recipes', r.id)), recipeDoc(r)),
   deleteRecipe: (hid, id) => ctx.fs.deleteDoc(ctx.fs.doc(...hh(hid, 'recipes', id))),
+  // 0.26.1: hentet fremgangsmåte til en eldre rett – BARE steps, og bare hvis retten finnes og fortsatt er uten steg
+  // (aldri over noe brukeren eller en annen telefon har lagt inn i mellomtiden; ingredienser og navn røres ikke).
+  setRecipeSteps: (hid, id, steps) => {
+    const { fs, db } = ctx, ref = fs.doc(...hh(hid, 'recipes', id)), st = cleanSteps(steps);
+    if (!st.length) return Promise.resolve(false);
+    return fs.runTransaction(db, async tx => {
+      const sn = await tx.get(ref);
+      if (!sn.exists() || (Array.isArray(sn.data().steps) && sn.data().steps.length)) return false;
+      tx.update(ref, { steps: st });
+      return true;
+    });
+  },
+  // 0.26.1: samme for en engangsmiddag: steps (hvis de fortsatt mangler) og stepsTried, bare hvis samme engangsmiddag står på dagen
+  setOneoffSteps: (hid, date, oid, steps) => {
+    const { fs, db } = ctx, ref = fs.doc(...hh(hid, 'days', date)), st = cleanSteps(steps);
+    return fs.runTransaction(db, async tx => {
+      const sn = await tx.get(ref), d = sn.exists() ? sn.data() : null, o = d && d.oneoff;
+      if (!o || !o.name || (o.id || ('o:' + o.name)) !== oid) return false;
+      const upd = { 'oneoff.stepsTried': true };
+      if (st.length && !(Array.isArray(o.steps) && o.steps.length)) upd['oneoff.steps'] = st;
+      tx.update(ref, upd);
+      return true;
+    });
+  },
   setDays: (hid, entries) => {
     const b = ctx.fs.writeBatch(ctx.db);
     entries.forEach(e => b.set(ctx.fs.doc(...hh(hid, 'days', e.date)), withMark({ date: e.date, recipe_id: e.oneoff ? null : (e.recipe_id || null), oneoff: oneoffDoc(e.oneoff) }, e.mark)));
@@ -736,6 +777,7 @@ async function linkCredential(cred) {
 async function sendEmailLink(email) {
   const c = await init();
   try {
+    c.auth.languageCode = 'no';   // 0.26.1: norsk mal (X-Firebase-Locale: no) – også om noe annet har endret språket
     await c.au.sendSignInLinkToEmail(c.auth, email, { url: location.origin + location.pathname + '?konto=epost', handleCodeInApp: true });
   } catch (e) { throw authErr(e); }
   try { localStorage.setItem(EMAIL_KEY, email); } catch (e) { /* ignorer */ }
