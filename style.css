@@ -1679,6 +1679,17 @@ html[data-tema="lys"] .aks-rad .aks-dot { background: var(--sw-lys); color: var(
 :root[data-tema="lys"]:not([data-aksent]) body.k-phone .kj.k-cook .k-btn.pri,
 :root[data-tema="lys"]:not([data-aksent]) .kj.k-cook[data-skjerm="lys"] .k-btn.pri { background: #cd8d1d; color: #1f1606; }
 
+/* 0.26.3 (Sigurd 18.11): «Neste ›» har også den mørke aksenten (#E2B35E med #1F1606, 9,22:1).
+ *  - Telefon: matlagingen (body.k-phone .kj.k-cook) følger appens mørke tema, som i lys modus.
+ *  - Nettbrett/PC: kjøkkenskjermen når utseendet er Mørk (data-fase="mork").
+ * Ikke data-skjerm="mork": den brukes også av kveld og natt, som beholder sine egne farger
+ * (kveld #B88A52/#120C06, natt uendret). «‹ Forrige» er uendret. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema="lys"]):not([data-aksent]) body.k-phone .kj.k-cook .k-btn.pri { background: #e2b35e; color: #1f1606; }
+}
+:root[data-tema="mork"]:not([data-aksent]) body.k-phone .kj.k-cook .k-btn.pri { background: #e2b35e; color: #1f1606; }
+:root:not([data-aksent]) .kj.k-cook[data-fase="mork"] .k-btn.pri { background: #e2b35e; color: #1f1606; }
+
 /* ===== 0.26.0: «Hvem bor i husstanden?», faste varer og gang-illustrasjonen ===== */
 /* Gangen: lag fra KnaggenGang.lag (gang.js, skalert etter husstanden; kroken kan byttes). Uten krok = den faste gangen
  * (bilder/gang-lys|mork.webp). Lagene ligger oppå hverandre i et 16:9-lerret (1280×720 hos Mons); --dx-lys/--dx-mork (eller --dx)
