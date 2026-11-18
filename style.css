@@ -1668,6 +1668,17 @@ html[data-tema="lys"] .aks-rad .aks-dot { background: var(--sw-lys); color: var(
 :root[data-tema="lys"]:not([data-aksent]) .kj.k-na .kal-forslag-acts .btn.primary,
 :root[data-tema="lys"]:not([data-aksent]) .kj[data-skjerm="lys"] .kal-forslag-acts .btn.primary { background: var(--knapp); border-color: var(--knapp); color: var(--knapp-ink); }
 
+/* 0.26.2 (Sigurd 18.11): «Neste ›» i matlagingen (.k-btn.pri) har aksenten i lys modus (#CD8D1D med #1F1606).
+ *  - Telefon: matlagingen (body.k-phone .kj.k-cook) følger appens tema, som Nå i 0.26.1.
+ *  - Nettbrett/PC: kjøkkenskjermen når skjermen er lys (data-skjerm="lys") OG appen er lys.
+ * Knappen bruker ellers --k-brand (kjøkkenfasen), ikke --knapp. «‹ Forrige» og mørk/kveld/natt er uendret. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-tema="mork"]):not([data-aksent]) body.k-phone .kj.k-cook .k-btn.pri,
+  :root:not([data-tema="mork"]):not([data-aksent]) .kj.k-cook[data-skjerm="lys"] .k-btn.pri { background: #cd8d1d; color: #1f1606; }
+}
+:root[data-tema="lys"]:not([data-aksent]) body.k-phone .kj.k-cook .k-btn.pri,
+:root[data-tema="lys"]:not([data-aksent]) .kj.k-cook[data-skjerm="lys"] .k-btn.pri { background: #cd8d1d; color: #1f1606; }
+
 /* ===== 0.26.0: «Hvem bor i husstanden?», faste varer og gang-illustrasjonen ===== */
 /* Gangen: lag fra KnaggenGang.lag (gang.js, skalert etter husstanden; kroken kan byttes). Uten krok = den faste gangen
  * (bilder/gang-lys|mork.webp). Lagene ligger oppå hverandre i et 16:9-lerret (1280×720 hos Mons); --dx-lys/--dx-mork (eller --dx)

@@ -7584,7 +7584,7 @@
     if (!p) return cb('00');
     function ut() { try { cb(window.KnaggenSted.fylke(p.lat, p.lon)); } catch (e) { cb('00'); } }
     if (window.KnaggenSted) return ut();
-    var sc = document.createElement('script'); sc.src = 'sted.js?v=0.26.1'; sc.onload = ut; sc.onerror = function () { cb('00'); };
+    var sc = document.createElement('script'); sc.src = 'sted.js?v=0.26.2'; sc.onload = ut; sc.onerror = function () { cb('00'); };
     document.head.appendChild(sc);
   }
   // Telles på nytt når UTC-datoen har skiftet: ved nye serverdata, når siden blir synlig igjen, når nettet kommer tilbake og hver time.
@@ -8879,8 +8879,9 @@
     document.addEventListener('fullscreenchange', ut); document.addEventListener('webkitfullscreenchange', ut);
     ut();
   })();
-  var APP_VERSION = '0.26.1', SEEN_VER_KEY = 'knaggen:sett-versjon';
+  var APP_VERSION = '0.26.2', SEEN_VER_KEY = 'knaggen:sett-versjon';
   var NEWS = [
+    ['0.26.2', ['«Neste ›» i matlagingen har samme gule farge som de andre knappene i lys modus, på telefon og på den lyse kjøkkenskjermen.', 'Fremgangsmåten fra oppskrifter (Matprat og andre) hopper over tips (HowToTip) og tar med overskriften på hver del, for eksempel «Sausen: Kok opp.»', 'Innloggingsadressen har fått Knaggens ikon, og siden blinker ikke lenger hvitt mens den åpnes.']],
     ['0.26.1', ['Porsjonene rundes alltid opp til hele porsjoner, og det blir aldri færre enn 2 når Knaggen regner om. Spiser flere eller færre middag en dag, legges de til eller trekkes fra porsjonene i deres egne retter (voksen 1, barn ¾, småbarn ½), og retten viser «Tilpasset». Tallet i appen er det samme som handlelista regner med.', 'Knappene på Nå («Kom i gang», «Velg middag i dag», «Bruk som middag» og «Koble til kalender») har samme gule farge som de andre knappene i lys modus.', 'Logger du inn med e-postlenke uten å være med i en husstand, kommer du rett til oppsettet i tre steg, med valget om å koble til en husstand med lenke eller kode. Det samme skjer når du logger ut eller sletter husstanden. E-posten med innloggingslenka kommer på norsk.', 'Henter du en oppskrift fra for eksempel Matprat som engangsmiddag («Nei, bare denne gangen»), følger fremgangsmåten med i matlagingen. Retter og engangsmiddager som ble lagret uten fremgangsmåte, henter den én gang når du åpner dem. Matlagingen har også en lenke til oppskriften, for eksempel «Se oppskriften hos Matprat».']],
     ['0.26.0', ['Første oppsett har tre steg: hvem som bor i husstanden, faste varer og retter.', 'Skriv bare antall, eller legg til navn, alder og kjæledyr. Navn, alder og kjæledyr deles med de andre i husstanden, og alle kan endre dem senere.', 'Faste varer fylles ut etter husstanden, med én linje per vare. Fjern det dere ikke trenger.', 'Ny gul farge på knappene i lys modus.']],
     ['0.25.0', ['Nytt første oppsett: skriv hvem som spiser middag, velg retter blant ti hverdagsklassikere og trykk «Fyll uka». Da står middagene i uka og handlelista er klar. Kalenderen foreslås neste gang du åpner appen.', '«Nytt forslag» på en kveld i Uke bytter til en annen av rettene deres, helst en annen type enn kvelden før og etter.']],

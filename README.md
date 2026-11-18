@@ -6,6 +6,12 @@ Ukeplan for middager + handleliste for én husstand. Ren statisk side (HTML/CSS/
 Fra v0.2 deles dataene i husstanden via Firebase (Firestore + anonym innlogging, SDK lastes som ES-moduler fra gstatic).
 Uten husstand (eller uten Firebase-oppsett) lagres alt lokalt i nettleseren som før (`localStorage`, nøkkel `ukeshandel:v1`).
 
+## 0.26.2: «Neste ›» i aksenten, parse.js-steg og auth-hosting (Sigurd 18.11.2026)
+- **parse.js** (Cloud Function `hentOppskrift`, europe-west1): HowToTip telles ikke som steg. HowToSection-navn beholdes som prefiks på seksjonens første steg («Sausen: Kok opp.»), fordi appen viser hvert steg som ren tekst (matlagingen ett om gangen, oppskriften som en nummerert liste). Et eget overskriftssteg ville blitt «Steg 2 av 8: Sausen» i matlagingen. Maks 12 steg à 300 tegn som før (`steps()`). Enhetstester: `tests/fn-v0262-parse.test.js` med fiksturer i `tests/fixtures/v0262-parse/`. Ved publisering: functions-deploy av `hentOppskrift`. Ingen andre functions, ingen regelendring.
+- **«Neste ›» i matlagingen** (`.k-btn.pri`): aksenten i lys modus (#CD8D1D med #1F1606). Telefon (`body.k-phone .kj.k-cook`) følger appens tema; kjøkkenskjermen når `data-skjerm=lys` og appen er lys. Samme avgrensning som primærknappene på Nå i 0.26.1. «‹ Forrige», mørk modus, kveld/natt og de andre aksentene er uendret.
+- **auth-hosting** (auth.knaggen.no): `favicon.ico` og `favicon.svg` i `public/` (nettleseren ba om `/favicon.ico` og fikk 404). `index.html` og `404.html` setter Knaggens bakgrunn og `theme-color` i `<head>` med en gang (#202627 i mørk, #fbfaf7 i lys), så siden ikke blinker hvitt. `/__/auth/*` er Firebases reserverte innloggingssider; HTML-en der kan ikke endres i denne mappa, men ikonet hentes fra `/favicon.ico`. Ved publisering: deploy av auth-hosting (og appen, og `hentOppskrift`).
+- Tester: `tests/fn-v0262-parse.test.js`, `tests/e2e-v0262.js` (Neste lys/mørk på telefon og kjøkkenskjerm, auth-siden). Ingen regelendring.
+
 ## 0.26.1: «alltid opp, minst 2» og primærknappene på Nå i aksenten (Sigurd 18.11.2026)
 - **Porsjoner** (`scale.js`, `SC.porsjonerFor`; `SC.faktor` = porsjoner / B, B = rettens porsjoner). Vekter: voksen 1, barn ¾, småbarn ½.
   1. Knaggen-rett, husstandsskalering på, husstand satt: dagens folk (vektet), rundet opp, minst 2 (også retter for 6 og 8).
